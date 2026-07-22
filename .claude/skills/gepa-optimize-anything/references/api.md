@@ -9,7 +9,8 @@ from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
 result = optimize_anything(
     seed_candidate: str | None = None,   # starting text; None = seedless (engine bootstraps from objective/background)
     *,
-    evaluator: Callable[..., tuple[float, dict]],  # (candidate) or (candidate, example) -> (score, info)
+    evaluator: Callable | None = None,       # (candidate) or (candidate, example) -> (score, info)
+    batch_evaluator: Callable | None = None, # list[(candidate, example)] -> one result per pair (see below)
     dataset:  list | None = None,        # training examples used DURING optimization
     valset:   list | None = None,        # validation examples used to SELECT the best candidate
     objective: str | None = None,        # short goal, surfaced verbatim to the engine
@@ -21,6 +22,13 @@ result = optimize_anything(
 Examples in `dataset`/`valset`/`test_set` are opaque — any object your `evaluator` understands.
 `seed_candidate` is a **single string** at this API (multi-component `dict[str, str]` candidates
 exist only in the lower-level `gepa.gepa_launcher.optimize_anything`).
+
+**`batch_evaluator`** — grouped scoring for when evals batch better than they stream (a provider
+batch API, fan-out over your own cluster): it receives ALL `(candidate, example)` pairs of an
+evaluation stage (minibatch, valset, held-out test pass) in **one call** and returns one result per
+pair (`score` or `(score, info)`). At least one of `evaluator` / `batch_evaluator` is required.
+When both are given, multi-pair stages use the batch function and single-pair evaluations use
+`evaluator`; with only `batch_evaluator`, singles route through it as singleton batches.
 
 ### The three optimization modes (set by `dataset` / `valset`)
 | mode | pass | evaluator called | use when |

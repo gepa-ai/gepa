@@ -16,6 +16,19 @@ def evaluate(candidate: str, example) -> tuple[float, dict]:
   it's `evaluate(candidate, example)`. (Returning a bare `float` instead of a tuple also works —
   the wrapper normalizes it — but then the proposer gets no feedback; always return the tuple.)
 
+### Batched form (`batch_evaluator=`)
+When evals batch better than they stream — a provider batch API, one job submission for a whole
+stage, fan-out over your own infrastructure — write the batched form instead of (or alongside) the
+per-pair one:
+```python
+def batch_evaluate(pairs: list[tuple[str, Any]]) -> list:  # pairs = [(candidate, example), ...]
+    return [score_or_score_info_tuple for candidate, example in pairs]  # one result per pair, same order
+```
+Each evaluation stage (minibatch, valset, held-out test pass) arrives as ONE call with all its
+pairs. Everything above about feedback-rich `info` applies per pair. Put diagnostics in each
+returned `info` — the per-call channels below (`oa.log()`, `capture_stdio`) don't apply to the
+grouped call.
+
 ## Make `info` feedback-rich (not just a number)
 The proposer (reflection LM or agent) writes the next candidate by reading `info`. Give it specifics:
 ```python
