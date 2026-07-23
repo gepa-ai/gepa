@@ -32,6 +32,54 @@ def test_optimize_anything_imports():
     assert Task is not None
 
 
+def test_legacy_launcher_names_importable_from_optimize_anything():
+    """Old (v0.1.x) examples import the launcher API from ``gepa.optimize_anything``;
+    the module re-exports that surface so old imports keep working unmodified."""
+    import gepa.gepa_launcher as launcher
+    from gepa.optimize_anything import (
+        Candidate,
+        EngineConfig,
+        Evaluator,
+        GEPAConfig,
+        GEPAResult,
+        LogContext,
+        MergeConfig,
+        OptimizationState,
+        RefinerConfig,
+        ReflectionConfig,
+        SideInfo,
+        TrackingConfig,
+        get_log_context,
+        log,
+        make_litellm_lm,
+        set_log_context,
+    )
+
+    for obj in (
+        Candidate,
+        EngineConfig,
+        Evaluator,
+        GEPAConfig,
+        GEPAResult,
+        LogContext,
+        MergeConfig,
+        OptimizationState,
+        RefinerConfig,
+        ReflectionConfig,
+        SideInfo,
+        TrackingConfig,
+        get_log_context,
+        log,
+        make_litellm_lm,
+        set_log_context,
+    ):
+        assert obj is not None
+
+    # Same objects, not copies — the module re-exports the launcher's surface.
+    assert GEPAConfig is launcher.GEPAConfig
+    assert log is launcher.log
+
+
 def test_optimize_anything_old_kwargs_are_rejected():
     """optimize_anything mirrors the legacy seed_candidate/evaluator shape, so the
     intermediate names (evaluate, initial_candidate) and the now-config-only ``name``

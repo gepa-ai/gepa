@@ -35,6 +35,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# Legacy launcher surface, re-exported so v0.1.x-era code that did
+# ``from gepa.optimize_anything import GEPAConfig, ...`` keeps working against
+# this module. New code should prefer :class:`OptimizeAnythingConfig`.
+from gepa.gepa_launcher import (
+    Candidate,
+    EngineConfig,
+    Evaluator,
+    GEPAConfig,
+    GEPAResult,
+    Image,
+    LogContext,
+    MergeConfig,
+    OptimizationState,
+    RefinerConfig,
+    ReflectionConfig,
+    SideInfo,
+    TrackingConfig,
+    get_log_context,
+    log,
+    make_litellm_lm,
+    set_log_context,
+)
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
@@ -127,16 +149,29 @@ def optimize_anything(
             engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
             at least one of ``config.max_evals`` or ``config.max_token_cost``
             must be set. When ``config.name`` is omitted, a name is generated
-            from the engine, a short uuid, and a timestamp.
+            from the engine, a short uuid, and a timestamp. A legacy
+            :class:`GEPAConfig` is also accepted and converted; the run uses
+            the gepa engine and returns the launcher's
+            :class:`~gepa.core.result.GEPAResult`.
 
     Returns:
         A :class:`Result` with ``best_candidate``, ``best_score``,
-        ``total_evals``, ``eval_log``, and ``metadata``.
+        ``total_evals``, ``eval_log``, and ``metadata`` — or, when ``config``
+        is a legacy :class:`GEPAConfig`, the underlying
+        :class:`~gepa.core.result.GEPAResult` (``candidates``, ``best_idx``,
+        ``val_aggregate_scores``, ...) so v0.1.x callers get the result shape
+        they were written against.
     """
+    legacy_config = False
     if config is None:
         config = OptimizeAnythingConfig()
     elif not isinstance(config, OptimizeAnythingConfig):
+        if test_set is not None:
+            raise ValueError(
+                "test_set requires an OptimizeAnythingConfig; the legacy GEPAConfig API has no held-out test pass."
+            )
         config = _from_legacy_config(config)
+        legacy_config = True
     if evaluator is None and batch_evaluator is None:
         raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
     if config.max_evals is None and config.max_token_cost is None:
@@ -168,7 +203,18 @@ def optimize_anything(
         max_concurrency=config.max_concurrency,
         output_dir=output_dir,
     )
-    return _run_engine(server, engine, owns_server=True)
+    result = _run_engine(server, engine, owns_server=True)
+    if legacy_config:
+        # v0.1.x callers always get the launcher's result type back — the gepa
+        # engine stashes the underlying GEPAResult in the result metadata. If
+        # the eval budget died before GEPA core saved any state (e.g. budget
+        # smaller than the valset), synthesize a single-candidate snapshot.
+        # The public signature advertises only the new API; legacy
+        # GEPAConfig-in/GEPAResult-out is a runtime affordance, so the legacy
+        # result rides out through an Any-typed local.
+        legacy_result: Any = result.metadata.get("gepa_result") or _legacy_result_from(result, seed_candidate)
+        return legacy_result
+    return result
 
 
 def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
@@ -186,6 +232,32 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
         engine="gepa",
         max_evals=config.engine.max_metric_calls,
         engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
+    )
+
+
+def _legacy_result_from(result: Result, seed_candidate: Any) -> GEPAResult:
+    """Fallback :class:`GEPAResult` when the gepa engine had none to report.
+
+    Happens when the eval budget is exhausted before GEPA core saved any
+    state (e.g. the budget is smaller than the seed's valset pass). Returns a
+    single-candidate snapshot of the best the eval server saw, so legacy
+    callers still get the result shape they were written against.
+    """
+    best = result.best_candidate or seed_candidate
+    if isinstance(best, dict):
+        candidate, key = best, None
+    else:
+        candidate, key = {"current_candidate": best or ""}, "current_candidate"
+    score = float(result.best_score) if result.best_score is not None else float("-inf")
+    return GEPAResult(
+        candidates=[candidate],
+        parents=[[None]],
+        val_aggregate_scores=[score],
+        val_subscores=[{}],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[result.total_evals or 0],
+        total_metric_calls=result.total_evals,
+        _str_candidate_key=key,
     )
 
 
@@ -315,18 +387,36 @@ __all__ = [
     "BestOfNEngine",
     "BudgetExhausted",
     "BudgetTracker",
+    # Legacy launcher surface (v0.1.x `gepa.optimize_anything` API), re-exported
+    # for backward compatibility.
+    "Candidate",
     "ClaudeCodeAgentProposer",
     "Engine",
+    "EngineConfig",
     "EvalServer",
+    "Evaluator",
+    "GEPAConfig",
+    "GEPAResult",
     "GepaEngine",
+    "Image",
+    "LogContext",
+    "MergeConfig",
     "MetaHarnessEngine",
+    "OptimizationState",
     "OptimizeAnythingConfig",
+    "RefinerConfig",
+    "ReflectionConfig",
     "Result",
+    "SideInfo",
     "Task",
+    "TrackingConfig",
     "get_engine_cls",
+    "get_log_context",
     "get_task",
     "list_engines",
     "list_tasks",
+    "log",
+    "make_litellm_lm",
     "optimize_adaptive_sequential",
     "optimize_adaptive_sequential_with_server",
     "optimize_anything",
@@ -343,4 +433,5 @@ __all__ = [
     "register_engine",
     "register_task",
     "register_task_factory",
+    "set_log_context",
 ]
