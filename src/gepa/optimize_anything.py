@@ -33,7 +33,7 @@ import warnings
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Legacy launcher surface, re-exported so v0.1.x-era code that did
 # ``from gepa.optimize_anything import GEPAConfig, ...`` keeps working against
@@ -42,6 +42,7 @@ from gepa.gepa_launcher import (
     Candidate,
     EngineConfig,
     Evaluator,
+    EvaluatorWrapper,
     GEPAConfig,
     GEPAResult,
     Image,
@@ -90,7 +91,7 @@ from gepa.oa.task import Task
 
 
 def optimize_anything(
-    seed_candidate: str | None = None,
+    seed_candidate: str | Candidate | None = None,
     *,
     evaluator: Callable[..., Any] | None = None,
     batch_evaluator: Callable[..., Any] | None = None,
@@ -110,9 +111,12 @@ def optimize_anything(
     :class:`OptimizeAnythingConfig` and adds ``test_set``.
 
     Args:
-        seed_candidate: The seed text to evolve from. ``None`` for seedless
-            mode, where the engine bootstraps the first candidate from
-            ``objective`` / ``background``.
+        seed_candidate: The seed to evolve from — either a single text string
+            or, for multi-component optimization, a ``{component: text}`` dict
+            (:data:`Candidate`) whose components are co-optimized. Dict seeds
+            are supported by the ``gepa`` engine; the other engines treat the
+            seed as a single text. ``None`` for seedless mode, where the engine
+            bootstraps the first candidate from ``objective`` / ``background``.
         evaluator: Scoring function returning ``(score, info)`` — a bare
             ``score`` is also accepted, with ``info`` defaulting to ``{}``. Use
             ``(candidate) -> (score, info)`` for a single task, or
@@ -278,7 +282,9 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
         result = engine.run(task, server)
     except BudgetExhausted:
         result = Result(
-            best_candidate=server.best_candidate,
+            # A dict best rides through on the gepa/dict-seed path, matching
+            # GepaEngine.run's own ``cast`` at the Result boundary.
+            best_candidate=cast(str, server.best_candidate),
             best_score=server.best_score,
         )
     finally:
@@ -318,7 +324,9 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
     return result
 
 
-def _score_test(server: EvalServer, task: Task, candidate: str | None) -> tuple[dict[str, float], float] | None:
+def _score_test(
+    server: EvalServer, task: Task, candidate: str | dict[str, str] | None
+) -> tuple[dict[str, float], float] | None:
     """Score ``candidate`` on the held-out ``test_set``, outside the budget.
 
     Returns ``(per_example_scores, average)`` or ``None`` when there is no
@@ -395,6 +403,7 @@ __all__ = [
     "EngineConfig",
     "EvalServer",
     "Evaluator",
+    "EvaluatorWrapper",
     "GEPAConfig",
     "GEPAResult",
     "GepaEngine",
@@ -435,3 +444,24 @@ __all__ = [
     "register_task_factory",
     "set_log_context",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Permanent compatibility shim for the v0.1.x ``gepa.optimize_anything`` API.
+
+    The commonly-imported launcher names are re-exported explicitly at the top
+    of this module. This fallback catches any *other* public symbol a pinned
+    v0.1.x caller may still import (e.g. ``EvaluatorWrapper``) and forwards it
+    from :mod:`gepa.gepa_launcher`, so old imports keep working unmodified
+    instead of hitting a bare ``ImportError``. Truly-unknown names raise
+    ``AttributeError`` with a pointer to where the launcher surface now lives.
+    """
+    if not name.startswith("_"):
+        import gepa.gepa_launcher as _launcher
+
+        obj = getattr(_launcher, name, None)
+        if obj is not None:
+            return obj
+    raise AttributeError(
+        f"module {__name__!r} has no attribute {name!r}. The legacy launcher surface now lives in 'gepa.gepa_launcher'."
+    )
