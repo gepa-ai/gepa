@@ -100,9 +100,6 @@ jobs:
           uv pip list
       - name: Run lint with tests
         run: uv run -p .venv ruff check
-        uses: chartboost/ruff-action@v1
-        with:
-          args: check
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/
       # - name: Install optional dependencies
