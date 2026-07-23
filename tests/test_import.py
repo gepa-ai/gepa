@@ -80,6 +80,29 @@ def test_legacy_launcher_names_importable_from_optimize_anything():
     assert log is launcher.log
 
 
+def test_evaluatorwrapper_importable_from_optimize_anything():
+    """``EvaluatorWrapper`` is part of the v0.1.x launcher surface; a pinned
+    ``from gepa.optimize_anything import EvaluatorWrapper`` must keep working."""
+    import gepa.gepa_launcher as launcher
+    from gepa.optimize_anything import EvaluatorWrapper
+
+    assert EvaluatorWrapper is launcher.EvaluatorWrapper
+
+
+def test_getattr_forwards_any_launcher_symbol_and_rejects_unknown():
+    """The module-level ``__getattr__`` shim forwards any other public launcher
+    symbol (so old imports never hit a bare ImportError) and raises a helpful
+    AttributeError for names that exist nowhere."""
+    import gepa.gepa_launcher as launcher
+    import gepa.optimize_anything as oa
+
+    # A launcher symbol not in the explicit re-export list still resolves.
+    assert oa.DEFAULT_REFINER_PROMPT is launcher.DEFAULT_REFINER_PROMPT
+
+    with pytest.raises(AttributeError, match="gepa.gepa_launcher"):
+        oa.ThisNameDoesNotExistAnywhere
+
+
 def test_optimize_anything_old_kwargs_are_rejected():
     """optimize_anything mirrors the legacy seed_candidate/evaluator shape, so the
     intermediate names (evaluate, initial_candidate) and the now-config-only ``name``

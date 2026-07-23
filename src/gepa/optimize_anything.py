@@ -42,6 +42,7 @@ from gepa.gepa_launcher import (
     Candidate,
     EngineConfig,
     Evaluator,
+    EvaluatorWrapper,
     GEPAConfig,
     GEPAResult,
     Image,
@@ -395,6 +396,7 @@ __all__ = [
     "EngineConfig",
     "EvalServer",
     "Evaluator",
+    "EvaluatorWrapper",
     "GEPAConfig",
     "GEPAResult",
     "GepaEngine",
@@ -435,3 +437,25 @@ __all__ = [
     "register_task_factory",
     "set_log_context",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Permanent compatibility shim for the v0.1.x ``gepa.optimize_anything`` API.
+
+    The commonly-imported launcher names are re-exported explicitly at the top
+    of this module. This fallback catches any *other* public symbol a pinned
+    v0.1.x caller may still import (e.g. ``EvaluatorWrapper``) and forwards it
+    from :mod:`gepa.gepa_launcher`, so old imports keep working unmodified
+    instead of hitting a bare ``ImportError``. Truly-unknown names raise
+    ``AttributeError`` with a pointer to where the launcher surface now lives.
+    """
+    if not name.startswith("_"):
+        import gepa.gepa_launcher as _launcher
+
+        obj = getattr(_launcher, name, None)
+        if obj is not None:
+            return obj
+    raise AttributeError(
+        f"module {__name__!r} has no attribute {name!r}. "
+        "The legacy launcher surface now lives in 'gepa.gepa_launcher'."
+    )
