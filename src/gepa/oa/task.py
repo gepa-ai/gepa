@@ -56,16 +56,25 @@ class Task:
 
 
 def seed_as_text(seed: str | dict[str, str] | None) -> str:
-    """Flatten a seed candidate to a single text string.
+    """Return a seed candidate as a single text string, or reject a dict seed.
 
     Only the ``gepa`` engine co-optimizes a ``{component: text}`` dict; every
-    other engine treats the seed as one text (per :class:`Task`). Those engines
-    call this to get a plain string: ``None`` becomes ``""``, a string passes
-    through, and a multi-component dict is joined into one text so it can still
-    seed a single-text run instead of crashing (``dict`` had no ``write_text``).
+    other engine generates and evaluates a *single* text candidate (per
+    :class:`Task`). Such engines call this to get a plain string: ``None``
+    becomes ``""`` and a string passes through.
+
+    A dict seed is **refused**, not silently flattened. These engines write the
+    seed to one file and hand the evaluator one string, so they cannot honor a
+    multi-component contract — the component names would be dropped and a
+    ``{component: text}`` evaluator would never receive the dict it expects.
+    Failing loudly (pointing at the ``gepa`` engine) beats a silent degrade.
     """
     if seed is None:
         return ""
     if isinstance(seed, str):
         return seed
-    return "\n\n".join(seed.values())
+    raise TypeError(
+        "This engine optimizes a single text candidate and cannot take a "
+        "multi-component dict seed_candidate; only the 'gepa' engine "
+        "co-optimizes dict components. Pass a string, or use engine='gepa'."
+    )

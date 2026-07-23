@@ -10,17 +10,23 @@ coercion without regressing to the ``str``-only assumptions.
 
 from __future__ import annotations
 
+import pytest
+
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.eval_server import EvalServer
 from gepa.oa.task import Task, seed_as_text
 
 
-def test_seed_as_text_none_str_and_dict() -> None:
+def test_seed_as_text_none_and_str() -> None:
     assert seed_as_text(None) == ""
     assert seed_as_text("hello") == "hello"
-    # A multi-component dict is flattened to one text (component texts joined),
-    # so text-only engines can seed a single-text run instead of crashing.
-    assert seed_as_text({"a": "foo", "b": "bar"}) == "foo\n\nbar"
+
+
+def test_seed_as_text_rejects_dict() -> None:
+    # Text-only engines cannot honor a multi-component dict seed (they optimize
+    # one string), so a dict is refused loudly rather than silently flattened.
+    with pytest.raises(TypeError, match="engine='gepa'"):
+        seed_as_text({"a": "foo", "b": "bar"})
 
 
 def test_eval_server_tracks_dict_seed_as_best_candidate() -> None:
