@@ -52,6 +52,28 @@ def test_unknown_key_fails_fast():
         )
 
 
+def test_legacy_gepa_config_call_still_runs():
+    """A v0.1.x-style call — legacy imports, ``GEPAConfig`` — still runs: the
+    config is converted via ``_from_legacy_config`` and the run returns the
+    standard :class:`Result`."""
+    from gepa.oa.engine import Result
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+        ),
+    )
+
+    assert isinstance(result, Result)
+    assert result.best_candidate
+    assert result.best_score > 0.0
+
+
 def test_full_config_passthrough_and_reflective_dataset_persistence(tmp_path):
     """End-to-end: tracking flows through, reflective_dataset is persisted by core."""
     from gepa.optimize_anything import optimize_anything

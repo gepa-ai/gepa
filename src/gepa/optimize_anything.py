@@ -35,6 +35,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# Legacy launcher surface, re-exported so v0.1.x-era code that did
+# ``from gepa.optimize_anything import GEPAConfig, ...`` keeps working against
+# this module. New code should prefer :class:`OptimizeAnythingConfig`.
+from gepa.gepa_launcher import (
+    Candidate,
+    EngineConfig,
+    Evaluator,
+    GEPAConfig,
+    GEPAResult,
+    Image,
+    LogContext,
+    MergeConfig,
+    OptimizationState,
+    RefinerConfig,
+    ReflectionConfig,
+    SideInfo,
+    TrackingConfig,
+    get_log_context,
+    log,
+    make_litellm_lm,
+    set_log_context,
+)
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
@@ -77,7 +99,7 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     test_set: list[Any] | None = None,
-    config: OptimizeAnythingConfig | None = None,
+    config: OptimizeAnythingConfig | GEPAConfig | None = None,
 ) -> Result:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
@@ -127,7 +149,9 @@ def optimize_anything(
             engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
             at least one of ``config.max_evals`` or ``config.max_token_cost``
             must be set. When ``config.name`` is omitted, a name is generated
-            from the engine, a short uuid, and a timestamp.
+            from the engine, a short uuid, and a timestamp. A legacy
+            :class:`GEPAConfig` is also accepted and converted (the run uses
+            the gepa engine and returns the standard :class:`Result`).
 
     Returns:
         A :class:`Result` with ``best_candidate``, ``best_score``,
@@ -315,18 +339,36 @@ __all__ = [
     "BestOfNEngine",
     "BudgetExhausted",
     "BudgetTracker",
+    # Legacy launcher surface (v0.1.x `gepa.optimize_anything` API), re-exported
+    # for backward compatibility.
+    "Candidate",
     "ClaudeCodeAgentProposer",
     "Engine",
+    "EngineConfig",
     "EvalServer",
+    "Evaluator",
+    "GEPAConfig",
+    "GEPAResult",
     "GepaEngine",
+    "Image",
+    "LogContext",
+    "MergeConfig",
     "MetaHarnessEngine",
+    "OptimizationState",
     "OptimizeAnythingConfig",
+    "RefinerConfig",
+    "ReflectionConfig",
     "Result",
+    "SideInfo",
     "Task",
+    "TrackingConfig",
     "get_engine_cls",
+    "get_log_context",
     "get_task",
     "list_engines",
     "list_tasks",
+    "log",
+    "make_litellm_lm",
     "optimize_adaptive_sequential",
     "optimize_adaptive_sequential_with_server",
     "optimize_anything",
@@ -343,4 +385,5 @@ __all__ = [
     "register_engine",
     "register_task",
     "register_task_factory",
+    "set_log_context",
 ]
