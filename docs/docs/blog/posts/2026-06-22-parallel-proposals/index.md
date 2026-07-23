@@ -26,8 +26,8 @@ citation_keywords: "text optimization, prompt optimization, program optimization
 # Batching the Optimization Loop: Parallel Proposals in GEPA
 
 <figure markdown="span">
-  ![Two scatter plots of held-out test performance against optimization wall-clock time. Purple dots mark the parallelism settings from 2×1 to 8×2, an orange diamond marks single mutation, a dashed line marks the unoptimized baseline, and a shaded region marks results that are both faster and better than single mutation. On LiveBench-Math, four of the eight settings land in the shaded region, with 2×2 at 72.1% in 4.1 hours against single mutation's 68.9% in 7.7 hours. On HoVer, every setting is both faster and better, with 8×1 at 60.0% in 21 minutes against 46.5% in 61 minutes.](images/throughput.png){ style="width: 100%;" }
-  <figcaption>Held-out test performance and optimization time for every parallelism setting (P parents × N mutations per step) under fixed metric-call budget. Batching cuts wall-clock time steeply, and several settings also score higher on test.</figcaption>
+  ![Two scatter plots of held-out test performance against optimization wall-clock time. In each, a purple dot labeled Parallel Proposals (P×N) sits above and left of an orange diamond labeled Sequential, inside a shaded region of results that are both faster and better; a dashed line marks the unoptimized baseline, and two arrows from the diamond point up (Better than single mutation) and left (Faster than single mutation). LiveBench-Math: 71.6% in 2.5 hours against 68.9% in 7.7 hours. HoVer: 55.0% in 15 minutes against 46.5% in 61 minutes.](images/throughput.png){ style="width: 100%;" }
+  <figcaption>At the same metric-call budget, parallel proposals are faster and better than single mutation.</figcaption>
 </figure>
 
 Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. The loop samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
@@ -83,8 +83,8 @@ The measured runs follow this pattern. On LiveBench-Math, moving from single mut
 Two additional effects keep the speedup from scaling indefinitely with $k$. First, the reflection wave takes as long as its slowest concurrent call. Second, validating several accepted candidates at once takes longer on a fixed worker pool. In our measured setup, wall-clock time across the sweep improved by roughly 3 to 4× over single mutation before leveling off.
 
 <figure markdown="span">
-  ![Two line charts of optimization time across the nine settings, ordered by per-step width. Time falls from 7.7 hours to about 2 on LiveBench-Math and from 61 to about 15 minutes on HoVer as width grows from 1 to 16, with smaller gains at each doubling; runtime depends on the product P·N.](images/scaling_lines.png){ style="width: 100%;" }
-  <figcaption>Optimization time for every setting at the same metric-call budget per task. Runtime depends on the product P·N, falling with diminishing returns as the width grows.</figcaption>
+  ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, and a dotted baseline. Time falls from 7.7 hours to about 2 on LiveBench-Math and from 61 to 14 minutes on HoVer, while test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 46.5.](images/scaling_lines.png){ style="width: 100%;" }
+  <figcaption>Held-out test performance (left axis) and optimization time (right axis) for every setting at the same metric-call budget per task. Runtime depends on the product P·N, falling with diminishing returns as the width grows, and several settings also score higher on test.</figcaption>
 </figure>
 
 ### Better final solutions with less overfitting
@@ -225,7 +225,7 @@ Parallel proposals cost slightly more than single mutation. On LiveBench-Math, i
 
 ## Getting started
 
-Parallel proposals ship in [gepa v0.1.4](https://github.com/gepa-ai/gepa/releases/tag/v0.1.4). Opt in with a simple setting change below. The sampling strategy says how many candidates to propose per step, and the selection strategy says which of the improved candidates to keep. For example, two parents with two mutations each gives four candidates per step.
+Parallel proposals are available in [gepa](https://github.com/gepa-ai/gepa). Opt in with a simple setting change below. The sampling strategy says how many candidates to propose per step, and the selection strategy says which of the improved candidates to keep. For example, two parents with two mutations each gives four candidates per step.
 
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
