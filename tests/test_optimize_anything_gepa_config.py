@@ -77,6 +77,30 @@ def test_legacy_gepa_config_call_returns_gepa_result():
     assert result.val_aggregate_scores
 
 
+def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
+    """Budget smaller than the seed's valset pass: the engine has no GEPAResult
+    to stash, so the legacy path synthesizes a single-candidate one — legacy
+    callers must never see the omni Result."""
+    from gepa.core.result import GEPAResult
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        dataset=[1, 2, 3],
+        valset=[1, 2, 3, 4, 5],
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=2),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+        ),
+    )
+
+    assert isinstance(result, GEPAResult)
+    assert result.best_candidate
+    assert result.val_aggregate_scores[result.best_idx] == max(result.val_aggregate_scores)
+
+
 def test_legacy_gepa_config_rejects_test_set():
     """``test_set`` is a new-API feature; combining it with a legacy
     ``GEPAConfig`` fails fast instead of silently dropping the test scores."""

@@ -205,9 +205,11 @@ def optimize_anything(
     )
     result = _run_engine(server, engine, owns_server=True)
     if legacy_config:
-        # v0.1.x callers get the launcher's result type back — the gepa engine
-        # stashes the underlying GEPAResult in the result metadata.
-        return result.metadata.get("gepa_result", result)
+        # v0.1.x callers always get the launcher's result type back — the gepa
+        # engine stashes the underlying GEPAResult in the result metadata. If
+        # the eval budget died before GEPA core saved any state (e.g. budget
+        # smaller than the valset), synthesize a single-candidate snapshot.
+        return result.metadata.get("gepa_result") or _legacy_result_from(result, seed_candidate)
     return result
 
 
@@ -226,6 +228,32 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
         engine="gepa",
         max_evals=config.engine.max_metric_calls,
         engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
+    )
+
+
+def _legacy_result_from(result: Result, seed_candidate: Any) -> GEPAResult:
+    """Fallback :class:`GEPAResult` when the gepa engine had none to report.
+
+    Happens when the eval budget is exhausted before GEPA core saved any
+    state (e.g. the budget is smaller than the seed's valset pass). Returns a
+    single-candidate snapshot of the best the eval server saw, so legacy
+    callers still get the result shape they were written against.
+    """
+    best = result.best_candidate or seed_candidate
+    if isinstance(best, dict):
+        candidate, key = best, None
+    else:
+        candidate, key = {"current_candidate": best or ""}, "current_candidate"
+    score = float(result.best_score) if result.best_score is not None else float("-inf")
+    return GEPAResult(
+        candidates=[candidate],
+        parents=[[None]],
+        val_aggregate_scores=[score],
+        val_subscores=[{}],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[result.total_evals or 0],
+        total_metric_calls=result.total_evals,
+        _str_candidate_key=key,
     )
 
 
