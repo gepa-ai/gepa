@@ -32,6 +32,7 @@ from gepa.oa.budget import BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
+from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
 if TYPE_CHECKING:
@@ -326,8 +327,8 @@ def _materialize_sandbox(
     (work_dir / "program.md").write_text(
         _build_program_md(task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs)
     )
-    (work_dir / "candidate.txt").write_text(task.seed_candidate or "")
-    (work_dir / "best_candidate.txt").write_text(task.seed_candidate or "")
+    (work_dir / "candidate.txt").write_text(seed_as_text(task.seed_candidate))
+    (work_dir / "best_candidate.txt").write_text(seed_as_text(task.seed_candidate))
 
     eval_template = EVAL_SCRIPT_DATASET if task.has_dataset else EVAL_SCRIPT_SINGLE
     eval_script = work_dir / "eval.sh"
@@ -532,7 +533,7 @@ class AutoResearchEngine:
                 if iter_cost < 0.001:
                     break
 
-        best_candidate = best_file.read_text() if best_file.exists() else (task.seed_candidate or "")
+        best_candidate = best_file.read_text() if best_file.exists() else seed_as_text(task.seed_candidate)
         best_score = server.best_score
         if task.has_dataset:
             aggregate_best = _best_aggregate_candidate(server)

@@ -33,7 +33,7 @@ import warnings
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Legacy launcher surface, re-exported so v0.1.x-era code that did
 # ``from gepa.optimize_anything import GEPAConfig, ...`` keeps working against
@@ -282,7 +282,9 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
         result = engine.run(task, server)
     except BudgetExhausted:
         result = Result(
-            best_candidate=server.best_candidate,
+            # A dict best rides through on the gepa/dict-seed path, matching
+            # GepaEngine.run's own ``cast`` at the Result boundary.
+            best_candidate=cast(str, server.best_candidate),
             best_score=server.best_score,
         )
     finally:
@@ -322,7 +324,9 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
     return result
 
 
-def _score_test(server: EvalServer, task: Task, candidate: str | None) -> tuple[dict[str, float], float] | None:
+def _score_test(
+    server: EvalServer, task: Task, candidate: str | dict[str, str] | None
+) -> tuple[dict[str, float], float] | None:
     """Score ``candidate`` on the held-out ``test_set``, outside the budget.
 
     Returns ``(per_example_scores, average)`` or ``None`` when there is no
@@ -459,6 +463,5 @@ def __getattr__(name: str) -> Any:
         if obj is not None:
             return obj
     raise AttributeError(
-        f"module {__name__!r} has no attribute {name!r}. "
-        "The legacy launcher surface now lives in 'gepa.gepa_launcher'."
+        f"module {__name__!r} has no attribute {name!r}. The legacy launcher surface now lives in 'gepa.gepa_launcher'."
     )

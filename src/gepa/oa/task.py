@@ -53,3 +53,19 @@ class Task:
     @property
     def has_dataset(self) -> bool:
         return self.train_set is not None or self.val_set is not None or self.test_set is not None
+
+
+def seed_as_text(seed: str | dict[str, str] | None) -> str:
+    """Flatten a seed candidate to a single text string.
+
+    Only the ``gepa`` engine co-optimizes a ``{component: text}`` dict; every
+    other engine treats the seed as one text (per :class:`Task`). Those engines
+    call this to get a plain string: ``None`` becomes ``""``, a string passes
+    through, and a multi-component dict is joined into one text so it can still
+    seed a single-text run instead of crashing (``dict`` had no ``write_text``).
+    """
+    if seed is None:
+        return ""
+    if isinstance(seed, str):
+        return seed
+    return "\n\n".join(seed.values())

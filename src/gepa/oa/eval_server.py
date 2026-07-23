@@ -174,7 +174,10 @@ class EvalServer:
         self.budget = budget
         self.max_concurrency = max_concurrency
         self.best_score: float = float("-inf")
-        self.best_candidate: str = task.seed_candidate or ""
+        # A dict seed is a legal multi-component candidate (see ``_track``,
+        # which already reads/stores dict candidates), so the tracked best is
+        # ``str | dict``, not ``str``.
+        self.best_candidate: str | dict[str, str] = task.seed_candidate or ""
         self.total_cost: float = 0.0
         self.eval_log: list[dict[str, Any]] = []
         self._start_time: float = time.time()

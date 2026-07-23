@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from gepa.lm import LM
 from gepa.oa.engine import Result
+from gepa.oa.task import seed_as_text
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -129,7 +130,7 @@ class BestOfNEngine:
         prompt = _build_prompt(task)
 
         best_score = float("-inf")
-        best_candidate = task.seed_candidate or ""
+        best_candidate = seed_as_text(task.seed_candidate)
         eval_log: list[dict[str, Any]] = []
         n_samples = 0
         n_parse_failures = 0

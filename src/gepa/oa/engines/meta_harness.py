@@ -19,11 +19,12 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
+from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
 if TYPE_CHECKING:
@@ -235,7 +236,7 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
 
     agents_dir = work_dir / "agents"
     agents_dir.mkdir(exist_ok=True)
-    (agents_dir / "baseline.txt").write_text(task.seed_candidate or "")
+    (agents_dir / "baseline.txt").write_text(seed_as_text(task.seed_candidate))
 
     (work_dir / "scratch").mkdir(exist_ok=True)
     state_dir = work_dir / "state"
@@ -900,7 +901,7 @@ class MetaHarnessEngine:
             f"evals={budget.used} proposer_cost=${total_proposer_cost:.3f}"
         )
 
-        best_candidate = server.best_candidate
+        best_candidate = cast(str, server.best_candidate)
         best_score = self._best_score(frontier_path)
         frontier = self._read_frontier(frontier_path)
         best_file = frontier.get("best_candidate_file") if frontier else None
