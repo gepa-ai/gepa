@@ -84,7 +84,7 @@ Two additional effects keep the speedup from scaling indefinitely with $k$. Firs
 
 <figure markdown="span">
   ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, and a dotted baseline. Time falls from 7.7 hours to about 2 on LiveBench-Math and from 61 to 14 minutes on HoVer, while test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 46.5.](images/scaling_lines.png){ style="width: 100%;" }
-  <figcaption>Held-out test performance (left axis) and optimization time (right axis) for every setting at the same metric-call budget per task. Runtime depends on the product P·N, falling with diminishing returns as the width grows, and several settings also score higher on test.</figcaption>
+  <figcaption>As the per-step width P·N scales up, runtime falls with diminishing returns, and several settings score higher than single mutation.</figcaption>
 </figure>
 
 ### Better final solutions with less overfitting
