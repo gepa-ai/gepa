@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -256,3 +257,113 @@ def claude_permission_args(
         if settings:
             return settings
     return ["--permission-mode", "bypassPermissions"]
+
+
+def _boxed_message(title: str, lines: list[str]) -> str:
+    """Render ``title`` + ``lines`` inside a big ASCII box for stderr."""
+    width = max(len(title), *(len(line) for line in lines), 60)
+    bar = "+" + "=" * (width + 4) + "+"
+    rows = [bar, f"|  {title:<{width}}  |", f"|  {'':<{width}}  |"]
+    rows += [f"|  {line:<{width}}  |" for line in lines]
+    rows.append(bar)
+    return "\n".join(rows)
+
+
+def require_claude_cli(engine_name: str) -> None:
+    """Abort with a boxed error when the ``claude`` CLI is not on PATH.
+
+    The subprocess engines (autoresearch, meta_harness) drive their whole
+    optimization loop through ``claude --print``; without the CLI the run
+    would only die later with a bare ``FileNotFoundError`` from
+    ``subprocess``. Fail up front with instructions instead.
+    """
+    if shutil.which("claude"):
+        return
+    print(
+        _boxed_message(
+            "CLAUDE CODE CLI NOT FOUND",
+            [
+                f"The {engine_name!r} engine drives its optimization loop with the",
+                "Claude Code CLI (`claude`), but no `claude` executable is on PATH.",
+                "",
+                "Install Claude Code first:",
+                "  npm install -g @anthropic-ai/claude-code",
+                "  (or: curl -fsSL https://claude.ai/install.sh | bash)",
+                "then run `claude` once to authenticate, and retry.",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    raise RuntimeError(
+        f"the {engine_name!r} engine requires the Claude Code CLI (`claude`), which was not found on PATH"
+    )
+
+
+def require_bwrap(engine_name: str) -> None:
+    """Abort with a boxed error when ``sandbox=True`` can't be honored.
+
+    Linux-only check: the jail is built with bubblewrap (:func:`bwrap_prefix`),
+    so a missing ``bwrap`` binary means no OS confinement at all. macOS always
+    passes — Seatbelt ships with the OS.
+    """
+    if _IS_MACOS or shutil.which("bwrap"):
+        return
+    print(
+        _boxed_message(
+            "SANDBOX UNAVAILABLE: bwrap NOT FOUND",
+            [
+                "sandbox=True jails the Claude Code subprocess with bubblewrap on",
+                "Linux, but no `bwrap` executable is on PATH.",
+                "",
+                "Install it:",
+                "  sudo apt install bubblewrap   (Debian/Ubuntu)",
+                "  sudo dnf install bubblewrap   (Fedora/RHEL)",
+                "",
+                "Or pass OptimizeAnythingConfig(sandbox=False) to run unsandboxed",
+                "(the agent then gets unrestricted access to this machine).",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    raise RuntimeError(
+        f"sandbox=True on the {engine_name!r} engine but `bwrap` (bubblewrap) was not found on PATH; "
+        "install bubblewrap or set sandbox=False"
+    )
+
+
+def warn_sandbox_disabled(engine_name: str) -> None:
+    """Print a boxed warning when the user opts out of sandboxing. Continues."""
+    print(
+        _boxed_message(
+            "SANDBOX DISABLED",
+            [
+                f"sandbox=False: the {engine_name!r} engine's Claude Code subprocess",
+                "runs with --permission-mode bypassPermissions and NO OS-level",
+                "confinement — unrestricted Bash plus read/write access to your",
+                "files as this user. Only web tools (WebFetch/WebSearch) are",
+                "disabled. While normally harmless, this is potentially DANGEROUS!",
+                "",
+                "Set sandbox=True (the default) to confine it to a throwaway",
+                "work dir (bwrap on Linux, Seatbelt on macOS).",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def preflight_claude_engine(engine_name: str, *, sandbox: bool) -> None:
+    """Run all launch-time checks for a claude-subprocess engine.
+
+    Called at the top of ``run()`` by engines that shell out to ``claude``
+    (autoresearch, meta_harness): verifies the CLI exists, then either
+    verifies the jail can be built (``sandbox=True``) or warns loudly that
+    the agent will run unconfined (``sandbox=False``).
+    """
+    require_claude_cli(engine_name)
+    if sandbox:
+        require_bwrap(engine_name)
+    else:
+        warn_sandbox_disabled(engine_name)

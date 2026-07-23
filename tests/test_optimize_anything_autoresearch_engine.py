@@ -2,10 +2,18 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engines.autoresearch import AutoResearchEngine
 from gepa.oa.task import Task
+
+
+@pytest.fixture(autouse=True)
+def _skip_claude_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests mock the claude subprocess; skip the CLI/bwrap preflight."""
+    monkeypatch.setattr("gepa.oa.engines.autoresearch.preflight_claude_engine", lambda *a, **k: None)
 
 
 class _FakeServer:
@@ -50,7 +58,9 @@ def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path)
         return _FakePopen(0, json.dumps({"total_cost_usd": cost}))
 
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), max_token_cost=1.0, engine_config={})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), max_token_cost=1.0, engine_config={}
+        )
     )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
@@ -77,7 +87,9 @@ def test_autoresearch_engine_can_disable_ralph(tmp_path: Path) -> None:
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), engine_config={"ralph": False})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
     )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
@@ -99,7 +111,9 @@ def test_autoresearch_engine_string_false_disables_ralph(tmp_path: Path) -> None
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), engine_config={"ralph": "false"})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": "false"}
+        )
     )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
@@ -121,7 +135,9 @@ def test_autoresearch_engine_ralph_respects_stop_at_score(tmp_path: Path) -> Non
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), stop_at_score=1.0, engine_config={})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), stop_at_score=1.0, engine_config={}
+        )
     )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
@@ -144,7 +160,9 @@ def test_autoresearch_engine_counts_failed_resume_cost(tmp_path: Path) -> None:
             return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
         return _FakePopen(1, json.dumps({"total_cost_usd": 0.1}), stderr="failed")
 
-    engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), engine_config={}))
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={})
+    )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
         result = engine.run(task, server)
@@ -191,6 +209,7 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
         OptimizeAnythingConfig(
             engine="autoresearch",
             run_dir=str(tmp_path / "run"),
+            sandbox=False,
             engine_config={"ralph": False, "handoffs": handoffs},
         )
     )

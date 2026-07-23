@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
@@ -644,6 +644,7 @@ class MetaHarnessEngine:
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
+        preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
         budget = server.budget
 
         # When sandbox=True, force tempdir work_dir even if run_dir is set —
