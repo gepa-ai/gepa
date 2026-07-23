@@ -14,7 +14,7 @@ slug: optimize-anything-omni
 readtime: 15
 title: "optimize_anything Goes omni: Composing Optimizers into Meta-Optimizer Pipelines"
 description: "optimize_anything now supports customizable optimizers that can be composed into meta-optimizer pipelines. Why compose? Because no single optimizer wins everywhere. Our omni meta-optimizer combines the best of each and beats every standalone optimizer on Frontier-CS tasks under a matched budget."
-social_image: blog/2026-05-28-optimize-anything-omni/images/omni_design.png
+social_image: blog/2026-07-22-optimize-anything-omni/images/omni_social.png
 citation_authors:
   - "Shangyin Tan"
   - "Lakshya A Agrawal"
@@ -230,4 +230,4 @@ register_engine("my_engine", MyEngine)
 
 Once registered, users pick your engine exactly like the built-ins — `config=OptimizeAnythingConfig(engine="my_engine")` — and every composition helper works with it. Running `optimize_best_of` with `MyEngine` alongside GEPA and AutoResearch, or slotting it into `optimize_adaptive_sequential` as an unstuck-the-plateau step, is a one-line configuration change. And the plateau story from earlier is the argument: engines that get stuck where GEPA doesn't (and vice versa) make every composition strictly better.
 
-The built-in [`best_of_n`](https://github.com/gepa-ai/gepa/blob/feat/optimize-anything-omni/src/gepa/oa/engines/best_of_n.py) engine — sample from one LLM call, evaluate, keep the best — is a ~150-line end-to-end reference for how a from-scratch engine reads `config.engine_config`, honors the two budgets, and streams to `eval_log`. If you'd like your optimizer to ship with `optimize_anything`, open a PR against [gepa-ai/gepa](https://github.com/gepa-ai/gepa); we'd love to make it available to every downstream user.
+The built-in [`best_of_n`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/oa/engines/best_of_n.py) engine — sample from one LLM call, evaluate, keep the best — is a ~230-line end-to-end reference for how a from-scratch engine reads `config.engine_config`, honors the two budgets, and streams to `eval_log`. If you'd like your optimizer to ship with `optimize_anything`, open a PR against [gepa-ai/gepa](https://github.com/gepa-ai/gepa); we'd love to make it available to every downstream user.

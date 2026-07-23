@@ -1,14 +1,13 @@
-"""Regenerate the omni blog-post figures that carry the pipeline name.
+"""Regenerate the omni blog-post figures that carry the meta-optimizer name.
 
-Produces (into the 2026-05-28-optimize-anything-omni post's images/ dir):
+Produces (into the 2026-07-22-optimize-anything-omni post's images/ dir):
 
-- ``omni_bar.png`` — headline bar chart: standalone engines vs the composed
-  omni pipeline on Frontier-CS.
-- ``omni_design.png`` — the two-phase pipeline diagram (also the post's
-  social-preview image).
+- ``omni_bar.png`` — headline bar chart: standalone engines vs the omni
+  meta-optimizer on Frontier-CS.
+- ``omni_design.png`` — the two-phase meta-optimizer diagram.
 
 The other two figures in the post (``optimizer_variance.png``,
-``unstuck_frontier_cs.png``) carry no pipeline-name text and are untouched.
+``unstuck_frontier_cs.png``) carry no meta-optimizer-name text and are untouched.
 
 Usage:
     uv run --with matplotlib python docs/scripts/blog_omni_figures.py
@@ -24,11 +23,11 @@ IMAGES = (
     / "docs"
     / "blog"
     / "posts"
-    / "2026-05-28-optimize-anything-omni"
+    / "2026-07-22-optimize-anything-omni"
     / "images"
 )
 
-PIPELINE = "omni"
+META_OPTIMIZER = "omni"
 
 NAVY_BAR = "#26466b"
 GRAY_BAR = "#c4c4c4"
@@ -40,7 +39,7 @@ FILL_DARK = "#eaf1fe"
 
 def make_bar() -> None:
     """Headline bar: GEPA / AutoResearch / Meta-Harness standalone vs omni."""
-    labels = ["GEPA", "AutoResearch", "Meta-Harness", PIPELINE]
+    labels = ["GEPA", "AutoResearch", "Meta-Harness", META_OPTIMIZER]
     scores = [43.8, 55.4, 50.9, 63.2]
     colors = [GRAY_BAR, GRAY_BAR, GRAY_BAR, NAVY_BAR]
 
@@ -68,7 +67,7 @@ def make_bar() -> None:
     ax.legend(
         handles=[
             Patch(color=GRAY_BAR, label="Standalone ($20)"),
-            Patch(color=NAVY_BAR, label=f"{PIPELINE} ($20)"),
+            Patch(color=NAVY_BAR, label=f"{META_OPTIMIZER} ($20)"),
         ],
         loc="upper left",
         fontsize=20,
@@ -121,7 +120,7 @@ def _arrow(ax, start: tuple[float, float], end: tuple[float, float], rad: float)
 
 
 def make_design() -> None:
-    """Two-phase pipeline diagram: parallel explore -> pick best -> fresh continuation."""
+    """Two-phase meta-optimizer diagram: parallel explore -> pick best -> fresh continuation."""
     fig, ax = plt.subplots(figsize=(31.56, 9.32), dpi=100)
     ax.set_xlim(0, 3156)
     ax.set_ylim(932, 0)  # y down, matching image coordinates
@@ -140,7 +139,7 @@ def make_design() -> None:
     # Phase 2: fresh continuation engines and the named variants.
     for y, engine in zip(rows, engines, strict=True):
         _box(ax, 1983, y, 490, 158, f"Fresh {engine}", "$5", FILL_LIGHT)
-        _box(ax, 2830, y, 580, 158, f"{PIPELINE}-{engine}", "$20", FILL_DARK)
+        _box(ax, 2830, y, 580, 158, f"{META_OPTIMIZER}-{engine}", "$20", FILL_DARK)
 
     # Converging arrows into Pick Best (heads fanned slightly so all three
     # stay visible), diverging out to the fresh engines.
