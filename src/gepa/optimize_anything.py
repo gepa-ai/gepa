@@ -100,7 +100,7 @@ def optimize_anything(
     background: str | None = None,
     test_set: list[Any] | None = None,
     config: OptimizeAnythingConfig | GEPAConfig | None = None,
-) -> Result:
+) -> Result | GEPAResult:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
     The signature mirrors :func:`gepa.gepa_launcher.optimize_anything`
@@ -150,17 +150,28 @@ def optimize_anything(
             at least one of ``config.max_evals`` or ``config.max_token_cost``
             must be set. When ``config.name`` is omitted, a name is generated
             from the engine, a short uuid, and a timestamp. A legacy
-            :class:`GEPAConfig` is also accepted and converted (the run uses
-            the gepa engine and returns the standard :class:`Result`).
+            :class:`GEPAConfig` is also accepted and converted; the run uses
+            the gepa engine and returns the launcher's
+            :class:`~gepa.core.result.GEPAResult`.
 
     Returns:
         A :class:`Result` with ``best_candidate``, ``best_score``,
-        ``total_evals``, ``eval_log``, and ``metadata``.
+        ``total_evals``, ``eval_log``, and ``metadata`` — or, when ``config``
+        is a legacy :class:`GEPAConfig`, the underlying
+        :class:`~gepa.core.result.GEPAResult` (``candidates``, ``best_idx``,
+        ``val_aggregate_scores``, ...) so v0.1.x callers get the result shape
+        they were written against.
     """
+    legacy_config = False
     if config is None:
         config = OptimizeAnythingConfig()
     elif not isinstance(config, OptimizeAnythingConfig):
+        if test_set is not None:
+            raise ValueError(
+                "test_set requires an OptimizeAnythingConfig; the legacy GEPAConfig API has no held-out test pass."
+            )
         config = _from_legacy_config(config)
+        legacy_config = True
     if evaluator is None and batch_evaluator is None:
         raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
     if config.max_evals is None and config.max_token_cost is None:
@@ -192,7 +203,12 @@ def optimize_anything(
         max_concurrency=config.max_concurrency,
         output_dir=output_dir,
     )
-    return _run_engine(server, engine, owns_server=True)
+    result = _run_engine(server, engine, owns_server=True)
+    if legacy_config:
+        # v0.1.x callers get the launcher's result type back — the gepa engine
+        # stashes the underlying GEPAResult in the result metadata.
+        return result.metadata.get("gepa_result", result)
+    return result
 
 
 def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
