@@ -756,6 +756,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     continue
                 mapping[cand_idx] = str(trace_i + 1)
             d["iteration_ids_by_candidate_idx"] = [mapping.get(i, "-1") for i in range(num_candidates)]
+        # Trace entries created before the on-disk iteration layout (schema 6)
+        # carry no ``iteration_id``. Stamp the deterministic legacy anchor
+        # (``trace_i + 1``, matching the accepted-candidate mapping above) so
+        # consumers that rely on ``entry["iteration_id"]`` — the agent-state
+        # writer (``_save_iteration_dirs``) and ``current_iteration_id`` — keep
+        # working when an old run is resumed with ``write_agent_state=True``.
+        for entry in d.get("full_program_trace", []):
+            if "iteration_id" not in entry:
+                trace_i = entry.get("i")
+                entry["iteration_id"] = str(trace_i + 1) if trace_i is not None else SEED_ITERATION_ID
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod

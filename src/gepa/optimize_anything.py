@@ -91,7 +91,7 @@ from gepa.oa.task import Task
 
 
 def optimize_anything(
-    seed_candidate: str | None = None,
+    seed_candidate: str | Candidate | None = None,
     *,
     evaluator: Callable[..., Any] | None = None,
     batch_evaluator: Callable[..., Any] | None = None,
@@ -111,9 +111,12 @@ def optimize_anything(
     :class:`OptimizeAnythingConfig` and adds ``test_set``.
 
     Args:
-        seed_candidate: The seed text to evolve from. ``None`` for seedless
-            mode, where the engine bootstraps the first candidate from
-            ``objective`` / ``background``.
+        seed_candidate: The seed to evolve from — either a single text string
+            or, for multi-component optimization, a ``{component: text}`` dict
+            (:data:`Candidate`) whose components are co-optimized. Dict seeds
+            are supported by the ``gepa`` engine; the other engines treat the
+            seed as a single text. ``None`` for seedless mode, where the engine
+            bootstraps the first candidate from ``objective`` / ``background``.
         evaluator: Scoring function returning ``(score, info)`` — a bare
             ``score`` is also accepted, with ``info`` defaulting to ``{}``. Use
             ``(candidate) -> (score, info)`` for a single task, or

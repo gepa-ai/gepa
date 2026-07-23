@@ -24,8 +24,11 @@ class Task:
 
     Attributes:
         name: Unique identifier (e.g. ``"circle_packing"``).
-        seed_candidate: Seed text to evolve from. ``None`` for seedless mode,
-            where the engine bootstraps the first candidate from ``objective`` /
+        seed_candidate: Seed to evolve from — a single text string, or a
+            ``{component: text}`` dict for multi-component optimization (the
+            ``gepa`` engine co-optimizes the components; other engines treat
+            the seed as a single text). ``None`` for seedless mode, where the
+            engine bootstraps the first candidate from ``objective`` /
             ``background``.
         objective: Short goal statement (e.g. "Maximize sum of circle radii").
             Surfaced verbatim by every engine as the optimization goal.
@@ -40,7 +43,7 @@ class Task:
     """
 
     name: str
-    seed_candidate: str | None = None
+    seed_candidate: str | dict[str, str] | None = None
     objective: str = ""
     background: str = ""
     train_set: list[Any] | None = None
