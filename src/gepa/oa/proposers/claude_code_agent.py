@@ -230,7 +230,7 @@ class ClaudeCodeAgentProposer:
         scratch dir name lines up 1:1 with ``iterations/<iteration_id>/``; falls
         back to ``YYYYmmddTHHMMSS-<pid>-<uuid8>`` otherwise. ``iteration_id`` is
         already a unique random id, so it disambiguates parallel proposals
-        (``num_parallel_proposals > 1``) on its own.
+        (a multi-proposal ``SamplingStrategy``) on its own.
         """
         self.run_dir.mkdir(parents=True, exist_ok=True)
         base = self.run_dir / self.subdir_prefix

@@ -555,8 +555,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # 1. Evaluate original candidate
         original_score, _original_output, original_side_info = self._call_evaluator(candidate, example)
 
-        # Update best evals with original evaluation
-        self._update_best_example_evals(example, original_score, original_side_info)
+        # Update best evals with original evaluation. Skip synthetic
+        # whole-batch failures (raise_on_exception=False): with only a
+        # batch_evaluator, ``_resolve_pair`` routes this singleton through it,
+        # so a transient infra error surfaces here as a placeholder 0.0 that
+        # would otherwise poison the warm-start pool (mirror of
+        # ``_assemble_no_refiner_batch``).
+        if not (isinstance(original_side_info, dict) and original_side_info.get("_gepa_transient_failure")):
+            self._update_best_example_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
         best_refined_score, best_refined_candidate, _best_refined_side_info, all_attempts = self._refine_and_evaluate(
@@ -695,6 +701,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Package outputs as (score, candidate, side_info) tuples.
         eval_output = [(score, (score, candidate, side_info), side_info) for score, _, side_info in raw_results]
         for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
+            # Synthetic whole-batch failure results (raise_on_exception=False)
+            # carry a placeholder 0.0 score; feeding them into the best-evals
+            # history would poison the warm-start pool with fake zero-score
+            # entries. They are excluded from the eval cache for the same
+            # reason (see ``_resolve_pair_cached``).
+            if isinstance(side_info, dict) and side_info.get("_gepa_transient_failure"):
+                continue
             self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]

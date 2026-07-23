@@ -508,18 +508,37 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 self.prog_candidate_val_subscores[0],
             )
 
-        # One dir per loop-trace entry (accepted and rejected proposals).
+        # One dir per accepted candidate (plus one per rejected proposal). A
+        # single loop iteration can accept more than one candidate when a
+        # multi-proposal sampling strategy is in use; each accepted candidate
+        # gets its own anchor (see ``_run_reflective_batch``), so we archive one
+        # dir per candidate rather than only the last.
         for entry in self.full_program_trace:
             trace_i = entry.get("i")
             if trace_i is None:
                 continue
-            # Every loop slot is stamped with its anchor at creation time.
-            iter_id = entry["iteration_id"]
-            base = f"iterations/{iter_id}"
-            if os.path.exists(os.path.join(run_dir, base, "meta.json")):
-                continue
             accepted = entry.get("proposal_accepted")
-            candidate_idx = entry.get("new_program_idx") if accepted else None
+
+            # Resolve the accepted candidate indices for this entry. Prefer the
+            # per-candidate list; fall back to the singular field for entries
+            # written before it existed (or by the merge path).
+            candidate_indices: list[int] = []
+            if accepted:
+                indices = entry.get("new_program_indices")
+                if not indices:
+                    single = entry.get("new_program_idx")
+                    indices = [single] if single is not None else []
+                candidate_indices = [ci for ci in indices if ci is not None]
+
+            # Each (dir id, candidate_idx) target: one per accepted candidate,
+            # anchored at that candidate's own iteration id; a rejected entry
+            # yields a single dir at the entry's anchor with no candidate.
+            entry_iter_id = entry["iteration_id"]
+            if candidate_indices:
+                targets = [(cand_to_iter.get(ci, entry_iter_id), ci) for ci in candidate_indices]
+            else:
+                targets = [(entry_iter_id, None)]
+
             parent_candidate_idx = entry.get("selected_program_candidate")
             parent_iter_ids = (
                 [cand_to_iter[parent_candidate_idx]]
@@ -527,43 +546,48 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 else []
             )
 
-            # The candidate text to archive under components/: for accepted
-            # iterations this is the newly accepted program; for rejected
-            # iterations it's the proposed (now discarded) candidate.
-            components: dict[str, str] | None = None
-            if accepted and candidate_idx is not None and candidate_idx < len(self.program_candidates):
-                components = self.program_candidates[candidate_idx]
-            elif "proposed_candidate" in entry and isinstance(entry["proposed_candidate"], dict):
-                components = entry["proposed_candidate"]
+            for iter_id, candidate_idx in targets:
+                base = f"iterations/{iter_id}"
+                if os.path.exists(os.path.join(run_dir, base, "meta.json")):
+                    continue
 
-            meta: dict[str, Any] = {
-                "iteration_id": iter_id,
-                "trace_i": trace_i,
-                "accepted": bool(accepted) if accepted is not None else None,
-                "parent_iteration_ids": parent_iter_ids,
-                "candidate_idx": candidate_idx,
-                "subsample_ids": entry.get("subsample_ids"),
-                "subsample_scores_before": entry.get("subsample_scores"),
-                "subsample_scores_after": entry.get("new_subsample_scores"),
-            }
-            val_subscores: dict[DataId, float] | None = None
-            if accepted and candidate_idx is not None and candidate_idx < len(self.prog_candidate_val_subscores):
-                avg_score, coverage = self.get_program_average_val_subset(candidate_idx)
-                meta["avg_val_score"] = avg_score
-                meta["num_val_scored"] = coverage
-                obj_scores = self.prog_candidate_objective_scores[candidate_idx]
-                if obj_scores:
-                    meta["objective_scores"] = obj_scores
-                metric_calls = (
-                    self.num_metric_calls_by_discovery[candidate_idx]
-                    if candidate_idx < len(self.num_metric_calls_by_discovery)
-                    else None
-                )
-                if metric_calls is not None:
-                    meta["metric_calls_to_discover"] = metric_calls
-                val_subscores = self.prog_candidate_val_subscores[candidate_idx]
+                # The candidate text to archive under components/: for accepted
+                # iterations this is the newly accepted program; for rejected
+                # iterations it's the proposed (now discarded) candidate.
+                components: dict[str, str] | None = None
+                if candidate_idx is not None and candidate_idx < len(self.program_candidates):
+                    components = self.program_candidates[candidate_idx]
+                elif "proposed_candidate" in entry and isinstance(entry["proposed_candidate"], dict):
+                    components = entry["proposed_candidate"]
 
-            write(base, meta, components, val_subscores)
+                meta: dict[str, Any] = {
+                    "iteration_id": iter_id,
+                    "trace_i": trace_i,
+                    "accepted": bool(accepted) if accepted is not None else None,
+                    "parent_iteration_ids": parent_iter_ids,
+                    "candidate_idx": candidate_idx,
+                    "subsample_ids": entry.get("subsample_ids"),
+                    "subsample_scores_before": entry.get("subsample_scores"),
+                    "subsample_scores_after": entry.get("new_subsample_scores"),
+                }
+                val_subscores: dict[DataId, float] | None = None
+                if candidate_idx is not None and candidate_idx < len(self.prog_candidate_val_subscores):
+                    avg_score, coverage = self.get_program_average_val_subset(candidate_idx)
+                    meta["avg_val_score"] = avg_score
+                    meta["num_val_scored"] = coverage
+                    obj_scores = self.prog_candidate_objective_scores[candidate_idx]
+                    if obj_scores:
+                        meta["objective_scores"] = obj_scores
+                    metric_calls = (
+                        self.num_metric_calls_by_discovery[candidate_idx]
+                        if candidate_idx < len(self.num_metric_calls_by_discovery)
+                        else None
+                    )
+                    if metric_calls is not None:
+                        meta["metric_calls_to_discover"] = metric_calls
+                    val_subscores = self.prog_candidate_val_subscores[candidate_idx]
+
+                write(base, meta, components, val_subscores)
 
     def _save_components_dir(self, run_dir: str, base: str, components: dict[str, str]) -> None:
         """Write ``<base>/components/<stem>.txt`` plus ``_index.json``."""
@@ -748,8 +772,12 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             # candidates -> their legacy (trace_i + 1) slot id.
             mapping: dict[int, str] = {0: SEED_ITERATION_ID}
             for entry in d.get("full_program_trace", []):
-                if not entry.get("proposal_accepted"):
-                    continue
+                # Key off ``new_program_idx``, not ``proposal_accepted``:
+                # pre-schema-6 trace entries never wrote a ``proposal_accepted``
+                # flag, but every accepted iteration stamped ``new_program_idx``
+                # (rejected iterations left it unset). Gating on the missing
+                # flag skipped every legacy candidate, mapping them all to the
+                # sentinel ``"-1"`` on resume.
                 cand_idx = entry.get("new_program_idx")
                 trace_i = entry.get("i")
                 if cand_idx is None or trace_i is None:

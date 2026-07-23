@@ -458,11 +458,18 @@ class EvalServer:
     def _register_candidate(self, candidate: str) -> int:
         # Tolerate non-str candidates (e.g. a legacy dict) — key by a stable dump.
         key = candidate if isinstance(candidate, str) else json.dumps(candidate, sort_keys=True)
-        if key in self._candidate_registry:
-            return self._candidate_registry[key]
-        cid = self._next_candidate_id
-        self._next_candidate_id += 1
-        self._candidate_registry[key] = cid
+        # Allocate the id and mutate the registry under the lock: log_progress
+        # can be called concurrently (HTTP handlers, batched valset evals), and
+        # an unlocked read-modify-write of ``_next_candidate_id`` /
+        # ``_candidate_registry`` could hand out duplicate ids or corrupt the
+        # dict. The lock is released before the (separately ``_io_lock``-guarded)
+        # file append, so no locks nest and there is no ordering hazard.
+        with self._lock:
+            if key in self._candidate_registry:
+                return self._candidate_registry[key]
+            cid = self._next_candidate_id
+            self._next_candidate_id += 1
+            self._candidate_registry[key] = cid
         if self.output_dir is not None:
             with self._io_lock:
                 with open(self.output_dir / "candidates.jsonl", "a") as f:
