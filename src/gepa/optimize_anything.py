@@ -99,8 +99,8 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     test_set: list[Any] | None = None,
-    config: OptimizeAnythingConfig | GEPAConfig | None = None,
-) -> Result | GEPAResult:
+    config: OptimizeAnythingConfig | None = None,
+) -> Result:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
     The signature mirrors :func:`gepa.gepa_launcher.optimize_anything`
@@ -209,7 +209,11 @@ def optimize_anything(
         # engine stashes the underlying GEPAResult in the result metadata. If
         # the eval budget died before GEPA core saved any state (e.g. budget
         # smaller than the valset), synthesize a single-candidate snapshot.
-        return result.metadata.get("gepa_result") or _legacy_result_from(result, seed_candidate)
+        # The public signature advertises only the new API; legacy
+        # GEPAConfig-in/GEPAResult-out is a runtime affordance, so the legacy
+        # result rides out through an Any-typed local.
+        legacy_result: Any = result.metadata.get("gepa_result") or _legacy_result_from(result, seed_candidate)
+        return legacy_result
     return result
 
 
