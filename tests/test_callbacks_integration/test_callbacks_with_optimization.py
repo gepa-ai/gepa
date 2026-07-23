@@ -82,6 +82,15 @@ class RecordingCallback:
     def on_merge_rejected(self, event):
         self._record("on_merge_rejected", event)
 
+    def on_crossover_attempted(self, event):
+        self._record("on_crossover_attempted", event)
+
+    def on_crossover_accepted(self, event):
+        self._record("on_crossover_accepted", event)
+
+    def on_crossover_rejected(self, event):
+        self._record("on_crossover_rejected", event)
+
     def on_pareto_front_updated(self, event):
         self._record("on_pareto_front_updated", event)
 

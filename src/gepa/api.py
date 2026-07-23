@@ -21,6 +21,7 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
+from gepa.proposer.crossover import CrossoverProposer
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
@@ -68,6 +69,10 @@ def optimize(
     use_merge: bool = False,
     max_merge_invocations: int = 5,
     merge_val_overlap_floor: int = 5,
+    # Crossover-based configuration
+    use_crossover: bool = False,
+    max_crossover_invocations: int = 5,
+    crossover_min_win_asymmetry: int = 2,
     # Budget and Stop Condition
     max_metric_calls: int | None = None,
     max_reflection_cost: float | None = None,
@@ -166,6 +171,11 @@ def optimize(
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
     - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than `full_eval`.
+
+    # Crossover-based configuration
+    - use_crossover: Whether to use the crossover strategy, which recombines two Pareto candidates with complementary per-instance win-sets by asking the reflection LM to synthesize a single component text from both parents. Unlike merge, crossover does not require a shared ancestor and synthesizes rather than swaps component texts. Requires a `reflection_lm` (the synthesis uses the reflection cost axis, not the metric-call budget).
+    - max_crossover_invocations: The maximum number of crossover invocations to perform.
+    - crossover_min_win_asymmetry: Minimum number of validation instances each parent must uniquely win before the pair is eligible for crossover. Higher values require more clearly complementary parents.
 
     # Budget and Stop Condition
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
@@ -438,6 +448,26 @@ def optimize(
             callbacks=callbacks,
         )
 
+    crossover_proposer: CrossoverProposer | None = None
+    if use_crossover:
+        if reflection_lm_callable is None:
+            raise ValueError(
+                "use_crossover=True requires a reflection_lm: crossover synthesizes a new "
+                "component text from two parents using the reflection LM. Provide reflection_lm, "
+                "or set use_crossover=False."
+            )
+        crossover_proposer = CrossoverProposer(
+            logger=logger,
+            valset=val_loader,
+            evaluator=evaluator_fn,
+            reflection_lm=reflection_lm_callable,
+            use_crossover=use_crossover,
+            max_crossover_invocations=max_crossover_invocations,
+            min_win_asymmetry=crossover_min_win_asymmetry,
+            rng=rng,
+            callbacks=callbacks,
+        )
+
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=run_dir,
@@ -447,6 +477,7 @@ def optimize(
         seed=seed,
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
+        crossover_proposer=crossover_proposer,
         frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,

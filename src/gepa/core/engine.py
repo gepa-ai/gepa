@@ -19,6 +19,9 @@ from gepa.core.callbacks import (
     BudgetUpdatedEvent,
     CandidateAcceptedEvent,
     CandidateRejectedEvent,
+    CrossoverAcceptedEvent,
+    CrossoverAttemptedEvent,
+    CrossoverRejectedEvent,
     ErrorEvent,
     GEPACallback,
     IterationEndEvent,
@@ -48,6 +51,7 @@ from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.base import CandidateProposal
+from gepa.proposer.crossover import CrossoverProposer
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
@@ -144,6 +148,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        # Crossover (LLM-synthesized recombination); scheduled like merge
+        crossover_proposer: CrossoverProposer | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -176,11 +182,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
+        self.crossover_proposer = crossover_proposer
         self.frontier_type: FrontierType = frontier_type
 
         # Merge scheduling flags (mirroring previous behavior)
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
+        if self.crossover_proposer is not None:
+            self.crossover_proposer.last_iter_found_new_program = False
 
         self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
         self.selection_strategy: SelectionStrategy = selection_strategy or AllImprovements()
@@ -693,6 +702,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 self.merge_proposer.last_iter_found_new_program = True
                 if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
                     self.merge_proposer.merges_due += 1
+            if self.crossover_proposer is not None:
+                self.crossover_proposer.last_iter_found_new_program = True
+                if self.crossover_proposer.total_crossovers_tested < self.crossover_proposer.max_crossover_invocations:
+                    self.crossover_proposer.crossovers_due += 1
 
         if self.write_agent_state:
             trace_entry["proposal_accepted"] = any_accepted
@@ -897,6 +910,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Merge scheduling
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
+        if self.crossover_proposer is not None:
+            self.crossover_proposer.last_iter_found_new_program = False
 
         # Main loop
         last_pbar_val = 0
@@ -1027,6 +1042,83 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                     # Old behavior: regardless of whether we attempted, clear the flag before reflective
                     self.merge_proposer.last_iter_found_new_program = False
+
+                # 1b) Attempt crossover (LLM-synthesized recombination across lineages)
+                if self.crossover_proposer is not None and self.crossover_proposer.use_crossover:
+                    if (
+                        self.crossover_proposer.crossovers_due > 0
+                        and self.crossover_proposer.last_iter_found_new_program
+                    ):
+                        proposal = self.crossover_proposer.propose(state)
+                        self.crossover_proposer.last_iter_found_new_program = False
+
+                        if proposal is not None and proposal.tag == "crossover":
+                            parent_sums = proposal.subsample_scores_before or [
+                                float("-inf"),
+                                float("-inf"),
+                            ]
+                            new_sum = sum(proposal.subsample_scores_after or [])
+                            component = str((proposal.metadata or {}).get("component", ""))
+
+                            notify_callbacks(
+                                self.callbacks,
+                                "on_crossover_attempted",
+                                CrossoverAttemptedEvent(
+                                    iteration=state.i + 1,
+                                    parent_ids=proposal.parent_program_ids,
+                                    component=component,
+                                    crossover_candidate=proposal.candidate,
+                                ),
+                            )
+
+                            if new_sum >= max(parent_sums):
+                                new_idx, _ = self._run_full_eval_and_add(
+                                    new_program=proposal.candidate,
+                                    state=state,
+                                    parent_program_idx=proposal.parent_program_ids,
+                                )
+                                self.crossover_proposer.crossovers_due -= 1
+                                self.crossover_proposer.total_crossovers_tested += 1
+                                proposal_accepted = True
+
+                                notify_callbacks(
+                                    self.callbacks,
+                                    "on_crossover_accepted",
+                                    CrossoverAcceptedEvent(
+                                        iteration=state.i + 1,
+                                        new_candidate_idx=new_idx,
+                                        parent_ids=proposal.parent_program_ids,
+                                    ),
+                                )
+                                notify_callbacks(
+                                    self.callbacks,
+                                    "on_candidate_accepted",
+                                    CandidateAcceptedEvent(
+                                        iteration=state.i + 1,
+                                        new_candidate_idx=new_idx,
+                                        new_score=new_sum,
+                                        parent_ids=proposal.parent_program_ids,
+                                    ),
+                                )
+                                continue  # skip reflective this iteration
+                            else:
+                                self.logger.log(
+                                    f"Iteration {state.i + 1}: Crossover subsample score {new_sum} "
+                                    f"is worse than both parents {parent_sums}, skipping crossover"
+                                )
+                                notify_callbacks(
+                                    self.callbacks,
+                                    "on_crossover_rejected",
+                                    CrossoverRejectedEvent(
+                                        iteration=state.i + 1,
+                                        parent_ids=proposal.parent_program_ids,
+                                        reason=f"Crossover score {new_sum} worse than both parents {parent_sums}",
+                                    ),
+                                )
+                                continue  # skip reflective this iteration
+
+                    # Regardless of whether we attempted, clear the flag before reflective
+                    self.crossover_proposer.last_iter_found_new_program = False
 
                 # 2) Reflective mutation proposer
                 proposals = self.reflective_proposer.propose(state)
