@@ -296,7 +296,7 @@ def test_nonempty_new_texts_still_produces_a_proposal():
 
 
 def test_reflection_config_accepts_reflection_strategy():
-    from gepa.optimize_anything import ReflectionConfig
+    from gepa.gepa_launcher import ReflectionConfig
 
     stub = _ReflectOnlyLM()
     assert ReflectionConfig(reflection_strategy=stub).reflection_strategy is stub

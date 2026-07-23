@@ -4,9 +4,23 @@ Welcome to the GEPA API Reference. This documentation is auto-generated from the
 
 ## optimize_anything
 
-The primary public API for GEPA. Optimize any text artifact with LLM-guided evolution — bring a seed candidate and an evaluator, and GEPA handles the rest.
+The primary public API for GEPA. Define a task, provide an evaluator, and choose an optimization engine.
 
 - [`optimize_anything`](optimize_anything/optimize_anything.md)
+- [`Task`](optimize_anything/Task.md)
+- [`OptimizeAnythingConfig`](optimize_anything/OptimizeAnythingConfig.md)
+- [`Engine`](optimize_anything/Engine.md)
+- [`Result`](optimize_anything/Result.md)
+- [`EvalServer`](optimize_anything/EvalServer.md)
+- [`BudgetTracker`](optimize_anything/BudgetTracker.md)
+- [`optimize_anything_with_server`](optimize_anything/optimize_anything_with_server.md)
+- [`list_engines`](optimize_anything/list_engines.md)
+- [`register_engine`](optimize_anything/register_engine.md)
+
+## GEPA Engine
+
+Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.
+
 - [`GEPAConfig`](optimize_anything/GEPAConfig.md)
 - [`EngineConfig`](optimize_anything/EngineConfig.md)
 - [`ReflectionConfig`](optimize_anything/ReflectionConfig.md)
@@ -123,4 +137,3 @@ Strategies for various aspects of the optimization process.
 - [`EvaluationPolicy`](strategies/EvaluationPolicy.md)
 - [`FullEvaluationPolicy`](strategies/FullEvaluationPolicy.md)
 - [`InstructionProposalSignature`](strategies/InstructionProposalSignature.md)
-

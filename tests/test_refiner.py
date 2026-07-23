@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gepa.optimize_anything import (
+from gepa.gepa_launcher import (
     DEFAULT_REFINER_PROMPT,
     EngineConfig,
     GEPAConfig,
@@ -354,7 +354,7 @@ class TestRefiner:
         by _evaluate_single_with_refinement.
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         call_counter = {"count": 0}
 
@@ -429,7 +429,7 @@ class TestRefiner:
         improve a deliberately bad seed (number=0, score=-42).
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -499,7 +499,7 @@ class TestRefiner:
     def test_refiner_score_never_worse(self):
         """Test the max(original, refined) guarantee — refiner can only help, never hurt."""
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -543,7 +543,6 @@ class TestRefiner:
             f"Final score ({score}) must be >= original ({original_score}) — the refiner should never make things worse"
         )
 
-
     def test_refiner_fallback_scores_when_all_refinements_fail(self):
         """When all refinement attempts fail (e.g. JSON parse errors), best_refined_scores
         should fall back to the original evaluation's scores, not remain empty.
@@ -551,7 +550,7 @@ class TestRefiner:
         and failed attempts have placeholder score=0.0.
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -589,9 +588,7 @@ class TestRefiner:
             "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
         }
 
-        score, output, side_info = adapter._evaluate_single_with_refinement(
-            candidate, _SINGLE_INSTANCE_SENTINEL
-        )
+        score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         refiner_info = side_info["refiner_prompt_specific_info"]
 

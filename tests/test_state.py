@@ -115,6 +115,277 @@ def test_gepa_state_save_and_initialize(run_dir):
     assert state.__dict__ == result.__dict__
 
 
+def test_agent_state_directory_layout(run_dir):
+    """save(write_agent_state=True) writes a unified iterations/ tree.
+
+    Seed lands at iterations/seed/ (is_seed=True); there are no separate
+    ``candidates/`` or ``rejected_proposals/`` trees any more.
+    """
+    seed = {"system_prompt": "You are helpful."}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out0", 1: "out1", 2: "out2"},
+        scores_by_val_id={0: 0.3, 1: 0.7, 2: 0.5},
+        objective_scores_by_val_id={
+            0: {"accuracy": 0.3, "latency": 0.9},
+            1: {"accuracy": 0.7, "latency": 0.8},
+            2: {"accuracy": 0.5, "latency": 0.7},
+        },
+    )
+
+    state = state_mod.GEPAState(seed, valset_out, frontier_type="hybrid")
+    state.total_num_evals = 10
+    state.num_full_ds_evals = 1
+    state.save(run_dir, write_agent_state=True)
+
+    run_dir_path = Path(str(run_dir))
+
+    # Top-level index is the small navigation file.
+    with open(run_dir_path / "gepa_state.json") as f:
+        index = json.load(f)
+    assert index["schema_version"] == 3
+    assert index["frontier_type"] == "hybrid"
+    assert index["iteration"] == state.i
+    assert index["component_names"] == ["system_prompt"]
+    assert index["summary"]["num_iterations"] == 1
+    assert index["summary"]["best_iteration_id"] == "seed"
+    assert index["summary"]["hardest_examples"][0]["best_score"] == 0.3
+    assert index["layout"] == {"iterations_dir": "iterations/", "pareto_dir": "pareto/"}
+
+    # Legacy trees must be absent.
+    assert not (run_dir_path / "candidates").exists()
+    assert not (run_dir_path / "rejected_proposals").exists()
+
+    # Seed iteration subtree.
+    seed_meta_path = run_dir_path / "iterations" / "seed" / "meta.json"
+    assert seed_meta_path.exists()
+    with open(seed_meta_path) as f:
+        meta = json.load(f)
+    assert meta["iteration_id"] == "seed"
+    assert meta["is_seed"] is True
+    assert meta["accepted"] is True
+    assert meta["candidate_idx"] == 0
+    assert meta["num_val_scored"] == 3
+    assert meta["parent_iteration_ids"] == []
+    assert meta["avg_val_score"] == pytest.approx(0.5)
+
+    with open(run_dir_path / "iterations" / "seed" / "val_scores.json") as f:
+        val_scores = json.load(f)
+    assert val_scores == {"0": 0.3, "1": 0.7, "2": 0.5}
+
+    # Component text lives as raw .txt, mapped from real name via _index.json.
+    with open(run_dir_path / "iterations" / "seed" / "components" / "_index.json") as f:
+        comp_index = json.load(f)
+    assert comp_index == {"system_prompt": "system_prompt.txt"}
+    comp_path = run_dir_path / "iterations" / "seed" / "components" / "system_prompt.txt"
+    assert comp_path.read_text() == "You are helpful."
+
+    # Pareto subtree — only files matching frontier_type should exist.
+    assert (run_dir_path / "pareto" / "instance_front.json").exists()
+    assert (run_dir_path / "pareto" / "objective_front.json").exists()
+    assert not (run_dir_path / "pareto" / "cartesian_front.json").exists()
+
+    # Pareto files now key on iteration ids, not candidate idxs.
+    with open(run_dir_path / "pareto" / "instance_front.json") as f:
+        front = json.load(f)
+    for entry in front.values():
+        assert "best_iteration_ids" in entry
+        assert "best_candidates" not in entry
+
+
+def test_agent_state_default_off(run_dir):
+    """save() without write_agent_state=True does not create the agent tree."""
+    seed = {"system_prompt": "hi"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir)  # default: write_agent_state=False
+
+    run_dir_path = Path(str(run_dir))
+    assert not (run_dir_path / "gepa_state.json").exists()
+    assert not (run_dir_path / "iterations").exists()
+    assert not (run_dir_path / "pareto").exists()
+    # Legacy outputs still produced.
+    assert (run_dir_path / "gepa_state.bin").exists()
+
+
+def test_agent_state_rejected_proposals(run_dir):
+    """Rejected proposals live under iterations/<id>/ alongside accepted ones.
+
+    The on-disk id is the random ``iteration_id`` stamped on the trace entry
+    (seed owns ``SEED_ITERATION_ID``); ``trace_i`` is retained as a sort hint.
+    """
+    seed = {"prompt": "hello"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out0", 1: "out1"},
+        scores_by_val_id={0: 0.5, 1: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 10
+    state.num_full_ds_evals = 1
+
+    state.full_program_trace.append({
+        "i": 7,
+        "iteration_id": "a1b2c3d4",
+        "selected_program_candidate": 0,
+        "subsample_ids": [0],
+        "subsample_scores": [0.5],
+        "new_subsample_scores": [0.3],
+        "proposal_accepted": False,
+        "proposed_candidate": {"prompt": "rejected attempt"},
+        "eval_before": {"scores": [0.5], "trajectories": ["trace_before"]},
+        "eval_after": {"scores": [0.3], "trajectories": ["trace_after"]},
+    })
+
+    state.save(run_dir, write_agent_state=True)
+
+    run_dir_path = Path(str(run_dir))
+
+    iter_dir = run_dir_path / "iterations" / "a1b2c3d4"
+    assert iter_dir.is_dir()
+
+    with open(iter_dir / "meta.json") as f:
+        meta = json.load(f)
+    assert meta["iteration_id"] == "a1b2c3d4"
+    assert meta["trace_i"] == 7
+    assert meta["accepted"] is False
+    assert meta["candidate_idx"] is None
+    assert meta["parent_iteration_ids"] == ["seed"]
+    assert meta["subsample_scores_before"] == [0.5]
+    assert meta["subsample_scores_after"] == [0.3]
+    assert "avg_val_score" not in meta  # rejected: no full valset eval
+
+    # Components archived even for rejected proposals.
+    comp_path = iter_dir / "components" / "prompt.txt"
+    assert comp_path.exists()
+    assert comp_path.read_text() == "rejected attempt"
+
+    # Legacy trees gone.
+    assert not (run_dir_path / "rejected_proposals").exists()
+    assert not (run_dir_path / "candidates").exists()
+
+
+def test_agent_state_e2e_writes_per_iteration_outputs_and_trajectories(run_dir):
+    """Running the engine with write_agent_state=True writes per-iteration
+    outputs/ and trajectories/ under iterations/<iter_id>/."""
+    import gepa as gepa_mod
+
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(2)]
+    valset = [{"id": i, "difficulty": i + 2} for i in range(2)]
+
+    class DummyAdapter:
+        def evaluate(self, batch, candidate, capture_traces=False):
+            weight = int(candidate["system_prompt"].split("=")[-1])
+            outputs = [{"id": item["id"], "weight": weight} for item in batch]
+            scores = [min(1.0, (weight + 1) / item["difficulty"]) for item in batch]
+            trajectories = (
+                [{"score": s, "weight": weight} for s in scores] if capture_traces else None
+            )
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return dict.fromkeys(components_to_update, [{"score": s} for s in eval_batch.scores])
+
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            weight = int(candidate["system_prompt"].split("=")[-1])
+            return dict.fromkeys(components_to_update, f"weight={weight + 1}")
+
+    gepa_mod.optimize(
+        seed_candidate={"system_prompt": "weight=0"},
+        trainset=trainset,
+        valset=valset,
+        adapter=DummyAdapter(),
+        reflection_lm=None,
+        max_metric_calls=6,
+        run_dir=str(run_dir),
+        write_agent_state=True,
+    )
+
+    run_dir_path = Path(str(run_dir))
+
+    # Seed at iterations/seed/ — outputs and trajectories present.
+    assert (run_dir_path / "iterations" / "seed" / "outputs" / "0.json").exists()
+    assert (run_dir_path / "iterations" / "seed" / "outputs" / "1.json").exists()
+    assert (run_dir_path / "iterations" / "seed" / "trajectories" / "0.json").exists()
+    with open(run_dir_path / "iterations" / "seed" / "outputs" / "0.json") as f:
+        seed_out = json.load(f)
+    assert seed_out == {"id": 0, "weight": 0}
+    with open(run_dir_path / "iterations" / "seed" / "trajectories" / "0.json") as f:
+        seed_traj = json.load(f)
+    assert seed_traj["weight"] == 0
+
+    # At least one accepted descendant iteration should also have outputs.
+    iter_dirs = [d for d in (run_dir_path / "iterations").iterdir() if d.is_dir()]
+    assert len(iter_dirs) >= 2
+    accepted_with_outputs = [
+        d for d in iter_dirs if d.name != "seed" and (d / "outputs" / "0.json").exists()
+    ]
+    assert accepted_with_outputs, "at least one accepted proposal should have outputs"
+    for iter_dir in accepted_with_outputs:
+        assert (iter_dir / "trajectories" / "0.json").exists()
+
+
+def test_agent_state_off_does_not_write_outputs(run_dir):
+    """With write_agent_state=False (default), no outputs/ subtree is produced."""
+    import gepa as gepa_mod
+
+    trainset = [{"id": 0, "difficulty": 2}]
+    valset = [{"id": 0, "difficulty": 2}]
+
+    class DummyAdapter:
+        def evaluate(self, batch, candidate, capture_traces=False):
+            return EvaluationBatch(outputs=[{"id": 0}], scores=[0.5], trajectories=None)
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return dict.fromkeys(components_to_update, [{"score": 0.5}])
+
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            return dict.fromkeys(components_to_update, "new")
+
+    gepa_mod.optimize(
+        seed_candidate={"system_prompt": "x"},
+        trainset=trainset,
+        valset=valset,
+        adapter=DummyAdapter(),
+        reflection_lm=None,
+        max_metric_calls=2,
+        run_dir=str(run_dir),
+    )
+
+    run_dir_path = Path(str(run_dir))
+    assert not (run_dir_path / "iterations").exists()
+    assert not (run_dir_path / "gepa_state.json").exists()
+
+
+def test_agent_state_sanitizes_component_names(run_dir):
+    """Component names with unsafe filesystem chars get sanitized; _index.json preserves the real name."""
+    seed = {"sys/prompt v1": "hello", "sys prompt": "world"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir, write_agent_state=True)
+
+    comp_dir = Path(str(run_dir)) / "iterations" / "seed" / "components"
+    with open(comp_dir / "_index.json") as f:
+        index = json.load(f)
+    # Real names preserved as keys; slashes and spaces become underscores in filenames.
+    assert set(index.keys()) == {"sys/prompt v1", "sys prompt"}
+    for real_name, fname in index.items():
+        assert "/" not in fname
+        assert " " not in fname
+        assert (comp_dir / fname).read_text() == seed[real_name]
+
+
 def test_budget_hooks_excluded_from_serialization(run_dir):
     """Budget hooks are runtime-only and should not be serialized."""
     seed = {"model": "m"}
@@ -304,21 +575,69 @@ def test_adapter_state_save_and_load(run_dir):
     assert loaded.adapter_state == {"key": "value", "nested": {"a": [1, 2, 3]}}
 
 
-def test_upgrade_state_dict_adds_adapter_state():
-    """Migration adds adapter_state={} when missing (v4 → v5)."""
+def test_upgrade_state_dict_adds_missing_fields():
+    """Migration fills in adapter_state + iteration_ids_by_candidate_idx (v5 → v6)."""
     d = {
-        "program_candidates": [{"a": "b"}],
-        "prog_candidate_objective_scores": [{}],
+        "program_candidates": [{"a": "b"}, {"a": "c"}],
+        "prog_candidate_objective_scores": [{}, {}],
         "objective_pareto_front": {},
         "program_at_pareto_front_objectives": {},
         "frontier_type": "instance",
         "pareto_front_cartesian": {},
         "program_at_pareto_front_cartesian": {},
         "evaluation_cache": None,
+        "full_program_trace": [
+            {
+                "i": 3,
+                "proposal_accepted": True,
+                "new_program_idx": 1,
+            },
+            {
+                "i": 4,
+                "proposal_accepted": False,
+            },
+        ],
     }
     state_mod.GEPAState._upgrade_state_dict(d)
     assert d["adapter_state"] == {}
-    assert d["validation_schema_version"] == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
+    # Seed (candidate_idx 0) → "seed"; accepted candidate_idx 1 discovered at
+    # trace i=3 had no stamped iteration_id → legacy anchor str(3 + 1) = "4".
+    assert d["iteration_ids_by_candidate_idx"] == ["seed", "4"]
+    # Every legacy trace entry (accepted AND rejected) gets an iteration_id
+    # stamped, so resuming an old run with write_agent_state=True no longer
+    # KeyErrors in _save_iteration_dirs / current_iteration_id.
+    assert [e["iteration_id"] for e in d["full_program_trace"]] == ["4", "5"]
+
+
+def test_upgrade_state_dict_maps_legacy_candidates_without_accepted_flag():
+    """Real pre-schema-6 trace entries never wrote ``proposal_accepted``.
+
+    The migration must key off ``new_program_idx`` (stamped on every accepted
+    iteration by the old engine) rather than the absent ``proposal_accepted``
+    flag; otherwise every legacy candidate collapses to the ``"-1"`` sentinel.
+    """
+    d = {
+        "program_candidates": [{"a": "seed"}, {"a": "c1"}, {"a": "c2"}],
+        "prog_candidate_objective_scores": [{}, {}, {}],
+        "objective_pareto_front": {},
+        "program_at_pareto_front_objectives": {},
+        "frontier_type": "instance",
+        "pareto_front_cartesian": {},
+        "program_at_pareto_front_cartesian": {},
+        "evaluation_cache": None,
+        "full_program_trace": [
+            # Accepted iterations as the OLD engine wrote them: new_program_idx
+            # is present, but there is no proposal_accepted key at all.
+            {"i": 0, "new_program_idx": 1},
+            {"i": 1},  # rejected iteration: no new_program_idx
+            {"i": 2, "new_program_idx": 2},
+        ],
+    }
+    state_mod.GEPAState._upgrade_state_dict(d)
+    # candidate 1 discovered at trace i=0 → "1"; candidate 2 at i=2 → "3".
+    # Neither should fall back to the "-1" sentinel.
+    assert d["iteration_ids_by_candidate_idx"] == ["seed", "1", "3"]
+    assert "-1" not in d["iteration_ids_by_candidate_idx"]
 
 
 def test_existing_adapters_lack_adapter_state_methods():

@@ -41,6 +41,7 @@ def execute_code(
         "score": -1e9,
         "all_attempts": [],
         "all_trials": [],
+        "actual_call_count": 0,
         **base,
     }
 
@@ -58,6 +59,7 @@ def execute_code(
         "score": -ret["score"],
         "all_attempts": all_attempts,
         "all_trials": serialize_attempts(sorted_attempts),
+        "actual_call_count": len(all_attempts),
         **base,
     }
 

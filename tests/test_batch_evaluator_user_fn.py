@@ -244,7 +244,7 @@ def test_both_transports_grouped_prefers_batch_fn():
 
 
 def test_optimize_anything_requires_a_transport():
-    from gepa.optimize_anything import optimize_anything
+    from gepa.gepa_launcher import optimize_anything
 
     with pytest.raises(ValueError, match="batch_evaluator"):
         optimize_anything(seed_candidate="x")
@@ -255,7 +255,7 @@ def test_batch_evaluate_with_refiner_and_batch_fn_still_refines_per_example():
     refinement on the grouped batch_evaluate path. Evaluation degrades to
     per-example loops whose evals reach the batch fn as singleton batches —
     the fn must never see a grouped (>1 pair) call in this configuration."""
-    from gepa.optimize_anything import RefinerConfig
+    from gepa.gepa_launcher import RefinerConfig
 
     calls: list[int] = []
 
@@ -336,10 +336,57 @@ def test_duplicate_pairs_deduplicated_within_grouped_call_when_cached():
     assert sum(len(c) for c in fn.calls) == 3, f"duplicate pair not deduped: {fn.calls}"
 
 
+def test_transient_batch_failure_does_not_poison_warm_start():
+    """A transient whole-batch failure (raise_on_exception=False) must not be
+    folded into the best-evals warm-start history: its placeholder 0.0 would
+    otherwise become a fake ``best`` example eval steered at future proposals."""
+    state = {"fail": True}
+
+    def flaky(pairs):
+        if state["fail"]:
+            raise RuntimeError("transient outage")
+        return [(0.9, {"note": "real"}) for _ in pairs]
+
+    adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="off", batch_evaluator=flaky)
+    adapter._batch_evaluator = BatchEvaluatorWrapper(flaky, raise_on_exception=False)
+
+    example = {"x": 1}
+    adapter.batch_evaluate([({"bias": "0"}, [example])])
+    # The failed eval produced a 0.0 placeholder but must NOT be recorded.
+    assert adapter._get_best_example_evals(example) == [], "transient 0.0 poisoned warm-start history"
+
+    # A subsequent real success is recorded normally.
+    state["fail"] = False
+    adapter.batch_evaluate([({"bias": "0"}, [example])])
+    best = adapter._get_best_example_evals(example)
+    assert [e["score"] for e in best] == [0.9]
+
+
+def test_transient_failure_does_not_poison_warm_start_on_refiner_path():
+    """Same guard on the refiner path: with only a batch_evaluator, the refiner
+    resolves each singleton pair through it, so a transient failure surfaces as
+    a 0.0 that must be excluded from the warm-start history there too."""
+    from gepa.gepa_launcher import RefinerConfig
+
+    def flaky(pairs):
+        raise RuntimeError("transient outage")
+
+    adapter = OptimizeAnythingAdapter(
+        evaluator=None,
+        batch_evaluator=BatchEvaluatorWrapper(flaky, raise_on_exception=False),
+        refiner_config=RefinerConfig(refiner_lm=lambda prompt: "no-op refinement", max_refinements=1),
+        parallel=False,
+        cache_mode="off",
+    )
+    example = {"x": 2}
+    adapter.batch_evaluate([({"refiner_prompt": "seed"}, [example])])
+    assert adapter._get_best_example_evals(example) == [], "transient 0.0 poisoned warm-start on refiner path"
+
+
 def test_capture_stdio_without_evaluator_warns():
     import warnings as _warnings
 
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, optimize_anything
+    from gepa.gepa_launcher import EngineConfig, GEPAConfig, optimize_anything
 
     with _warnings.catch_warnings(record=True) as caught:
         _warnings.simplefilter("always")
