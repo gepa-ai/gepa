@@ -93,7 +93,12 @@ pip install "gepa[full]"   # [full] pulls cloudpickle — needed to pickle closu
 # ANTHROPIC_API_KEY, or a Bedrock ARN with AWS creds). You can also pass any callable implementing
 # GEPA's LM protocol — a self-hosted / custom inference engine — instead of a model-id string.
 # Agentic backends (autoresearch, meta_harness) additionally need the `claude` CLI on PATH (plus
-# `jq` for the generated eval.sh).
+# `jq` for the generated eval.sh):
+npm install -g @anthropic-ai/claude-code   # or: curl -fsSL https://claude.ai/install.sh | bash
+#   ...then run `claude` once to authenticate.
+# On Linux they also need bubblewrap: the default sandbox=True jails the claude subprocess with
+# bwrap (`sudo apt install bubblewrap` / `sudo dnf install bubblewrap`) and the run aborts at
+# launch if it's missing. sandbox=False opts out — the agent then runs unsandboxed (loud warning).
 ```
 
 ## Mental model (4 pieces)
@@ -236,8 +241,10 @@ These silently degrade *results* — skim before launching:
 - **`engine_config` is validated strictly per backend** — an unknown key (including a leftover key
   from a different backend after swapping `engine=`) raises `TypeError` at construction. Swapping
   `engine=` means swapping the `engine_config` block. → `references/api.md`.
-- **Agentic backends (`autoresearch`, `meta_harness`) shell out to the `claude` CLI** and fail late if
-  it's missing → run `scripts/preflight.py`; details in `references/api.md`.
+- **Agentic backends (`autoresearch`, `meta_harness`) shell out to the `claude` CLI** and abort at
+  launch with install instructions if it's missing — likewise for `bwrap` (bubblewrap) on Linux,
+  which the default `sandbox=True` needs. `sandbox=False` runs the agent unconfined (loud warning).
+  Run `scripts/preflight.py` first; details in `references/api.md`.
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`

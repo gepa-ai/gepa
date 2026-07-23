@@ -53,7 +53,11 @@ class OptimizeAnythingConfig:
             use a tempdir; in-process engines skip artifact writes. Set
             explicitly to persist them.
         stop_at_score: Score threshold for early stop. Each engine interprets.
-        sandbox: Wrap subprocess engines in bwrap (Linux). Default ``False``.
+        sandbox: OS-jail the subprocess engines' ``claude`` sessions (bwrap on
+            Linux — requires the ``bubblewrap`` package — Claude Code's
+            Seatbelt sandbox on macOS). Default ``True``. Linux runs abort at
+            engine start when ``bwrap`` is missing; ``False`` prints a loud
+            warning and runs the agent unsandboxed with full host access.
         engine_config: Engine-specific options that don't generalize across
             engines. Each engine reads the keys it understands and warns about
             leftovers so typos surface. The keys an engine accepts are
@@ -100,7 +104,7 @@ class OptimizeAnythingConfig:
     # Cross-engine conveniences
     run_dir: str | None = None
     stop_at_score: float | None = None
-    sandbox: bool = False
+    sandbox: bool = True
 
     # Engine-specific. Each engine's factory pops what it knows (see the
     # engine's _<ENGINE>_CONFIG_KEYS tuple) and warns about anything left over.

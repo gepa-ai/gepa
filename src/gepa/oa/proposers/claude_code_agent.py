@@ -75,7 +75,7 @@ from typing import Any
 from gepa.core.state import SEED_ITERATION_ID
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engines.claude_utils import copy_session_transcript
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
 
 _FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
@@ -134,6 +134,10 @@ class ClaudeCodeAgentProposer:
         sandbox: bool = True,
         subdir_prefix: str = "proposals",
     ) -> None:
+        # Same launch-time checks as the subprocess engines, run once at
+        # construction rather than per proposal call: claude CLI present,
+        # bwrap present when sandboxed, loud warning when not.
+        preflight_claude_engine("gepa/claude-code-proposer", sandbox=sandbox)
         self.model = model
         self.run_dir = Path(run_dir)
         self.objective = objective

@@ -5,10 +5,18 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from gepa.oa import BudgetTracker, EvalServer, OptimizeAnythingConfig, Task
 from gepa.oa.engines.autoresearch import _best_aggregate_candidate
 from gepa.oa.engines.gepa import GepaEngine
 from gepa.oa.ensemble import optimize_adaptive_sequential, optimize_adaptive_sequential_with_server
+
+
+@pytest.fixture(autouse=True)
+def _skip_claude_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests mock the claude subprocess; skip the CLI/bwrap preflight."""
+    monkeypatch.setattr("gepa.oa.engines.autoresearch.preflight_claude_engine", lambda *a, **k: None)
 
 
 def _evaluate(candidate: str) -> tuple[float, dict]:

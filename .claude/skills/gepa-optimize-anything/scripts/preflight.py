@@ -87,6 +87,10 @@ def main() -> int:
         if a.engine == "autoresearch":
             check("`jq` on PATH (used by the generated eval.sh)", bool(shutil.which("jq")),
                   "install jq")
+        if sys.platform.startswith("linux"):
+            check("`bwrap` on PATH (default sandbox=True jails claude with bubblewrap)",
+                  bool(shutil.which("bwrap")),
+                  "sudo apt/dnf install bubblewrap, or pass sandbox=False (runs unconfined)")
 
     # 4) optional live LM round-trip
     if a.test_lm and a.engine in ("gepa", "best_of_n"):
