@@ -101,7 +101,7 @@ jobs:
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
-          args: check --fix-only
+          args: check
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/
       # - name: Install optional dependencies
