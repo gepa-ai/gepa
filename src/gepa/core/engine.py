@@ -653,19 +653,29 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # 4) Add each selected candidate to the pool, in order.
         any_accepted = False
-        for proposal, (valset_evaluation, num_actual_evals) in zip(selected, valset_evals, strict=True):
+        for k, (proposal, (valset_evaluation, num_actual_evals)) in enumerate(
+            zip(selected, valset_evals, strict=True)
+        ):
             new_sum = sum(proposal.subsample_scores_after or [])
             self.logger.log(
                 f"Iteration {iteration}: Accepted candidate (subsample score "
                 f"{sum(proposal.subsample_scores_before or [])} -> {new_sum}); running full eval."
             )
+            # Each accepted candidate in a batch needs its own on-disk anchor.
+            # The first keeps the iteration's id (back-compat: agents still find
+            # the primary accepted candidate at ``iterations/<iteration_id>/``);
+            # the rest get suffixed ids so their ``outputs/`` and
+            # ``trajectories/`` no longer overwrite one another under the shared
+            # id. ``_save_iteration_dirs`` reads these back from
+            # ``iteration_ids_by_candidate_idx`` to emit one dir per candidate.
+            candidate_iteration_id = iteration_id if k == 0 else f"{iteration_id}-{k}"
             new_idx, _ = self._add_evaluated_program(
                 new_program=proposal.candidate,
                 state=state,
                 parent_program_idx=proposal.parent_program_ids,
                 valset_evaluation=valset_evaluation,
                 num_actual_evals=num_actual_evals,
-                iteration_id=iteration_id,
+                iteration_id=candidate_iteration_id,
             )
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
             notify_callbacks(
@@ -964,6 +974,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 self.merge_proposer.merges_due -= 1
                                 self.merge_proposer.total_merges_tested += 1
                                 proposal_accepted = True
+
+                                # Stamp the trace entry so the agent-state
+                                # writer archives the merged candidate under
+                                # this iteration's dir. Unlike the reflective
+                                # path, the merge path never set this flag, so
+                                # ``_save_iteration_dirs`` saw ``accepted=None``
+                                # and skipped the merged candidate's components
+                                # and val_scores.
+                                if self.write_agent_state:
+                                    state.full_program_trace[-1]["proposal_accepted"] = True
 
                                 # Notify merge accepted
                                 notify_callbacks(

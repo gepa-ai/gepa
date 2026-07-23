@@ -609,6 +609,37 @@ def test_upgrade_state_dict_adds_missing_fields():
     assert [e["iteration_id"] for e in d["full_program_trace"]] == ["4", "5"]
 
 
+def test_upgrade_state_dict_maps_legacy_candidates_without_accepted_flag():
+    """Real pre-schema-6 trace entries never wrote ``proposal_accepted``.
+
+    The migration must key off ``new_program_idx`` (stamped on every accepted
+    iteration by the old engine) rather than the absent ``proposal_accepted``
+    flag; otherwise every legacy candidate collapses to the ``"-1"`` sentinel.
+    """
+    d = {
+        "program_candidates": [{"a": "seed"}, {"a": "c1"}, {"a": "c2"}],
+        "prog_candidate_objective_scores": [{}, {}, {}],
+        "objective_pareto_front": {},
+        "program_at_pareto_front_objectives": {},
+        "frontier_type": "instance",
+        "pareto_front_cartesian": {},
+        "program_at_pareto_front_cartesian": {},
+        "evaluation_cache": None,
+        "full_program_trace": [
+            # Accepted iterations as the OLD engine wrote them: new_program_idx
+            # is present, but there is no proposal_accepted key at all.
+            {"i": 0, "new_program_idx": 1},
+            {"i": 1},  # rejected iteration: no new_program_idx
+            {"i": 2, "new_program_idx": 2},
+        ],
+    }
+    state_mod.GEPAState._upgrade_state_dict(d)
+    # candidate 1 discovered at trace i=0 → "1"; candidate 2 at i=2 → "3".
+    # Neither should fall back to the "-1" sentinel.
+    assert d["iteration_ids_by_candidate_idx"] == ["seed", "1", "3"]
+    assert "-1" not in d["iteration_ids_by_candidate_idx"]
+
+
 def test_existing_adapters_lack_adapter_state_methods():
     """DefaultAdapter doesn't define get/set_adapter_state — duck typing is safe."""
     from gepa.adapters.default_adapter.default_adapter import DefaultAdapter

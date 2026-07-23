@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from gepa.lm import LM
+from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engine import Result
 from gepa.oa.task import seed_as_text
 
@@ -167,14 +168,29 @@ class BestOfNEngine:
                 )
                 continue
 
-            if task.has_dataset and task.train_set:
-                scores = []
-                for ex in task.train_set:
-                    s, _info = server.evaluate(candidate, ex)
-                    scores.append(s)
-                score = sum(scores) / len(scores) if scores else float("-inf")
-            else:
-                score, _info = server.evaluate(candidate)
+            # Score the candidate on whatever dataset defines the task. Prefer
+            # the train_set; fall back to the val_set for val-only tasks (a
+            # dataset evaluator needs an example, so the no-example branch below
+            # would raise a TypeError inside the evaluator). Only when the task
+            # carries no per-example data at all do we evaluate example-free.
+            examples = task.train_set or task.val_set
+            try:
+                if examples:
+                    scores = []
+                    for ex in examples:
+                        s, _info = server.evaluate(candidate, ex)
+                        scores.append(s)
+                    score = sum(scores) / len(scores) if scores else float("-inf")
+                else:
+                    score, _info = server.evaluate(candidate)
+            except BudgetExhausted:
+                # Budget ran out mid-evaluation. Discard this partially scored
+                # candidate and stop — returning the best fully evaluated
+                # candidate so far. Letting BudgetExhausted escape would hand
+                # control to the api's fallback, which reports the server's
+                # single highest per-example score (``server.best_score``)
+                # rather than this engine's candidate-aggregate best.
+                break
 
             if score > best_score:
                 best_score = score
