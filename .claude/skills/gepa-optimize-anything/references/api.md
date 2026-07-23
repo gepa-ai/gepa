@@ -60,7 +60,7 @@ you want an unbiased number to report; skip it otherwise.
 | `output_dir` | `None` | where the eval server writes per-eval JSON, `progress_log.jsonl`, `summary.json`. `None` → `outputs/optimize_anything/<task>/<engine>/<timestamp>/`. |
 | `run_dir` | `None` | engine workspace (gepa run dir / agent work dir; with `engine.write_agent_state=True` the gepa backend writes an agent-readable `iterations/` + `pareto/` tree here). Distinct from `output_dir`. `None` → subprocess engines use a tempdir; set it to persist artifacts. |
 | `stop_at_score` | `None` | early-stop score threshold; each engine interprets it. |
-| `sandbox` | `False` | wrap subprocess engines in bwrap (Linux). |
+| `sandbox` | **`True`** | OS-jail the subprocess engines' `claude` sessions: bwrap on Linux (needs the `bubblewrap` package — the run aborts at launch if `bwrap` is missing), Claude Code's Seatbelt sandbox on macOS. Also forces the work dir to a tempdir even when `run_dir` is set (artifacts are mirrored back). `False` prints a loud warning and runs the agent unsandboxed (`bypassPermissions`, full host access). |
 | `engine_config` | `{}` | dict of **engine-specific** options — see the per-backend sections below. Parsed into a typed per-engine config dataclass; **an unknown key raises `TypeError` immediately** (fail fast, not warn-and-drop). |
 
 **If both `max_evals` and `max_token_cost` are `None`, the run is unbounded** (only a
