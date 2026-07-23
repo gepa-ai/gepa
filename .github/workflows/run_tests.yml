@@ -99,9 +99,7 @@ jobs:
           uv sync -p .venv --locked --extra dev
           uv pip list
       - name: Run lint with tests
-        uses: chartboost/ruff-action@v1
-        with:
-          args: check --fix-only
+        run: uv run -p .venv ruff check
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/
       # - name: Install optional dependencies
