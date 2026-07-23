@@ -553,13 +553,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt = candidate.get("refiner_prompt", "")
 
         # 1. Evaluate original candidate
-        original_score, original_output, original_side_info = self._call_evaluator(candidate, example)
+        original_score, _original_output, original_side_info = self._call_evaluator(candidate, example)
 
         # Update best evals with original evaluation
         self._update_best_example_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
-        best_refined_score, best_refined_candidate, best_refined_side_info, all_attempts = self._refine_and_evaluate(
+        best_refined_score, best_refined_candidate, _best_refined_side_info, all_attempts = self._refine_and_evaluate(
             candidate, example, refiner_prompt, original_score, original_side_info
         )
 
@@ -799,7 +799,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
                 # Reconstruct full candidate: refined params + original refiner_prompt
                 refined_candidate_dict = {**parsed_refined, "refiner_prompt": candidate.get("refiner_prompt", "")}
-                refined_score, refined_output, refined_eval_side_info = self._call_evaluator(
+                refined_score, _refined_output, refined_eval_side_info = self._call_evaluator(
                     refined_candidate_dict, example
                 )
 
