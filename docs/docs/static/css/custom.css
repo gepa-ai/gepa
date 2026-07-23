@@ -19,9 +19,9 @@
   --md-accent-fg-color--transparent: rgba(144, 224, 239, 0.1);
 }
 
-/* Gradient-styled code text (e.g. "optimize_anything" in blog titles) */
+/* Gradient-styled code text (e.g. "optimize_anything" in blog titles) — GEPA colors, navy start to logo-green */
 .gradient-code {
-    background: linear-gradient(135deg, #023E8A, #0077B6, #00B4D8, #48CAE4);
+    background: linear-gradient(135deg, #2f5e9e, #4a9d8a, #82b366);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -29,7 +29,7 @@
 }
 
 [data-md-color-scheme="slate"] .gradient-code {
-    background: linear-gradient(135deg, #60A5FA, #818CF8, #A78BFA);
+    background: linear-gradient(135deg, #6f9bd6, #74c2aa, #a3c98d);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -599,6 +599,12 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 .blog-post-body li {
     margin-bottom: 0;
     line-height: 1.5;
+}
+
+/* Don't break code identifiers (e.g. "autoresearch") across lines in tables;
+   Material's code spans default to word-break: break-word */
+.blog-post-body table code {
+    white-space: nowrap;
 }
 
 @media screen and (max-width: 76.25em) {
