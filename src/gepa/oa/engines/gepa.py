@@ -150,7 +150,7 @@ class GepaEngine:
                 metadata={"gepa_result": gepa_result, "adapter_cost": adapter_cost},
             )
         return Result(
-            best_candidate=server.best_candidate,
+            best_candidate=cast(str, server.best_candidate),
             best_score=server.best_score,
             total_evals=server.budget.used,
             eval_log=server.eval_log,

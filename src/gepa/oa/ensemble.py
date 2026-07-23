@@ -53,7 +53,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
@@ -663,7 +663,7 @@ def optimize_adaptive_sequential_with_server(
 
     if not stage_results:
         return Result(
-            best_candidate=server.best_candidate,
+            best_candidate=cast(str, server.best_candidate),
             best_score=server.best_score,
             total_evals=server.budget.used,
             eval_log=server.eval_log,

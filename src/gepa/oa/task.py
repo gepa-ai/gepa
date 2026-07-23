@@ -24,8 +24,11 @@ class Task:
 
     Attributes:
         name: Unique identifier (e.g. ``"circle_packing"``).
-        seed_candidate: Seed text to evolve from. ``None`` for seedless mode,
-            where the engine bootstraps the first candidate from ``objective`` /
+        seed_candidate: Seed to evolve from — a single text string, or a
+            ``{component: text}`` dict for multi-component optimization (the
+            ``gepa`` engine co-optimizes the components; other engines treat
+            the seed as a single text). ``None`` for seedless mode, where the
+            engine bootstraps the first candidate from ``objective`` /
             ``background``.
         objective: Short goal statement (e.g. "Maximize sum of circle radii").
             Surfaced verbatim by every engine as the optimization goal.
@@ -40,7 +43,7 @@ class Task:
     """
 
     name: str
-    seed_candidate: str | None = None
+    seed_candidate: str | dict[str, str] | None = None
     objective: str = ""
     background: str = ""
     train_set: list[Any] | None = None
@@ -50,3 +53,28 @@ class Task:
     @property
     def has_dataset(self) -> bool:
         return self.train_set is not None or self.val_set is not None or self.test_set is not None
+
+
+def seed_as_text(seed: str | dict[str, str] | None) -> str:
+    """Return a seed candidate as a single text string, or reject a dict seed.
+
+    Only the ``gepa`` engine co-optimizes a ``{component: text}`` dict; every
+    other engine generates and evaluates a *single* text candidate (per
+    :class:`Task`). Such engines call this to get a plain string: ``None``
+    becomes ``""`` and a string passes through.
+
+    A dict seed is **refused**, not silently flattened. These engines write the
+    seed to one file and hand the evaluator one string, so they cannot honor a
+    multi-component contract — the component names would be dropped and a
+    ``{component: text}`` evaluator would never receive the dict it expects.
+    Failing loudly (pointing at the ``gepa`` engine) beats a silent degrade.
+    """
+    if seed is None:
+        return ""
+    if isinstance(seed, str):
+        return seed
+    raise TypeError(
+        "This engine optimizes a single text candidate and cannot take a "
+        "multi-component dict seed_candidate; only the 'gepa' engine "
+        "co-optimizes dict components. Pass a string, or use engine='gepa'."
+    )

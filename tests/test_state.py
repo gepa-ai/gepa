@@ -591,7 +591,11 @@ def test_upgrade_state_dict_adds_missing_fields():
                 "i": 3,
                 "proposal_accepted": True,
                 "new_program_idx": 1,
-            }
+            },
+            {
+                "i": 4,
+                "proposal_accepted": False,
+            },
         ],
     }
     state_mod.GEPAState._upgrade_state_dict(d)
@@ -599,6 +603,10 @@ def test_upgrade_state_dict_adds_missing_fields():
     # Seed (candidate_idx 0) → "seed"; accepted candidate_idx 1 discovered at
     # trace i=3 had no stamped iteration_id → legacy anchor str(3 + 1) = "4".
     assert d["iteration_ids_by_candidate_idx"] == ["seed", "4"]
+    # Every legacy trace entry (accepted AND rejected) gets an iteration_id
+    # stamped, so resuming an old run with write_agent_state=True no longer
+    # KeyErrors in _save_iteration_dirs / current_iteration_id.
+    assert [e["iteration_id"] for e in d["full_program_trace"]] == ["4", "5"]
 
 
 def test_existing_adapters_lack_adapter_state_methods():
