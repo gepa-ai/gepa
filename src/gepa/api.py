@@ -3,6 +3,7 @@
 
 import os
 import random
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -41,6 +42,126 @@ from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.strategies.proposal_sampling import SamplingStrategy
 from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
+
+# Recommended floor: GEPA needs at least ~15 proposal attempts for meaningful
+# evolutionary search. Below this, the reflection-mutate-evaluate loop produces
+# a degenerate short trajectory that looks like optimization but is not. See
+# https://github.com/gepa-ai/gepa/issues/375 for the originating incident.
+_MIN_RECOMMENDED_PROPOSALS = 15
+
+# Post-run threshold: not every proposal gets accepted into the candidate pool,
+# so the "did anything happen at all" check uses a much smaller threshold than
+# the pre-flight budget floor.
+_MIN_ACCEPTED_PROPOSALS_NO_WARN = 3
+
+
+class GEPABudgetWarning(UserWarning):
+    """Raised when ``max_metric_calls`` is below the recommended floor or when
+    a finished run accepted too few candidates to count as meaningful
+    optimization. Subclasses :class:`UserWarning` so callers can silence with
+    ``warnings.filterwarnings("ignore", category=GEPABudgetWarning)``.
+    """
+
+
+def _safe_loader_len(loader: object) -> int | None:
+    """Return ``len(loader)`` if available, else ``None``.
+
+    ``DataLoader`` implementations expose ``__len__`` for finite datasets but
+    callers may pass streaming loaders that don't. We never fail the run on
+    this — a missing length just means we can't compute the budget floor.
+    """
+    try:
+        return len(loader)  # type: ignore[arg-type]
+    except (TypeError, AttributeError):
+        return None
+
+
+def _budget_floor(
+    valset_len: int,
+    reflection_minibatch_size: int | None,
+    min_proposals: int = _MIN_RECOMMENDED_PROPOSALS,
+) -> int:
+    """Compute the minimum sensible ``max_metric_calls`` for the given setup.
+
+    Exact formula: ``baseline_eval + min_proposals * (minibatch + valset_full_eval)``
+
+    A useful approximation when ``minibatch << valset_len`` is
+    ``(min_proposals + 1) * valset_len`` — for the default 15-proposal floor
+    that simplifies to the ``~16 * len(valset)`` rule of thumb in the docs.
+    """
+    mb = reflection_minibatch_size if reflection_minibatch_size is not None else 3
+    return valset_len + min_proposals * (mb + valset_len)
+
+
+def _warn_if_budget_under_floor(
+    max_metric_calls: int | None,
+    val_loader: object,
+    reflection_minibatch_size: int | None,
+) -> None:
+    """Emit :class:`GEPABudgetWarning` if the provided budget is below the floor.
+
+    Skipped silently when (a) no budget is set (user uses custom stop_callbacks
+    only), or (b) the validation loader's length is unknown.
+    """
+    if max_metric_calls is None:
+        return
+    val_len = _safe_loader_len(val_loader)
+    if val_len is None or val_len == 0:
+        return
+    floor = _budget_floor(val_len, reflection_minibatch_size)
+    if max_metric_calls < floor:
+        mb = reflection_minibatch_size if reflection_minibatch_size is not None else 3
+        warnings.warn(
+            f"max_metric_calls={max_metric_calls} is below the recommended floor of {floor} "
+            f"for valset of size {val_len} and reflection_minibatch_size={mb}. "
+            f"At this budget GEPA can attempt at most "
+            f"~{max(0, (max_metric_calls - val_len) // (mb + val_len))} proposal step(s), "
+            f"which typically produces a short trajectory rather than real optimization. "
+            f"Recommended: set max_metric_calls to at least {floor} (gives ~{_MIN_RECOMMENDED_PROPOSALS} proposal attempts). "
+            f"Rule of thumb: ~{_MIN_RECOMMENDED_PROPOSALS + 1} x len(valset). "
+            f"See https://gepa-ai.github.io/gepa/guides/budget/ for details.",
+            GEPABudgetWarning,
+            stacklevel=3,
+        )
+
+
+def _warn_if_too_few_accepted(
+    result: GEPAResult[Any, Any], logger: LoggerProtocol | None
+) -> None:
+    """Log a final summary and warn if the run accepted too few candidates.
+
+    The candidate count includes the seed baseline, so ``num_candidates <= 2``
+    means at most one proposal was accepted across the whole run. The
+    post-run threshold (``_MIN_ACCEPTED_PROPOSALS_NO_WARN``) is intentionally
+    smaller than the pre-flight floor — not every proposal attempt gets
+    accepted into the pool, so we only flag the "almost nothing happened"
+    case here. The pre-flight check is what enforces a budget large enough
+    for the recommended ~15 attempts.
+    """
+    n_candidates = result.num_candidates
+    n_proposed = max(0, n_candidates - 1)  # baseline doesn't count as a proposal
+    metric_calls = result.total_metric_calls or 0
+    summary = (
+        f"GEPA finished: {n_proposed} proposal(s) accepted over {metric_calls} metric call(s); "
+        f"final candidate pool size = {n_candidates}."
+    )
+    if logger is not None:
+        try:
+            logger.log(summary)
+        except Exception:
+            pass
+    if n_proposed < _MIN_ACCEPTED_PROPOSALS_NO_WARN:
+        warnings.warn(
+            f"GEPA finished with only {n_proposed} accepted proposal(s) "
+            f"(candidate pool = {n_candidates}). The optimizer didn't get enough "
+            f"iterations to do meaningful search. Either raise max_metric_calls "
+            f"(recommended > {_MIN_RECOMMENDED_PROPOSALS} x len(valset)), or "
+            f"loosen whichever stopper fired first (e.g., increase "
+            f"NoImprovementStopper.max_iterations_without_improvement). "
+            f"See https://gepa-ai.github.io/gepa/guides/budget/.",
+            GEPABudgetWarning,
+            stacklevel=3,
+        )
 
 
 def optimize(
@@ -168,7 +289,29 @@ def optimize(
     - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than `full_eval`.
 
     # Budget and Stop Condition
-    - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
+    - max_metric_calls: Optional upper bound on the metric-call budget.
+        You can also omit this entirely and pass a substantive stopper via
+        ``stop_callbacks`` instead (``NoImprovementStopper``,
+        ``ScoreThresholdStopper``, ``TimeoutStopCondition``, …), in which
+        case GEPA runs until the actual condition you care about — e.g.,
+        no improvement for N iterations — and you don't have to predict the
+        budget upfront. If you provide both, the run stops as soon as any
+        stopper fires.
+        If you do set ``max_metric_calls`` (and don't pair it with a
+        substantive stopper), make it large enough not to cap the optimizer
+        prematurely: the recommended budget is
+        ``max_metric_calls > 15 * len(valset)`` — gives room for ~15
+        proposal attempts. The budget pays for (a) baseline full-validation
+        = ``len(valset)`` calls and (b) each proposal cycle =
+        ``reflection_minibatch_size + len(valset)`` calls. Many real
+        workloads use 200-2000+ total calls. Setting it too low silently
+        produces a short trajectory that looks like optimization but is just
+        baseline plus one or two accepted candidates — ``gepa.optimize``
+        warns at the start of the run if the budget you set is below this
+        floor and again at the end if fewer than 3 candidates were accepted.
+        See the [budget guide](../guides/budget.md) for the full formula.
+        At least one of ``max_metric_calls``, ``stop_callbacks``, or
+        ``max_reflection_cost`` must be provided.
     - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
 
     # Logging and Callbacks
@@ -221,6 +364,12 @@ def optimize(
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
     val_loader = ensure_loader(valset) if valset is not None else train_loader
+
+    _warn_if_budget_under_floor(
+        max_metric_calls=max_metric_calls,
+        val_loader=val_loader,
+        reflection_minibatch_size=reflection_minibatch_size,
+    )
 
     # Validate that only one custom proposal method is provided
     adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
@@ -470,4 +619,6 @@ def optimize(
         else:
             state = engine.run()
 
-    return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
+    result = GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
+    _warn_if_too_few_accepted(result, logger)
+    return result
