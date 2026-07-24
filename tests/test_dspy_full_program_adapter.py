@@ -161,3 +161,50 @@ class TestReflectionLmProtocol:
                 },
             )
             assert "program" in result
+
+
+# ---------------------------------------------------------------------------
+# Issue #97: avoid redundant cumulative trace context
+# ---------------------------------------------------------------------------
+
+
+class TestReflectiveDatasetTraceSelection:
+    def test_keeps_only_final_trace_when_no_failure(self):
+        """Normal cumulative traces should contribute only their final entry."""
+        adapter = _make_adapter()
+
+        predictor = MagicMock()
+        predictor.signature.equals.return_value = True
+
+        proposed_program = MagicMock()
+        proposed_program.named_predictors.return_value = [("react", predictor)]
+
+        adapter.build_program = MagicMock(return_value=(proposed_program, None))
+
+        trace = [
+            (predictor, {"step": "1"}, {"thought": "first"}),
+            (predictor, {"step": "2"}, {"thought": "second"}),
+            (predictor, {"step": "3"}, {"answer": "final"}),
+        ]
+
+        example = Example(question="What is 2+2?").with_inputs("question")
+        eval_batch = MagicMock()
+        eval_batch.trajectories = [
+            {
+                "trace": trace,
+                "example": example,
+                "prediction": {"answer": "4"},
+                "score": 1.0,
+            }
+        ]
+
+        result = adapter.make_reflective_dataset(
+            candidate={"program": "dummy"},
+            eval_batch=eval_batch,
+            components_to_update=["program"],
+        )
+
+        program_trace = result["program"][0]["Program Trace"]
+
+        assert len(program_trace) == 1
+        assert program_trace[0]["Generated Outputs"] == {"answer": "final"}
