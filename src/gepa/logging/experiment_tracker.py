@@ -157,6 +157,23 @@ class ExperimentTracker:
         except Exception:
             return None
 
+    def _update_trackio_config(self, values: dict[str, Any]) -> None:
+        """Merge ``values`` into the active Trackio run's config.
+
+        ``trackio.config`` is an inert module-level dict (wandb-compat shim); the
+        run's own config dict is what gets serialized on the next log.
+        """
+        run = self._trackio_run or self._get_active_trackio_run()
+        if run is None or not isinstance(run.config, dict):
+            return
+        run.config.update(values)
+        if hasattr(run, "_config_logged"):
+            # Trackio serializes run.config from Run.log() only while this flag
+            # is false. Attach mode may join a run that already logged, so mark
+            # the merged config dirty for the next real log without advancing
+            # Trackio's step. Verified against trackio 0.33.0.
+            run._config_logged = False
+
     def _log_trackio(self, metrics: dict[str, Any], step: int | None = None) -> None:
         """Log to Trackio without relying on ContextVar state in worker threads."""
         if self._trackio_run is not None:
@@ -248,18 +265,7 @@ class ExperimentTracker:
 
         if self.use_trackio:
             try:
-                # trackio.config is an inert module-level dict (wandb-compat shim);
-                # the run's own config dict is what gets serialized on the next log.
-                run = self._trackio_run or self._get_active_trackio_run()
-                if run is not None and isinstance(run.config, dict):
-                    prefixed = {self._p(k): v for k, v in safe_config.items()}
-                    run.config.update(prefixed)
-                    if hasattr(run, "_config_logged"):
-                        # Trackio serializes run.config from Run.log() only while
-                        # this flag is false. Attach mode may join a run that
-                        # already logged, so mark the merged config dirty for
-                        # the next real log without advancing Trackio's step.
-                        run._config_logged = False
+                self._update_trackio_config({self._p(k): v for k, v in safe_config.items()})
             except Exception as e:
                 print(f"Warning: Failed to log config to trackio: {e}")
 
@@ -344,9 +350,18 @@ class ExperimentTracker:
 
         if self.use_trackio:
             try:
-                prefixed = {self._p(f"summary/{k}"): v for k, v in summary.items()}
-                if prefixed:
-                    self._log_trackio(prefixed)
+                # Split by type the way the MLflow branch does. Trackio has no
+                # separate summary sink: numbers belong on the metrics timeline,
+                # but non-numeric values (candidate prompt text) would be stored
+                # as metric rows and then filtered out of the dashboard's graph
+                # page, which only returns scalars — i.e. written but invisible.
+                # Those go to the run config, where they are actually readable.
+                numeric = {self._p(f"summary/{k}"): v for k, v in summary.items() if isinstance(v, int | float)}
+                other = {self._p(f"summary/{k}"): v for k, v in summary.items() if not isinstance(v, int | float)}
+                if numeric:
+                    self._log_trackio(numeric)
+                if other:
+                    self._update_trackio_config(other)
             except Exception as e:
                 print(f"Warning: Failed to log summary to trackio: {e}")
 
@@ -486,9 +501,17 @@ class ExperimentTracker:
 
         if self.use_trackio and not self.trackio_attach_existing:
             try:
-                import trackio  # type: ignore
+                # Finish via the run object we captured at init. Module-level
+                # trackio.finish() resolves the run from a ContextVar and raises
+                # if it is unset, which happens whenever end_run() lands on a
+                # different thread than start_run() — the same reason
+                # _log_trackio() avoids the module-level API.
+                if self._trackio_run is not None:
+                    self._trackio_run.finish()
+                else:
+                    import trackio  # type: ignore
 
-                trackio.finish()
+                    trackio.finish()
                 self._trackio_run = None
             except Exception as e:
                 print(f"Warning: Failed to end trackio run: {e}")

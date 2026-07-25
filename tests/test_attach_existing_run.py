@@ -229,19 +229,41 @@ class TestTrackioAttachExisting:
         mock_log.assert_not_called()
 
     def test_normal_mode_calls_init_and_finish(self):
-        """Without attach_existing, trackio.init() and trackio.finish() are called."""
+        """Without attach_existing, the run is initialized and then finished."""
         tracker = ExperimentTracker(
             use_trackio=True,
             trackio_attach_existing=False,
             trackio_init_kwargs={"project": "gepa-test", "name": "run"},
         )
-        with patch("trackio.init") as mock_init, \
-             patch("trackio.finish") as mock_finish:
+        with patch("trackio.init") as mock_init:
             tracker.initialize()
             tracker.start_run()
             tracker.end_run()
         mock_init.assert_called_once_with(project="gepa-test", name="run")
-        mock_finish.assert_called_once()
+        mock_init.return_value.finish.assert_called_once()
+
+    def test_end_run_does_not_depend_on_contextvar(self):
+        """end_run() finishes via the run object captured at init.
+
+        Module-level ``trackio.finish()`` resolves the run from a ContextVar and
+        raises ``RuntimeError`` when it is unset, which is what happens whenever
+        ``end_run()`` lands on a different thread than ``start_run()``.  Finishing
+        through the captured run keeps teardown thread-independent.
+        """
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_init_kwargs={"project": "gepa-test"},
+        )
+        mock_run = MagicMock()
+        contextvar_error = RuntimeError("Call trackio.init() before trackio.finish().")
+        with patch("trackio.init", return_value=mock_run), \
+             patch("trackio.finish", side_effect=contextvar_error) as mock_finish:
+            tracker.initialize()
+            tracker.start_run()
+            tracker.end_run()
+
+        mock_run.finish.assert_called_once()
+        mock_finish.assert_not_called()
 
     def test_default_project_when_init_kwargs_omitted(self):
         """trackio.init() requires a project; GEPA defaults it to 'gepa'."""
@@ -565,6 +587,24 @@ class TestKeyPrefix:
             tracker.log_config({"model": "gpt-5", "lr": 0.01})
         assert "gepa/model" in mock_run.config
         assert "gepa/lr" in mock_run.config
+
+    def test_summary_splits_numeric_from_text_trackio(self):
+        """Numbers go to the metrics timeline; text goes to the run config.
+
+        Trackio has no summary sink, and its dashboard graph page returns only
+        scalars — so prompt text logged as a metric would be stored but never
+        shown.  Text belongs in the run config instead.
+        """
+        tracker = ExperimentTracker(use_trackio=True)
+        mock_run = MagicMock()
+        mock_run.config = {}
+        tracker._trackio_run = mock_run
+
+        tracker.log_summary({"best_valset_score": 0.75, "best/system_prompt": "You are helpful."})
+
+        logged_metrics = mock_run.log.call_args.kwargs["metrics"]
+        assert logged_metrics == {"summary/best_valset_score": 0.75}
+        assert mock_run.config == {"summary/best/system_prompt": "You are helpful."}
 
     def test_empty_prefix_unchanged(self):
         """Empty prefix (default) leaves keys unchanged."""
