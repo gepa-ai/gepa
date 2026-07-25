@@ -204,6 +204,16 @@ class ExperimentTracker:
             if self.trackio_attach_existing:
                 # Attach to the active run — no init, no finish later.
                 self._trackio_run = self._get_active_trackio_run()
+                if self._trackio_run is None:
+                    # Say so once here rather than emitting a warning per log
+                    # call: without a run to attach to, every subsequent
+                    # _log_trackio() falls back to the module-level API and
+                    # fails the same way.
+                    print(
+                        "Warning: trackio_attach_existing=True but no active Trackio run was found. "
+                        "Call trackio.init() before starting GEPA, or set trackio_attach_existing=False "
+                        "to let GEPA create the run."
+                    )
             else:
                 import trackio  # type: ignore
 
@@ -277,6 +287,7 @@ class ExperimentTracker:
                         self._mlflow_client.log_param(self._mlflow_run_id, k, v)
                 else:
                     import mlflow  # type: ignore
+
                     mlflow.log_params(str_params)
             except Exception as e:
                 print(f"Warning: Failed to log config to mlflow: {e}")
@@ -328,6 +339,7 @@ class ExperimentTracker:
                             self._mlflow_client.log_metric(self._mlflow_run_id, k, v, step=step or 0)
                     else:
                         import mlflow  # type: ignore
+
                         mlflow.log_metrics(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
@@ -378,6 +390,7 @@ class ExperimentTracker:
                             self._mlflow_client.log_param(self._mlflow_run_id, f"summary/{k}", v)
                 else:
                     import mlflow  # type: ignore
+
                     if numeric:
                         mlflow.log_metrics(numeric)
                     if text:
@@ -480,6 +493,7 @@ class ExperimentTracker:
                     self._mlflow_client.log_artifact(self._mlflow_run_id, tmp_path, artifact_path=self._p(key))
                 else:
                     import mlflow  # type: ignore
+
                     mlflow.log_artifact(tmp_path, artifact_path=self._p(key))
             except Exception as e:
                 print(f"Warning: Failed to log HTML to mlflow: {e}")

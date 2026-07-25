@@ -178,6 +178,23 @@ class TestTrackioAttachExisting:
             tracker.end_run()
         mock_finish.assert_not_called()
 
+    def test_attach_existing_warns_once_when_no_active_run(self, capsys):
+        """Attaching with no active run warns at start_run, not on every log.
+
+        Without a run to attach to there is nothing for _log_trackio() to use,
+        so it falls back to the module-level API and fails identically on every
+        call — one warning up front is more useful than N warnings later.
+        """
+        tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)
+        with patch("trackio.context_vars.current_run") as mock_var:
+            mock_var.get.return_value = None  # no active run
+            tracker.initialize()
+            tracker.start_run()
+
+        warning = capsys.readouterr().out
+        assert "no active Trackio run was found" in warning
+        assert tracker._trackio_run is None
+
     def test_attach_existing_still_logs(self):
         """Metrics are logged via trackio.log() even in attach mode."""
         tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)

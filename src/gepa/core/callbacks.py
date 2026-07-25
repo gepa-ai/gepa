@@ -47,7 +47,10 @@ logger = logging.getLogger(__name__)
 # Event TypedDicts
 # =============================================================================
 # Each callback receives a single event object containing all parameters.
-# Use optional TypedDict subclasses when extending event fields in the future.
+# To add optional fields, split the event into a required base plus a
+# ``total=False`` subclass (see EvaluationEndEvent).  ``typing.NotRequired``
+# is the more direct spelling but requires Python 3.11; this project supports
+# 3.10.
 
 
 class OptimizationStartEvent(TypedDict):
@@ -128,6 +131,18 @@ class _EvaluationEndEventRequired(TypedDict):
 
 
 class EvaluationEndEvent(_EvaluationEndEventRequired, total=False):
+    """Event for on_evaluation_end callback.
+
+    Split into a required base plus a ``total=False`` subclass so the metric
+    call fields are optional.  ``typing.NotRequired`` would express this more
+    directly but is Python 3.11+, and this project supports 3.10 — do not
+    "simplify" this into ``NotRequired`` without raising the floor first.
+
+    The metric call fields describe the budget consumed by the evaluation this
+    event reports: ``before`` and ``after`` bracket it, ``delta`` is the cost of
+    the evaluation itself.
+    """
+
     metric_calls_before: int
     metric_calls_delta: int
     metric_calls_after: int
@@ -239,6 +254,13 @@ class _ValsetEvaluatedEventRequired(TypedDict):
 
 
 class ValsetEvaluatedEvent(_ValsetEvaluatedEventRequired, total=False):
+    """Event for on_valset_evaluated callback.
+
+    Uses the same required-base plus ``total=False`` split as
+    :class:`EvaluationEndEvent`; see that class for why ``NotRequired`` is not
+    used here.
+    """
+
     metric_calls_before: int
     metric_calls_delta: int
     metric_calls_after: int
