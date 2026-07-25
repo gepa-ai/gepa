@@ -35,12 +35,23 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     num_metric_calls: int | None = None
 
 
+class BatchEvaluateFn(Protocol):
+    """Protocol for batch evaluation of multiple (candidate, batch) pairs."""
+
+    def __call__(
+        self,
+        items: list[tuple[Candidate, list]],
+    ) -> list["EvaluationBatch"]: ...
+
+
 class ProposalFn(Protocol):
     def __call__(
         self,
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
+        *,
+        metadata: Mapping[str, Any] | None = None,
     ) -> dict[str, str]:
         """
         - Given the current `candidate`, a reflective dataset (as returned by
@@ -49,6 +60,17 @@ class ProposalFn(Protocol):
           to implement their own instruction proposal logic. For example, the user can use
           a different LLM, implement DSPy signatures, etc. Another example can be situations
           where 2 or more components need to be updated together (coupled updates).
+
+        - `metadata` is an open-ended dict of context hints supplied by the engine on
+          every call.           Custom proposers read only the keys they care about. Keys GEPA
+          currently populates are both on-disk anchors:
+            * `"iteration_id"`: str — this proposal's on-disk anchor; when
+              ``write_agent_state=True`` it owns the ``iterations/<iteration_id>/``
+              subdir. A random short id, unique even across parallel proposals.
+            * `"parent_iteration_id"`: str — on-disk iteration id of the
+              parent candidate (``"seed"`` for the seed).
+          Future keys may be added without changing this signature — existing proposers
+          simply ignore them.
 
         Returns
         - Dict[str, str] mapping component names to newly proposed component texts.
@@ -193,3 +215,26 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
         ...
 
     propose_new_texts: ProposalFn | None = None
+
+    # Optional: adapters can implement batch_evaluate to evaluate multiple
+    # (candidate, batch) pairs in a single call.  When not present, the
+    # proposer falls back to default_batch_evaluate() which calls evaluate()
+    # sequentially.  Unlike evaluate(), batch_evaluate always returns full
+    # results including trajectories.
+    #
+    # def batch_evaluate(
+    #     self, items: list[tuple[Candidate, list[DataInst]]],
+    # ) -> list[EvaluationBatch[Trajectory, RolloutOutput]]: ...
+
+
+def default_batch_evaluate(
+    adapter: GEPAAdapter,
+    items: list[tuple[Candidate, list]],
+) -> list[EvaluationBatch]:
+    """Default sequential batch_evaluate fallback.
+
+    Calls ``adapter.evaluate()`` once per (candidate, batch) pair with
+    ``capture_traces=True``.  Adapters can implement ``batch_evaluate``
+    directly for true batching or parallelism.
+    """
+    return [adapter.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]

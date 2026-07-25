@@ -1,6 +1,6 @@
 # make_litellm_lm
 
-::: gepa.optimize_anything.make_litellm_lm
+::: gepa.gepa_launcher.make_litellm_lm
     handler: python
     options:
         show_source: true
