@@ -220,6 +220,8 @@ def test_callbacks_during_optimization(mocked_lms, recorder_dir):
     assert seed_call["candidate_idx"] == 0, "seed candidate should have index 0"
     assert seed_call["parent_ids"] == [], "seed candidate should have no parents"
     assert seed_call["is_best_program"] is True, "seed candidate should be best at iteration 0"
+    assert seed_call["outputs_by_val_id"] is not None
+    assert set(seed_call["outputs_by_val_id"]) == set(seed_call["scores_by_val_id"])
     assert seed_call["metric_calls_before"] == 0
     assert seed_call["metric_calls_delta"] == seed_call["num_examples_evaluated"]
     assert seed_call["metric_calls_after"] == seed_call["num_examples_evaluated"]
