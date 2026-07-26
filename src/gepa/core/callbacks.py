@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Each callback receives a single event object containing all parameters.
 # To add optional fields, split the event into a required base plus a
-# ``total=False`` subclass (see EvaluationEndEvent).  ``typing.NotRequired``
+# ``total=False`` subclass (see ValsetEvaluatedEvent).  ``typing.NotRequired``
 # is the more direct spelling but requires Python 3.11; this project supports
 # 3.10.
 
@@ -116,7 +116,7 @@ class EvaluationStartEvent(TypedDict):
     is_seed_candidate: bool
 
 
-class _EvaluationEndEventRequired(TypedDict):
+class EvaluationEndEvent(TypedDict):
     """Event for on_evaluation_end callback."""
 
     iteration: int
@@ -128,24 +128,6 @@ class _EvaluationEndEventRequired(TypedDict):
     trajectories: list[Any] | None
     objective_scores: list[dict[str, float]] | None
     is_seed_candidate: bool
-
-
-class EvaluationEndEvent(_EvaluationEndEventRequired, total=False):
-    """Event for on_evaluation_end callback.
-
-    Split into a required base plus a ``total=False`` subclass so the metric
-    call fields are optional.  ``typing.NotRequired`` would express this more
-    directly but is Python 3.11+, and this project supports 3.10 — do not
-    "simplify" this into ``NotRequired`` without raising the floor first.
-
-    The metric call fields describe the budget consumed by the evaluation this
-    event reports: ``before`` and ``after`` bracket it, ``delta`` is the cost of
-    the evaluation itself.
-    """
-
-    metric_calls_before: int
-    metric_calls_delta: int
-    metric_calls_after: int
 
 
 class EvaluationSkippedEvent(TypedDict):
@@ -256,9 +238,9 @@ class _ValsetEvaluatedEventRequired(TypedDict):
 class ValsetEvaluatedEvent(_ValsetEvaluatedEventRequired, total=False):
     """Event for on_valset_evaluated callback.
 
-    Uses the same required-base plus ``total=False`` split as
-    :class:`EvaluationEndEvent`; see that class for why ``NotRequired`` is not
-    used here.
+    The metric call fields are optional for compatibility with third-party
+    event emitters. A required base plus ``total=False`` subclass is used
+    instead of ``typing.NotRequired``, which requires Python 3.11.
     """
 
     metric_calls_before: int
