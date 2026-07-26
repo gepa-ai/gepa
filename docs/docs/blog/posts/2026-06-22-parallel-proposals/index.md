@@ -53,11 +53,11 @@ On each step, GEPA now samples several parents from its Pareto frontier, draws s
     4. screens the proposals on their mini-batches through one `batch_evaluate()` call; and
     5. evaluates candidates that pass the screen on the full validation set, then updates the frontier.
 
-The mechanism is analogous to batch acquisition in Bayesian optimization, which proposes several evaluations of an expensive function per round[^batchbo]. Batched-bandit theory indicates that deciding in batches rather than one at a time sacrifices little[^batchedbandits]. Batching also changes the optimization trajectory, extending several members of the Pareto frontier per step instead of adapting after every proposal; prior work shows that repeatedly steering decisions with one fixed validation set can inflate its apparent performance[^adaptive].
+The mechanism is closely analogous to batch Bayesian optimization[^batchopt], which proposes a batch of candidates per round and evaluates them together when each evaluation is expensive, rather than adapting after every single proposal. Similar to how GEPA uses a Pareto frontier instead of a single best numerical score to select candidates, parallel proposals push the idea further by exploring the frontier more broadly within each step by extending several of its members at once, thus reducing how often the search adapts to the validation set. [Prior work](https://www.science.org/doi/10.1126/science.aaa9375) shows that repeatedly steering decisions with one fixed holdout can inflate its apparent performance, so committing to more proposals simultaneously may transfer better beyond the validation set.
 
 ## Results
 
-We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [HoVer](https://hover-nlp.github.io/), where the optimized prompt or program is selected using a validation set and then measured on a held-out test set. For both tasks, we used `gpt-5-mini` as the proposer. As in standard GEPA runs, we measured the optimization budget by the number of metric calls: one metric call corresponds to evaluating one candidate on one example. Every setting on a task received the same total metric-call budget.
+We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [HoVer](https://hover-nlp.github.io/), where the optimized prompt or program is selected using a validation set and then measured on a held-out test set. For both tasks, we used `gpt-5-mini` as the proposer. As in standard GEPA runs, we measured the optimization budget by the number of metric calls. One metric call corresponds to evaluating one candidate on one example. Every setting on a task received the same total metric-call budget.
 
 ??? note "Task setup details"
 
@@ -80,7 +80,7 @@ The number of fixed-latency waves falls by the full factor of $k$, while the num
 
 The measured runs follow this pattern. On LiveBench-Math, moving from single mutation to 2×2 reduced the number of iterations from 219 to 45, a 4.9× reduction, while the chance of triggering validation in each iteration rose from 17% to 53%. The 2×2 run accepted $a = 0.24$ of its proposals, so independence would predict a trigger rate of $1-(1-0.24)^4 = 66\%$. The observed rate is lower because sibling proposals from the same parent tend to succeed or fail together. As a result, full-validation waves fell only from 38 to 24, and the run achieved a 1.9× speedup, from 7.7 to 4.1 hours. This lies between the 1.6× speedup expected if validation accounted for all latency and the 4.9× speedup expected if it accounted for none.
 
-Two additional effects keep the speedup from scaling indefinitely with $k$. First, the reflection wave takes as long as its slowest concurrent call. Second, validating several accepted candidates at once takes longer on a fixed worker pool. In our measured setup, wall-clock time across the sweep improved by roughly 3 to 4× over single mutation before leveling off.
+Two additional effects keep the speedup from scaling indefinitely with $k$. First, the reflection wave takes as long as its slowest concurrent call. Second, validating several accepted candidates at once takes longer on a fixed worker pool. In parallel-computing terms, our sweep is a strong-scaling experiment[^scaling]: the total work is fixed by the metric-call budget while the per-step parallelism grows, so the speedup is bounded by the parts of each step that stay sequential, in the spirit of Amdahl's law. In our measured setup, wall-clock time across the sweep improved by roughly 3 to 4× over single mutation before leveling off.
 
 <figure markdown="span">
   ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, and a dotted baseline. Time falls from 7.7 hours to about 2 on LiveBench-Math and from 61 to 14 minutes on HoVer, while test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 49.0.](images/scaling_lines.png){ style="width: 100%;" }
@@ -91,7 +91,7 @@ Two additional effects keep the speedup from scaling indefinitely with $k$. Firs
 
 We also measured whether batching found better solutions for the same number of metric calls. Here we focus on two settings, 2×2 on LiveBench-Math and 8×1 on HoVer, against single mutation. On the held-out test sets, parallel proposals won 3.2pp on LiveBench-Math (a gain mostly on the symbolic algebra problems), and 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but parallel proposals transferred better to the test set.
 
-The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation adapts after every proposal, steering 219 rounds of feedback against the same 100 validation problems, so a long run can fit their quirks, ultimately resulting in worse transfer from validation set to test set: its score dropped nine points from validation to test (0.783 to 0.689). The batched run spent the same budget in 45 rounds and dropped only three points (0.752 to 0.721).
+The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation adapts after every proposal, steering 219 rounds of feedback against the same 100 validation problems, so a long run can fit their quirks, ultimately resulting in worse transfer from validation set to test set (dropped nine points from validation to test). The batched run spent the same budget in 45 rounds and dropped only three points.
 
 The plots below show how quality accumulates over each run's wall-clock time. Each line reports the best validation score found so far, and the star marks the held-out test score of the final selected candidate.
 
@@ -252,6 +252,5 @@ GEPA by default calls your `evaluate` function in parallel, so all you need is t
 
 The default is still single mutation, matching GEPA's earlier behavior, so existing runs do not change.
 
-[^batchbo]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
-[^batchedbandits]: Vianney Perchet, Philippe Rigollet, Sylvain Chassang, and Erik Snowberg, "[Batched bandit problems](https://projecteuclid.org/journals/annals-of-statistics/volume-44/issue-2/Batched-bandit-problems/10.1214/15-AOS1381.full)," Annals of Statistics 44(2), 2016.
-[^adaptive]: Cynthia Dwork et al., "[The reusable holdout: preserving validity in adaptive data analysis](https://www.science.org/doi/10.1126/science.aaa9375)," Science 349(6248), 2015.
+[^scaling]: Gene M. Amdahl, "[Validity of the single processor approach to achieving large scale computing capabilities](https://dl.acm.org/doi/10.1145/1465482.1465560)," AFIPS 1967.
+[^batchopt]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
