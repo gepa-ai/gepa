@@ -18,7 +18,7 @@ equal_contribution:
 slug: parallel-proposals
 readtime: 8
 title: "Batching the Optimization Loop: Parallel Proposals in GEPA"
-description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter. Batch configurations also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 46.5% to 60.0% on HoVer (with 8×1)."
+description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter. Batch configurations also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 49.0% to 60.0% on HoVer (with 8×1)."
 social_image: blog/2026-06-22-parallel-proposals/images/throughput.png
 citation_keywords: "text optimization, prompt optimization, program optimization, parallel proposals, batched inference, Pareto optimization, GEPA, LiveBench, HoVer, multi-hop retrieval"
 ---
@@ -26,7 +26,7 @@ citation_keywords: "text optimization, prompt optimization, program optimization
 # Batching the Optimization Loop: Parallel Proposals in GEPA
 
 <figure markdown="span">
-  ![Two scatter plots of held-out test performance against optimization wall-clock time. In each, a purple dot labeled Parallel Proposals (P×N) sits above and left of an orange diamond labeled Sequential, inside a shaded region of results that are both faster and better; a dashed line marks the unoptimized baseline, and two arrows from the diamond point up (Better than single mutation) and left (Faster than single mutation). LiveBench-Math: 71.6% in 2.5 hours against 68.9% in 7.7 hours. HoVer: 55.0% in 15 minutes against 46.5% in 61 minutes.](images/throughput.png){ style="width: 100%;" }
+  ![Two scatter plots of held-out test performance against optimization wall-clock time. In each, a purple dot labeled Parallel Proposals (P×N) sits above and left of an orange diamond labeled Sequential, inside a shaded region of results that are both faster and better; a dashed line marks the unoptimized baseline, and two arrows from the diamond point up (Better than single mutation) and left (Faster than single mutation). LiveBench-Math: 71.6% in 2.5 hours against 68.9% in 7.7 hours. HoVer: 55.0% in 15 minutes against 49.0% in 61 minutes.](images/throughput.png){ style="width: 100%;" }
   <figcaption>At the same metric-call budget, parallel proposals are faster and better than single mutation.</figcaption>
 </figure>
 
@@ -83,20 +83,20 @@ The measured runs follow this pattern. On LiveBench-Math, moving from single mut
 Two additional effects keep the speedup from scaling indefinitely with $k$. First, the reflection wave takes as long as its slowest concurrent call. Second, validating several accepted candidates at once takes longer on a fixed worker pool. In our measured setup, wall-clock time across the sweep improved by roughly 3 to 4× over single mutation before leveling off.
 
 <figure markdown="span">
-  ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, and a dotted baseline. Time falls from 7.7 hours to about 2 on LiveBench-Math and from 61 to 14 minutes on HoVer, while test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 46.5.](images/scaling_lines.png){ style="width: 100%;" }
+  ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, and a dotted baseline. Time falls from 7.7 hours to about 2 on LiveBench-Math and from 61 to 14 minutes on HoVer, while test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 49.0.](images/scaling_lines.png){ style="width: 100%;" }
   <figcaption>As the per-step width P·N scales up, runtime falls with diminishing returns, and several settings score higher than single mutation.</figcaption>
 </figure>
 
 ### Better final solutions with less overfitting
 
-We also measured whether batching found better solutions for the same number of metric calls. Here we focus on two settings, 2×2 on LiveBench-Math and 8×1 on HoVer, against single mutation. On the held-out test sets, parallel proposals won 3.2pp on LiveBench-Math (a gain mostly on the symbolic algebra problems), and 13.5pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but parallel proposals transferred better to the test set.
+We also measured whether batching found better solutions for the same number of metric calls. Here we focus on two settings, 2×2 on LiveBench-Math and 8×1 on HoVer, against single mutation. On the held-out test sets, parallel proposals won 3.2pp on LiveBench-Math (a gain mostly on the symbolic algebra problems), and 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but parallel proposals transferred better to the test set.
 
 The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation adapts after every proposal, steering 219 rounds of feedback against the same 100 validation problems, so a long run can fit their quirks, ultimately resulting in worse transfer from validation set to test set: its score dropped nine points from validation to test (0.783 to 0.689). The batched run spent the same budget in 45 rounds and dropped only three points (0.752 to 0.721).
 
 The plots below show how quality accumulates over each run's wall-clock time. Each line reports the best validation score found so far, and the star marks the held-out test score of the final selected candidate.
 
 <figure markdown="span">
-  ![Two pareto curves of best validation quality against runtime. Left, LiveBench-Math: single mutation climbs to 0.783 with a test star at 0.689, batch to 0.752 with a test star at 0.721. Right, HoVer: batch climbs to 0.727 validation recall in 21 minutes with a test star at 0.815, single mutation to 0.709 over 61 minutes with a test star at 0.737.](images/trajectories.png){ style="width: 100%;" }
+  ![Two pareto curves of best validation quality against runtime. Left, LiveBench-Math: single mutation climbs to 0.783 with a test star at 0.689, batch to 0.752 with a test star at 0.721. Right, HoVer: batch climbs to 0.727 validation recall in 21 minutes with a test star at 0.815, single mutation to 0.709 over 61 minutes with a test star at 0.762.](images/trajectories.png){ style="width: 100%;" }
   <figcaption>Best validation quality against optimization time. On LiveBench-Math (left), single mutation wins on validation but parallel proposals win on test, and finish sooner. On HoVer (right), parallel proposals reach a higher validation recall in a third of the time.</figcaption>
 </figure>
 
@@ -105,7 +105,7 @@ The plots below show how quality accumulates over each run's wall-clock time. Ea
 Parallel proposals cost slightly more than single mutation. On LiveBench-Math, its selected prompt, shown below, asks the solver to verify its results internally before answering, which increases output-token usage. On HoVer, a smaller share of the batched proposals passed the mini-batch screen, so the same metric-call budget accommodated more proposals (56 against 40), leading to slightly more LLM cost. Even so, parallel proposals delivered more validation quality per dollar early in both runs, and throughout the run on HoVer.
 
 <figure markdown="span">
-  ![Two pareto curves of best validation quality against dollar cost. Left, LiveBench-Math: single mutation reaches 0.783 validation for about $13; batch reaches 0.752 for about $16. Right, HoVer: batch jumps to 0.727 validation recall by $2.65 and ends at $15.34 with a test star at 0.815; single mutation climbs to 0.709 over $13.40 with a test star at 0.737.](images/pareto_cost.png){ style="width: 100%;" }
+  ![Two pareto curves of best validation quality against dollar cost. Left, LiveBench-Math: single mutation reaches 0.783 validation for about $13; batch reaches 0.752 for about $16. Right, HoVer: batch jumps to 0.727 validation recall by $2.65 and ends at $15.34 with a test star at 0.815; single mutation climbs to 0.709 over $13.40 with a test star at 0.762.](images/pareto_cost.png){ style="width: 100%;" }
   <figcaption>Best validation quality against LLM spend. On LiveBench-Math (left), parallel proposals cost somewhat more at the same metric-call budget ($16 against $13): averaged over each run's roughly 5,000 <code>gpt-4.1-mini</code> calls, the candidates the batched run evaluated used about 1,470 output tokens per call against 1,060. On HoVer (right), parallel proposals reached their selected program for $2.65, while single mutation spent most of its $14.21 to end at a lower validation recall.</figcaption>
 </figure>
 
