@@ -8,7 +8,7 @@ Callbacks are synchronous, observational (cannot modify state), and receive
 full GEPAState access for maximum flexibility.
 
 Each callback receives a single event TypedDict containing all parameters.
-This allows easy extension via NotRequired fields without breaking changes.
+This allows easy extension via optional fields without breaking changes.
 
 Example usage:
 
@@ -47,7 +47,10 @@ logger = logging.getLogger(__name__)
 # Event TypedDicts
 # =============================================================================
 # Each callback receives a single event object containing all parameters.
-# Use NotRequired for optional fields when extending in the future.
+# To add optional fields, split the event into a required base plus a
+# ``total=False`` subclass (see ValsetEvaluatedEvent).  ``typing.NotRequired``
+# is the more direct spelling but requires Python 3.11; this project supports
+# 3.10.
 
 
 class OptimizationStartEvent(TypedDict):
@@ -217,7 +220,7 @@ class ParetoFrontUpdatedEvent(TypedDict):
     displaced_candidates: list[int]
 
 
-class ValsetEvaluatedEvent(TypedDict):
+class _ValsetEvaluatedEventRequired(TypedDict):
     """Event for on_valset_evaluated callback."""
 
     iteration: int
@@ -230,6 +233,19 @@ class ValsetEvaluatedEvent(TypedDict):
     parent_ids: Sequence[ProgramIdx]
     is_best_program: bool
     outputs_by_val_id: dict[Any, Any] | None
+
+
+class ValsetEvaluatedEvent(_ValsetEvaluatedEventRequired, total=False):
+    """Event for on_valset_evaluated callback.
+
+    The metric call fields are optional for compatibility with third-party
+    event emitters. A required base plus ``total=False`` subclass is used
+    instead of ``typing.NotRequired``, which requires Python 3.11.
+    """
+
+    metric_calls_before: int
+    metric_calls_delta: int
+    metric_calls_after: int
 
 
 class StateSavedEvent(TypedDict):
