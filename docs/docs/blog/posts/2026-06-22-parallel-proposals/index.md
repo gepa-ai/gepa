@@ -53,7 +53,7 @@ On each step, GEPA now samples several parents from its Pareto frontier, draws s
     4. screens the proposals on their mini-batches through one `batch_evaluate()` call; and
     5. evaluates candidates that pass the screen on the full validation set, then updates the frontier.
 
-The mechanism is closely analogous to batch Bayesian optimization[^batchopt], which proposes a batch of candidates per round and evaluates them together when each evaluation is expensive, rather than adapting after every single proposal. Similar to how GEPA uses a Pareto frontier instead of a single best numerical score to select candidates, parallel proposals push the idea further by exploring the frontier more broadly within each step by extending several of its members at once, thus reducing how often the search adapts to the validation set. [Prior work](https://www.science.org/doi/10.1126/science.aaa9375) shows that repeatedly steering decisions with one fixed holdout can inflate its apparent performance, so committing to more proposals simultaneously may transfer better beyond the validation set.
+The mechanism is closely analogous to batch Bayesian optimization[^batchopt], which proposes a batch of candidates per round and evaluates them together when each evaluation is expensive, rather than adapting after every single proposal. Similar to how GEPA uses a Pareto frontier instead of a single best numerical score to select candidates, parallel proposals push the idea further by drawing several extensions of the frontier within each step, thus reducing how often the search adapts to the validation set. [Prior work](https://www.science.org/doi/10.1126/science.aaa9375) shows that repeatedly steering decisions with one fixed holdout can inflate its apparent performance, so committing to more proposals simultaneously may transfer better beyond the validation set.
 
 ## Results
 
@@ -99,6 +99,15 @@ The plots below show how quality accumulates over each run's wall-clock time. Ea
   ![Two Pareto curves of best validation quality against runtime. Left, LiveBench-Math: single mutation climbs to 0.783 with a test star at 0.689, batch to 0.752 with a test star at 0.721. Right, HoVer: batch climbs to 0.727 validation recall in 21 minutes with a test star at 0.815, single mutation to 0.716 over 47 minutes with a test star at 0.760.](images/trajectories.png){ style="width: 100%;" }
   <figcaption>Best validation quality against optimization time. On LiveBench-Math (left), single mutation wins on validation but parallel proposals win on test, and finish sooner. On HoVer (right), parallel proposals reach a higher validation recall in less than half the time.</figcaption>
 </figure>
+
+### The best setting depends on the budget
+
+<figure markdown="span">
+  ![Two step charts of best validation score against metric calls consumed, for single mutation and one matched-width pair per task, with stars marking held-out test scores. On LiveBench-Math, 2×2 climbs past 4×1 within about 100 calls and reaches 0.748 by about 1,000, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 72.1% for 2×2 against 68.9% for single mutation and 68.7% for 4×1. On HoVer, 8×1 jumps to 0.727 within about 400 calls and leads single mutation at every budget, 2×4 finishes highest at 0.740, and single mutation ends at 0.709; test stars show recall of 0.815 for 8×1, 0.810 for 2×4, and 0.760 for single mutation.](images/budget_pareto.png){ style="width: 100%;" }
+  <figcaption>Best validation quality against metric calls consumed, for single mutation and one matched-width pair per task. The best setting changes with the budget, and batched settings dominate small budgets.</figcaption>
+</figure>
+
+Which setting makes the best use of a fixed budget is a compute-optimality question[^chinchilla]. As the figure shows, batched settings dominate small budgets on both tasks. In principle, the two axes hedge different risks. Larger P extends more members of the frontier at once, which should help when no single generally good candidate exists and the frontier holds genuinely different specialists worth advancing in parallel. Larger N draws more mutations around each parent, each reflecting on its own mini-batch sample, which should help when the dataset is rich enough to expose many distinct directions to improve one candidate. LiveBench-Math is the second case, with problems spanning multiple areas, so giving each parent several mutations (larger N) transferred better to test than spreading single mutations across more parents (larger P). HoVer additionally keeps a more complementary candidate pool, where different candidates succeed on different claims, and its test scores tend to grow with both P and N. Based on the results, we suggest scaling N first when in doubt.
 
 ### Dollar cost comparison
 
@@ -254,3 +263,4 @@ The default is still single mutation, matching GEPA's earlier behavior, so exist
 
 [^batchopt]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
 [^scaling]: Gene M. Amdahl, "[Validity of the single processor approach to achieving large scale computing capabilities](https://dl.acm.org/doi/10.1145/1465482.1465560)," AFIPS 1967.
+[^chinchilla]: Jordan Hoffmann et al., "[Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556)," 2022.
