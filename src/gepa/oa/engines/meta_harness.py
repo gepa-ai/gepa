@@ -9,21 +9,19 @@ budget is exhausted or ``max_iterations`` is hit.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
+from gepa.oa.harness import AgentRunSpec, get_harness
+from gepa.oa.harness.base import AgentHarness
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
@@ -279,6 +277,7 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
 
 def _run_proposer(
     *,
+    harness: AgentHarness,
     work_dir: Path,
     iteration: int,
     model: str,
@@ -288,7 +287,6 @@ def _run_proposer(
     pending_path: Path,
     log_dir: Path,
     max_thinking_tokens: int | None = None,
-    sandbox: bool = True,
 ) -> tuple[int, float, str]:
     state = work_dir / "state"
     prompt = (
@@ -305,65 +303,46 @@ def _run_proposer(
         f"Follow the gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
     )
 
-    session_id = str(uuid.uuid4())
-    cmd: list[str] = bwrap_prefix(work_dir) if sandbox else []
-    cmd += [
-        "claude",
-        "--print",
-        prompt,
-        "--output-format",
-        "json",
-        "--model",
-        model,
-        "--session-id",
-        session_id,
-        DENY_WEB_TOOLS,
-    ]
-    # Single source of the permission posture (see claude_permission_args):
-    # bypassPermissions in the bwrap jail / unsandboxed, or the macOS Seatbelt
-    # settings whose --permission-mode default enforces the file-tool whitelist.
-    cmd.extend(claude_permission_args(work_dir, sandboxed=sandbox))
-    if effort is not None:
-        cmd.extend(["--effort", effort])
-    if max_budget_usd is not None:
-        cmd.extend(["--max-budget-usd", f"{max_budget_usd:.4f}"])
-
-    env = {**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)}
-    env.pop("CLAUDECODE", None)
-    env.setdefault("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000")
-    if max_thinking_tokens is not None:
-        env["CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"] = "1"
-        env["MAX_THINKING_TOKENS"] = str(max_thinking_tokens)
-
     log_dir.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
-    (log_dir / f"iter{iteration}_stdout.json").write_text(proc.stdout or "")
-    (log_dir / f"iter{iteration}_stderr.txt").write_text(proc.stderr or "")
-    cost_usd, result_payload = _parse_proposer_result(proc.stdout or "")
+    result = harness.run(
+        AgentRunSpec(
+            prompt=prompt,
+            work_dir=work_dir,
+            model=model,
+            effort=effort,
+            max_thinking_tokens=max_thinking_tokens,
+            max_budget_usd=max_budget_usd,
+            extra_env={"GEPA_OMNI_WORK_DIR": str(work_dir)},
+        )
+    )
+    session_id = result.session_id or ""
+    (log_dir / f"iter{iteration}_stdout.json").write_text(json.dumps(result.raw, indent=2, default=str))
+    (log_dir / f"iter{iteration}_stderr.txt").write_text(result.stderr or "")
 
     (log_dir / f"iter{iteration}_meta.json").write_text(
         json.dumps(
             {
                 "iteration": iteration,
                 "session_id": session_id,
-                "exit_code": proc.returncode,
-                "cost_usd": cost_usd,
-                "cmd": cmd,
-                "stderr_tail": (proc.stderr or "")[-2000:],
+                "harness": harness.name,
+                "exit_code": result.returncode,
+                "cost_usd": result.cost_usd,
+                "stderr_tail": (result.stderr or "")[-2000:],
                 # Echo a few top-level result fields so a reviewer doesn't have
                 # to jump into stdout.json.
                 "result_summary": {
-                    "duration_ms": result_payload.get("duration_ms"),
-                    "num_turns": result_payload.get("num_turns"),
-                    "usage": result_payload.get("usage"),
-                    "is_error": result_payload.get("is_error"),
-                    "subtype": result_payload.get("subtype"),
+                    "duration_ms": result.duration_ms,
+                    "num_turns": result.num_turns,
+                    "tokens_in": result.tokens_in,
+                    "tokens_out": result.tokens_out,
+                    "is_error": result.is_error,
+                    "error": result.error,
                 },
             },
             indent=2,
         )
     )
-    return proc.returncode, cost_usd, session_id
+    return result.returncode, result.cost_usd, session_id
 
 
 def _parse_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
@@ -641,10 +620,13 @@ class MetaHarnessEngine:
         # subprocess sessions. Enforced via --max-budget-usd; the eval server
         # never sees proposer spend.
         self.max_token_cost = config.max_token_cost
+        # Agent runtime executing the proposer sessions ("claude-code" CLI by
+        # default, or any Omnigent-wrapped backend via harness="omnigent").
+        self._harness = get_harness(config.harness, sandbox=bool(config.sandbox))
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
+        self._harness.preflight(self.name)
         budget = server.budget
 
         # When sandbox=True, force tempdir work_dir even if run_dir is set —
@@ -701,6 +683,7 @@ class MetaHarnessEngine:
 
             propose_start = time.time()
             exit_code, cost, session_id = _run_proposer(
+                harness=self._harness,
                 work_dir=work_dir,
                 iteration=iteration,
                 model=self.model,
@@ -710,7 +693,6 @@ class MetaHarnessEngine:
                 pending_path=pending_path,
                 log_dir=sessions_dir,
                 max_thinking_tokens=self.max_thinking_tokens,
-                sandbox=bool(self.sandbox),
             )
             propose_time = time.time() - propose_start
             total_proposer_cost += cost
@@ -953,7 +935,8 @@ class MetaHarnessEngine:
         transcripts_dir = dest / "sessions"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
         for sid in session_ids:
-            _copy_session_transcript(work_dir, sid, transcripts_dir)
+            self._harness.export_transcript(sid, work_dir, transcripts_dir)
+        self._harness.close()
         if work_dir.exists() and not _is_under(work_dir, dest):
             shutil.copytree(work_dir, dest / "work", dirs_exist_ok=True)
         if self._pending_tempdir is not None:

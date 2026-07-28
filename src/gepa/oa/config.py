@@ -53,11 +53,19 @@ class OptimizeAnythingConfig:
             use a tempdir; in-process engines skip artifact writes. Set
             explicitly to persist them.
         stop_at_score: Score threshold for early stop. Each engine interprets.
-        sandbox: OS-jail the subprocess engines' ``claude`` sessions (bwrap on
-            Linux — requires the ``bubblewrap`` package — Claude Code's
-            Seatbelt sandbox on macOS). Default ``True``. Linux runs abort at
-            engine start when ``bwrap`` is missing; ``False`` prints a loud
-            warning and runs the agent unsandboxed with full host access.
+        sandbox: OS-jail the subprocess engines' agent sessions. Default
+            ``True``. With the default claude-code harness: bwrap on Linux
+            (requires the ``bubblewrap`` package; runs abort at engine start
+            when it is missing) or Claude Code's Seatbelt sandbox on macOS;
+            ``False`` prints a loud warning and runs the agent unsandboxed
+            with full host access. With ``harness="omnigent"``, jailing is
+            delegated to Omnigent's own sandbox instead (see
+            :mod:`gepa.oa.harness.omnigent`).
+        harness: Agent runtime executing the subprocess engines' sessions:
+            ``"claude-code"`` (default, the ``claude`` CLI), an options dict
+            such as ``{"type": "omnigent", "backend": "codex"}`` to run on
+            any Omnigent-wrapped backend, or a constructed
+            :class:`~gepa.oa.harness.base.AgentHarness`.
         engine_config: Engine-specific options that don't generalize across
             engines. Each engine reads the keys it understands and warns about
             leftovers so typos surface. The keys an engine accepts are
@@ -105,6 +113,10 @@ class OptimizeAnythingConfig:
     run_dir: str | None = None
     stop_at_score: float | None = None
     sandbox: bool = True
+    # Agent runtime for the subprocess engines: "claude-code" (default), an
+    # options dict (e.g. {"type": "omnigent", "backend": "codex"}), or an
+    # AgentHarness instance. See gepa.oa.harness.
+    harness: str | dict[str, Any] | Any = "claude-code"
 
     # Engine-specific. Each engine's factory pops what it knows (see the
     # engine's _<ENGINE>_CONFIG_KEYS tuple) and warns about anything left over.
