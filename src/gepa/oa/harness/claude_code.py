@@ -39,8 +39,19 @@ class ClaudeCodeHarness(AgentHarness):
     def run(self, spec: AgentRunSpec) -> AgentRunResult:
         session_id = spec.session_id or str(uuid.uuid4())
         cmd: list[str] = bwrap_prefix(spec.work_dir) if self.sandbox else []
-        cmd += ["claude", "--print", spec.prompt, "--output-format", "json", "--model", spec.model]
-        cmd.extend(["--resume", session_id] if spec.resume else ["--session-id", session_id])
+        cmd += [
+            "claude",
+            "--print",
+            spec.prompt,
+            "--output-format",
+            "json",
+            "--model",
+            spec.model,
+        ]
+        if spec.resume:
+            cmd.extend(["--resume", session_id])
+        else:
+            cmd.extend(["--session-id", session_id])
         cmd.append(DENY_WEB_TOOLS)
         cmd.extend(claude_permission_args(spec.work_dir, sandboxed=self.sandbox))
         # A fixed thinking budget replaces effort-based adaptive thinking.
@@ -99,10 +110,17 @@ class ClaudeCodeHarness(AgentHarness):
 
         # A non-zero exit, unparseable/empty output, or is_error in the
         # envelope all mean "the run failed", not "no changes proposed".
-        is_error = bool(proc.returncode != 0 or parse_error or payload.get("is_error") or not stdout)
+        is_error_payload = bool(payload.get("is_error"))
+        empty_payload = not payload and not stdout
+        is_error = bool(proc.returncode != 0 or parse_error or is_error_payload or empty_payload)
         error = None
         if is_error:
-            error = f"returncode={proc.returncode}" + (f" parse_error={parse_error}" if parse_error else "")
+            error = (
+                f"returncode={proc.returncode}"
+                + (f" parse_error={parse_error}" if parse_error else "")
+                + (" is_error=true" if is_error_payload else "")
+                + (" empty_output=true" if empty_payload else "")
+            )
 
         return AgentRunResult(
             text=payload.get("result"),

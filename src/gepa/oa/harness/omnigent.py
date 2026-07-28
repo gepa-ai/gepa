@@ -56,12 +56,21 @@ def find_free_port() -> int:
 class OmnigentHarness(AgentHarness):
     """Agent harness backed by an Omnigent server + runner.
 
-    ``backend`` is any Omnigent harness id (``"claude-sdk"``, ``"codex"``,
-    ``"goose"``, ...). ``sandbox=True`` uses Omnigent's platform-default
-    sandbox, ``sandbox_type`` picks an explicit type/provider, ``False``
-    disables it — GEPA's own bwrap jail is never stacked on top (Omnigent's
-    seccomp profile forbids nesting). Pass ``server_url`` + ``runner_id`` to
-    attach to an external server instead of spawning one.
+    Args:
+        backend: Omnigent harness id to run the agent on, e.g.
+            ``"claude-sdk"`` (default), ``"codex"``, ``"goose"``, ``"qwen"``,
+            ``"kimi"``, ``"hermes"``.
+        sandbox: Delegate OS jailing to Omnigent. ``True`` (default) applies
+            Omnigent's platform default (bwrap on Linux, Seatbelt on macOS);
+            ``False`` disables it. GEPA's own bwrap jail is never stacked on
+            top (Omnigent's seccomp profile forbids nesting).
+        sandbox_type: Explicit Omnigent sandbox type/provider, overriding the
+            platform default. Implies ``sandbox=True``.
+        server_url: Attach to a running Omnigent server instead of spawning
+            one. Requires ``runner_id`` of an online runner.
+        runner_id: Runner to bind sessions to in attach mode.
+        state_dir: Where the managed server keeps its DB, artifacts, and
+            logs. Defaults to ``<work_dir>/.omnigent`` of the first run.
     """
 
     name = "omnigent"
@@ -89,15 +98,19 @@ class OmnigentHarness(AgentHarness):
     def preflight(self, engine_name: str) -> None:
         try:
             import omnigent_client  # noqa: F401
-
-            if self.managed:
-                import omnigent  # noqa: F401
         except ImportError as e:
             raise RuntimeError(
-                f"[{engine_name}] harness=omnigent requires the omnigent packages: "
-                "install per https://omnigent.ai/quickstart/install (or pass "
-                "server_url= to attach to a running server)."
+                f"[{engine_name}] harness=omnigent requires the omnigent_client SDK: "
+                "install per https://omnigent.ai/quickstart/install."
             ) from e
+        if self.managed:
+            try:
+                import omnigent  # noqa: F401
+            except ImportError as e:
+                raise RuntimeError(
+                    f"[{engine_name}] no server_url given, so the omnigent package "
+                    "must be importable to spawn a local server+runner."
+                ) from e
 
     def ensure_server(self, work_dir: Path) -> str:
         if self.server_url is not None:
@@ -185,7 +198,11 @@ class OmnigentHarness(AgentHarness):
             "spec_version": 1,
             "name": SAFE_NAME_RE.sub("-", f"gepa-oa-{self.backend}"),
             "prompt": spec.system_prompt or DEFAULT_SYSTEM_PROMPT,
-            "executor": {"type": "omnigent", "model": spec.model, "config": {"harness": self.backend}},
+            "executor": {
+                "type": "omnigent",
+                "model": spec.model,
+                "config": {"harness": self.backend},
+            },
         }
         if self.backend in OS_ENV_BACKENDS:
             os_env: dict[str, Any] = {"type": "caller_process"}
@@ -238,7 +255,12 @@ class OmnigentHarness(AgentHarness):
                 )
                 assert self.runner_id is not None
                 session = await client.sessions.bind_runner(session.id, runner_id=self.runner_id)
-            chat = SessionsChat(namespace=client.sessions, files_uploader=None, files_getter=None, session=session)
+            chat = SessionsChat(
+                namespace=client.sessions,
+                files_uploader=None,
+                files_getter=None,
+                session=session,
+            )
             result = await asyncio.wait_for(chat.query(spec.prompt), timeout=spec.timeout_seconds)
             snap = await client.sessions.get(session.id)
             return self.result_from_snapshot(snap, text=getattr(result, "text", None))
@@ -250,8 +272,13 @@ class OmnigentHarness(AgentHarness):
     @staticmethod
     def result_from_snapshot(snap: Any, *, text: str | None) -> AgentRunResult:
         raw: dict[str, Any] = snap.model_dump(mode="json")
-        error = raw.get("last_task_error")
-        is_error = bool(error) or raw.get("status") == "failed"
+        error_detail = raw.get("last_task_error")
+        is_error = bool(error_detail) or raw.get("status") == "failed"
+        error = None
+        if error_detail:
+            error = json.dumps(error_detail)
+        elif is_error:
+            error = "session status=failed"
 
         tokens_in = tokens_out = 0
         for usage in (raw.get("usage_by_model") or {}).values():
@@ -264,7 +291,7 @@ class OmnigentHarness(AgentHarness):
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             is_error=is_error,
-            error=json.dumps(error) if error else ("session status=failed" if is_error else None),
+            error=error,
             session_id=raw.get("id"),
             native_session_id=raw.get("external_session_id"),
             returncode=1 if is_error else 0,
