@@ -620,8 +620,6 @@ class MetaHarnessEngine:
         # subprocess sessions. Enforced via --max-budget-usd; the eval server
         # never sees proposer spend.
         self.max_token_cost = config.max_token_cost
-        # Agent runtime executing the proposer sessions ("claude-code" CLI by
-        # default, or any Omnigent-wrapped backend via harness="omnigent").
         self.harness = get_harness(config.harness, sandbox=bool(config.sandbox))
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 

@@ -1,20 +1,13 @@
 """Agent-harness abstraction for optimize_anything's subprocess engines.
 
-Every OA engine that drives a coding agent (autoresearch, meta_harness, the
-gepa Claude-Code proposer) consumes exactly three signals from a finished
-agent run — cost (budget enforcement), success/failure, and token usage —
-plus the agent's file outputs in the work dir and, as a diagnostic artifact,
-a transcript. Today each engine builds a ``claude --print`` argv by hand;
-this module names that contract so the agent runtime becomes a config knob
-(``OptimizeAnythingConfig.harness``) instead of a hardcoded CLI.
-
-Implementations:
-
-- :class:`~gepa.oa.harness.claude_code.ClaudeCodeHarness` — the current
-  ``claude --print --output-format json`` subprocess path, verbatim.
-- :class:`~gepa.oa.harness.omnigent.OmnigentHarness` — any agent backend
-  Omnigent wraps (claude-sdk, codex, goose, qwen, kimi, hermes, ...) via the
-  Omnigent server + runner and the ``omnigent_client`` SDK.
+Every OA engine that drives a coding agent consumes the same signals from a
+finished run: cost, success/failure, token usage, the agent's file outputs
+in the work dir, and (as a diagnostic) a transcript. This module names that
+contract so the agent runtime becomes a config knob
+(``OptimizeAnythingConfig.harness``) instead of a hardcoded ``claude
+--print`` argv. Implementations: ``claude_code.ClaudeCodeHarness`` (the
+existing CLI path) and ``omnigent.OmnigentHarness`` (any Omnigent-wrapped
+backend).
 """
 
 from __future__ import annotations
@@ -27,37 +20,14 @@ from typing import Any
 
 @dataclass
 class AgentRunSpec:
-    """One agent invocation: a prompt executed with tools in ``work_dir``.
+    """One agent invocation: ``prompt`` executed with tools in ``work_dir``.
 
-    Attributes:
-        prompt: The task prompt for the agent session.
-        work_dir: Working directory the agent runs in; candidate files and
-            engine state live here, and sandboxes are rooted here.
-        model: Backend model identifier (harness-specific format).
-        session_id: Harness-scoped session identifier. For claude-code the
-            caller mints a uuid and passes it on every call; for omnigent
-            leave ``None`` on the first call and pass back
-            :attr:`AgentRunResult.session_id` with ``resume=True`` to
-            continue the same conversation.
-        resume: Continue the session named by ``session_id`` instead of
-            starting a fresh one (autoresearch's iteration loop).
-        effort: Reasoning-effort level (``"low"``..``"max"``), or ``None``
-            for the backend default. Mutually exclusive with
-            ``max_thinking_tokens`` — implementations ignore ``effort``
-            when a thinking budget is set.
-        max_thinking_tokens: Fixed thinking-token budget, or ``None``.
-        max_budget_usd: Hard per-session spend cap when the harness can
-            enforce one (claude-code: ``--max-budget-usd``). Harnesses that
-            cannot enforce pre-emptively still *report* cost so the engine's
-            cross-iteration budget loop works; see the implementation's
-            docstring.
-        extra_env: Extra environment variables for the agent process
-            (e.g. ``GEPA_OMNI_WORK_DIR``).
-        timeout_seconds: Kill the run after this long. ``None`` = no limit.
-        system_prompt: Optional system-prompt override where the harness
-            supports one (omnigent agent spec ``prompt``); claude-code
-            ignores it (the CLI's default system prompt is part of the
-            harness).
+    ``session_id``/``resume`` continue a prior session (autoresearch's loop):
+    claude-code mints a uuid the caller passes back, omnigent returns the
+    conversation id from the first run. ``effort`` is ignored when
+    ``max_thinking_tokens`` is set (documented mutex). ``max_budget_usd`` is
+    a hard cap where the harness supports one; cost is always *reported* so
+    engines can enforce budgets across iterations either way.
     """
 
     prompt: str
@@ -75,31 +45,13 @@ class AgentRunSpec:
 
 @dataclass
 class AgentRunResult:
-    """What an engine needs to know about a finished agent run.
+    """Outcome of one agent run.
 
-    Attributes:
-        text: Final assistant text, or ``None`` when the run produced none.
-            Engines generally read candidate artifacts from the work dir,
-            not from this field.
-        cost_usd: Harness-reported USD cost of the session (cumulative for
-            resumed sessions where noted by the implementation).
-        tokens_in / tokens_out: Token usage, 0 when unreported.
-        is_error: True when the run failed (nonzero exit, harness error
-            envelope, failed session status, unparseable output). Engines
-            must treat an ``is_error`` run as "no proposal", never as "agent
-            declined to change anything".
-        error: Human-readable failure description when ``is_error``.
-        session_id: Harness-scoped session id, for ``resume`` and
-            :meth:`AgentHarness.export_transcript`.
-        native_session_id: The wrapped agent's own session id when the
-            harness exposes one (omnigent ``external_session_id``); ``None``
-            otherwise.
-        duration_ms / num_turns: Diagnostics when reported, else ``None``.
-        returncode: Subprocess exit code, or a synthesized 0/1 for
-            non-subprocess harnesses.
-        stderr: Captured stderr tail for logging, "" when not applicable.
-        raw: The harness's own result record (claude JSON envelope /
-            omnigent session snapshot), for engine log files.
+    Engines must treat ``is_error`` as "no proposal", never as "agent
+    declined to change anything". ``native_session_id`` is the wrapped
+    agent's own session id when the harness exposes one (omnigent
+    ``external_session_id``). ``raw`` is the harness's own result record
+    (claude JSON envelope / omnigent session snapshot) for log files.
     """
 
     text: str | None = None
@@ -120,32 +72,21 @@ class AgentRunResult:
 class AgentHarness(abc.ABC):
     """Runtime that executes one agent session per :meth:`run` call."""
 
-    #: Registry / display name, e.g. ``"claude-code"``.
     name: str = "agent"
 
     @abc.abstractmethod
     def preflight(self, engine_name: str) -> None:
-        """Fail fast (with an actionable message) when the harness cannot run.
-
-        Called once at engine start, before any budget is spent.
-        """
+        """Fail fast with an actionable message when the harness cannot run."""
 
     @abc.abstractmethod
     def run(self, spec: AgentRunSpec) -> AgentRunResult:
-        """Execute one agent session synchronously and return its outcome.
+        """Execute one agent session synchronously.
 
-        Must not raise for agent-level failures — report them via
-        :attr:`AgentRunResult.is_error` so engines uniformly distinguish
-        "failed" from "ran and proposed nothing". May raise for harness
-        misconfiguration (preflight-class errors).
+        Agent-level failures are reported via ``is_error``, not raised.
         """
 
     def export_transcript(self, session_id: str, work_dir: Path, dst_dir: Path) -> None:
-        """Best-effort: mirror the session transcript(s) into ``dst_dir``.
-
-        A diagnostic artifact, not a correctness signal (see
-        ``claude_utils.copy_session_transcript``). Default: no-op.
-        """
+        """Best-effort diagnostic: mirror session transcript(s) into ``dst_dir``."""
 
     def close(self) -> None:
-        """Release long-lived resources (servers, runners). Default: no-op."""
+        """Release long-lived resources (servers, runners)."""

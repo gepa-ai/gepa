@@ -1,10 +1,8 @@
 """Claude Code CLI harness — the existing ``claude --print`` path, named.
 
-Reproduces the subprocess invocation the OA engines build inline today
-(autoresearch ``_run_claude``, meta_harness ``_run_proposer``,
-``ClaudeCodeAgentProposer._run_claude``) so those call sites can collapse to
-``harness.run(spec)`` and the Claude-specific plumbing lives in exactly one
-place. Sandboxing, permission posture, and the web-tool denylist come from
+Unifies the subprocess invocation the OA engines built inline (autoresearch,
+meta_harness, ClaudeCodeAgentProposer) so those call sites collapse to
+``harness.run(spec)``. Sandboxing and permission posture come from
 :mod:`gepa.oa.sandbox` unchanged.
 """
 
@@ -28,12 +26,7 @@ from gepa.oa.sandbox import (
 
 
 class ClaudeCodeHarness(AgentHarness):
-    """Run agent sessions through the ``claude`` CLI in print mode.
-
-    Args:
-        sandbox: Jail the subprocess (bwrap on Linux, Seatbelt settings on
-            macOS) via the shared :mod:`gepa.oa.sandbox` helpers.
-    """
+    """Run agent sessions through the ``claude`` CLI in print mode."""
 
     name = "claude-code"
 
@@ -46,23 +39,11 @@ class ClaudeCodeHarness(AgentHarness):
     def run(self, spec: AgentRunSpec) -> AgentRunResult:
         session_id = spec.session_id or str(uuid.uuid4())
         cmd: list[str] = bwrap_prefix(spec.work_dir) if self.sandbox else []
-        cmd += [
-            "claude",
-            "--print",
-            spec.prompt,
-            "--output-format",
-            "json",
-            "--model",
-            spec.model,
-        ]
-        if spec.resume:
-            cmd.extend(["--resume", session_id])
-        else:
-            cmd.extend(["--session-id", session_id])
+        cmd += ["claude", "--print", spec.prompt, "--output-format", "json", "--model", spec.model]
+        cmd.extend(["--resume", session_id] if spec.resume else ["--session-id", session_id])
         cmd.append(DENY_WEB_TOOLS)
         cmd.extend(claude_permission_args(spec.work_dir, sandboxed=self.sandbox))
-        # Documented mutex: a fixed thinking budget replaces effort-based
-        # adaptive thinking, so --effort is only passed without one.
+        # A fixed thinking budget replaces effort-based adaptive thinking.
         if spec.max_thinking_tokens is None and spec.effort is not None:
             cmd.extend(["--effort", spec.effort])
         if spec.max_budget_usd is not None:
@@ -92,7 +73,6 @@ class ClaudeCodeHarness(AgentHarness):
                 returncode=124,
                 stderr=(e.stderr or "")[-4000:] if isinstance(e.stderr, str) else "",
             )
-
         return self.parse_result(proc, session_id)
 
     @staticmethod
@@ -105,7 +85,6 @@ class ClaudeCodeHarness(AgentHarness):
                 payload = json.loads(stdout)
             except (json.JSONDecodeError, ValueError) as e:
                 parse_error = f"{type(e).__name__}: {e}"
-                payload = {}
 
         try:
             cost = float(payload.get("total_cost_usd", 0.0) or 0.0)
@@ -118,17 +97,12 @@ class ClaudeCodeHarness(AgentHarness):
         except (TypeError, ValueError):
             tokens_in = tokens_out = 0
 
-        is_error_payload = bool(payload.get("is_error"))
-        empty_payload = not payload and not stdout
-        is_error = bool(proc.returncode != 0 or parse_error or is_error_payload or empty_payload)
+        # A non-zero exit, unparseable/empty output, or is_error in the
+        # envelope all mean "the run failed", not "no changes proposed".
+        is_error = bool(proc.returncode != 0 or parse_error or payload.get("is_error") or not stdout)
         error = None
         if is_error:
-            error = (
-                f"returncode={proc.returncode}"
-                + (f" parse_error={parse_error}" if parse_error else "")
-                + (" is_error=true" if is_error_payload else "")
-                + (" empty_output=true" if empty_payload else "")
-            )
+            error = f"returncode={proc.returncode}" + (f" parse_error={parse_error}" if parse_error else "")
 
         return AgentRunResult(
             text=payload.get("result"),
@@ -138,7 +112,6 @@ class ClaudeCodeHarness(AgentHarness):
             is_error=is_error,
             error=error,
             session_id=payload.get("session_id") or session_id,
-            native_session_id=None,
             duration_ms=payload.get("duration_ms"),
             num_turns=payload.get("num_turns"),
             returncode=proc.returncode,

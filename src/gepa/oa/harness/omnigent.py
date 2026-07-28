@@ -1,47 +1,15 @@
 """Omnigent harness — run OA agent sessions on any Omnigent-wrapped backend.
 
-Omnigent (https://omnigent.ai, ``pip install omnigent``) is a meta-harness
-that wraps coding agents — Claude Code (``claude-sdk``), Codex, Goose, Qwen,
-Kimi, Hermes, Pi, Cursor, Copilot, and generic ACP agents — behind one
-server/runner runtime with its own OS sandboxing (bwrap/Seatbelt/remote
-providers). Driving OA's agent sessions through it buys three things:
+Omnigent (https://omnigent.ai) wraps coding agents — Claude Code
+(``claude-sdk``), Codex, Goose, Qwen, Kimi, Hermes, and more — behind one
+server/runner runtime with its own OS sandboxing. Driving OA through it
+makes the backend a config value, delegates jailing to Omnigent's sandbox,
+and reads cost/status/usage from Omnigent's uniform session record.
 
-1. **Backend choice as config** — ``harness={"type": "omnigent", "backend":
-   "codex"}`` runs the same OA engine on Codex instead of Claude Code, with
-   no engine changes and one uniform result/record format.
-2. **Omnigent's sandbox instead of ours** — the agent bundle's
-   ``os_env.sandbox`` block delegates jailing to Omnigent (platform default
-   bwrap/Seatbelt, or a named provider). GEPA's own bwrap jail is *never*
-   stacked on top: Omnigent's bwrap seccomp profile denies nested
-   ``CLONE_NEW*``, so exactly one of the two must own isolation.
-3. **A removal path for OA's Claude-CLI plumbing** — cost/status/usage come
-   from Omnigent's session record, transcripts from its items API plus (for
-   backends that expose one) the wrapped agent's native transcript via
-   ``external_session_id``.
-
-Topology per harness instance: one ``omnigent server`` (isolated sqlite DB
-under the run dir) + one runner, spawned lazily and shared by every
-:meth:`run` call; each call creates one Omnigent session (agent bundle upload
-→ ``bind_runner`` → ``SessionsChat.query``) and reads the session snapshot
-back for cost/usage/status. ``resume=True`` sends the next prompt to the
-same session, which replaces the claude CLI's ``--resume`` in autoresearch's
-iteration loop. Alternatively pass ``server_url``/``runner_id`` to attach to
-an externally managed server.
-
-STATUS: experimental draft. Known gaps, each an ask on the Omnigent side or
-a documented workaround here — see ``harness/README.md`` for the full list:
-
-- Managed spawn uses Omnigent-internal surfaces (``omnigent.runner._entry``,
-  ``token_bound_runner_id``, ``OMNIGENT_RUNNER_TUNNEL_TOKEN``): there is no
-  public "give me a local server+runner" API yet.
-- No pre-emptive per-session budget cap (``--max-budget-usd`` equivalent):
-  cost is enforced post-hoc by the engines' cross-iteration loop.
-- ``max_thinking_tokens`` and the WebFetch/WebSearch denylist have no
-  session-create-time equivalent (Omnigent policies could express the
-  latter; not wired here).
-- Session ``status`` served after a server restart, and
-  ``external_session_id`` for headless backends, depend on two upstream
-  PRs (see README).
+One server + runner pair per harness instance (or attach via
+``server_url``); one Omnigent session per :meth:`run`; ``resume=True``
+continues the same conversation. EXPERIMENTAL — not yet run end-to-end; see
+``harness/README.md`` for the known gaps and the upstream ask-list.
 """
 
 from __future__ import annotations
@@ -65,9 +33,8 @@ from gepa.oa.harness.base import AgentHarness, AgentRunResult, AgentRunSpec
 
 SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
 
-#: Backends whose file/shell tools run through an Omnigent-managed OS
-#: environment; only these take an ``os_env`` block (mirrors Omnigent's
-#: ``_OS_ENV_HARNESSES``).
+# Backends whose file/shell tools run through an Omnigent-managed OS
+# environment (mirrors Omnigent's _OS_ENV_HARNESSES).
 OS_ENV_BACKENDS = frozenset({"claude-sdk", "codex", "pi", "qwen", "goose", "kimi"})
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -89,23 +56,12 @@ def find_free_port() -> int:
 class OmnigentHarness(AgentHarness):
     """Agent harness backed by an Omnigent server + runner.
 
-    Args:
-        backend: Omnigent harness id to run the agent on, e.g.
-            ``"claude-sdk"`` (default), ``"codex"``, ``"goose"``, ``"qwen"``,
-            ``"kimi"``, ``"hermes"``. Any id Omnigent's registry accepts.
-        sandbox: Delegate OS jailing to Omnigent. ``True`` (default) leaves
-            the bundle's ``os_env.sandbox`` unset so Omnigent applies its
-            platform default (bwrap on Linux, Seatbelt on macOS); ``False``
-            writes ``sandbox: {type: none}``. GEPA's own bwrap prefix is
-            never applied around Omnigent processes.
-        sandbox_type: Explicit Omnigent sandbox type/provider (e.g.
-            ``"bwrap"``, ``"seatbelt"``, or an installed remote provider),
-            overriding the platform default. Implies ``sandbox=True``.
-        server_url: Attach to an already-running Omnigent server instead of
-            spawning one. Requires ``runner_id`` of an online runner.
-        runner_id: Runner to bind sessions to in attach mode.
-        state_dir: Where the managed server keeps its sqlite DB, artifacts,
-            and logs. Defaults to ``<work_dir>/.omnigent`` of the first run.
+    ``backend`` is any Omnigent harness id (``"claude-sdk"``, ``"codex"``,
+    ``"goose"``, ...). ``sandbox=True`` uses Omnigent's platform-default
+    sandbox, ``sandbox_type`` picks an explicit type/provider, ``False``
+    disables it — GEPA's own bwrap jail is never stacked on top (Omnigent's
+    seccomp profile forbids nesting). Pass ``server_url`` + ``runner_id`` to
+    attach to an external server instead of spawning one.
     """
 
     name = "omnigent"
@@ -130,34 +86,25 @@ class OmnigentHarness(AgentHarness):
         self.server_proc: subprocess.Popen[bytes] | None = None
         self.runner_proc: subprocess.Popen[bytes] | None = None
 
-    # ── preflight / lifecycle ────────────────────────────────────────
-
     def preflight(self, engine_name: str) -> None:
         try:
             import omnigent_client  # noqa: F401
+
+            if self.managed:
+                import omnigent  # noqa: F401
         except ImportError as e:
             raise RuntimeError(
-                f"[{engine_name}] harness=omnigent requires the omnigent_client "
-                "SDK (and, for the managed server mode, the omnigent package): "
-                "install Omnigent per https://omnigent.ai/quickstart/install, "
-                "or `uv pip install omnigent`."
+                f"[{engine_name}] harness=omnigent requires the omnigent packages: "
+                "install per https://omnigent.ai/quickstart/install (or pass "
+                "server_url= to attach to a running server)."
             ) from e
-        if self.managed:
-            try:
-                import omnigent  # noqa: F401
-            except ImportError as e:
-                raise RuntimeError(
-                    f"[{engine_name}] no server_url given, so the omnigent "
-                    "package must be importable to spawn a local server+runner."
-                ) from e
 
     def ensure_server(self, work_dir: Path) -> str:
-        """Spawn (once) or return the Omnigent server this harness talks to."""
         if self.server_url is not None:
             return self.server_url
-        # Managed mode. NOTE: this ports the spawn recipe from Omnigent's own
-        # full-server test infrastructure; the env vars and runner entrypoint
-        # are internal surfaces (ask: a supported local-embedded mode).
+        # Ported from Omnigent's full-server test infra; the env vars and
+        # runner entrypoint are internal surfaces (ask: a supported
+        # local-embedded mode).
         from omnigent.runner.identity import token_bound_runner_id
 
         state = self.state_dir or (work_dir / ".omnigent")
@@ -233,29 +180,20 @@ class OmnigentHarness(AgentHarness):
         if self.managed:
             self.server_url = None
 
-    # ── agent bundle ─────────────────────────────────────────────────
-
     def agent_config(self, spec: AgentRunSpec) -> dict[str, Any]:
-        """Omnigent ``spec_version: 1`` agent config for this run."""
-        name = SAFE_NAME_RE.sub("-", f"gepa-oa-{self.backend}")
         config: dict[str, Any] = {
             "spec_version": 1,
-            "name": name,
+            "name": SAFE_NAME_RE.sub("-", f"gepa-oa-{self.backend}"),
             "prompt": spec.system_prompt or DEFAULT_SYSTEM_PROMPT,
-            "executor": {
-                "type": "omnigent",
-                "model": spec.model,
-                "config": {"harness": self.backend},
-            },
+            "executor": {"type": "omnigent", "model": spec.model, "config": {"harness": self.backend}},
         }
         if self.backend in OS_ENV_BACKENDS:
             os_env: dict[str, Any] = {"type": "caller_process"}
+            # No sandbox key = Omnigent's platform default (bwrap/Seatbelt).
             if self.sandbox_type is not None:
                 os_env["sandbox"] = {"type": self.sandbox_type}
             elif not self.sandbox:
                 os_env["sandbox"] = {"type": "none"}
-            # sandbox=True with no explicit type: omit the key so Omnigent
-            # applies its platform default (bwrap on Linux, Seatbelt on mac).
             config["os_env"] = os_env
         return config
 
@@ -271,13 +209,12 @@ class OmnigentHarness(AgentHarness):
             tar.addfile(info, io.BytesIO(payload))
         return buf.getvalue()
 
-    # ── run ──────────────────────────────────────────────────────────
-
     def run(self, spec: AgentRunSpec) -> AgentRunResult:
         base_url = self.ensure_server(spec.work_dir)
         try:
             return asyncio.run(self.run_async(base_url, spec))
         except Exception as e:
+            # Engines must see is_error, not a crash.
             return AgentRunResult(
                 is_error=True,
                 error=f"{type(e).__name__}: {e}",
@@ -301,72 +238,42 @@ class OmnigentHarness(AgentHarness):
                 )
                 assert self.runner_id is not None
                 session = await client.sessions.bind_runner(session.id, runner_id=self.runner_id)
-            chat = SessionsChat(
-                namespace=client.sessions,
-                files_uploader=None,
-                files_getter=None,
-                session=session,
-            )
-            query = chat.query(spec.prompt)
-            if spec.timeout_seconds is not None:
-                result = await asyncio.wait_for(query, timeout=spec.timeout_seconds)
-            else:
-                result = await query
-
+            chat = SessionsChat(namespace=client.sessions, files_uploader=None, files_getter=None, session=session)
+            result = await asyncio.wait_for(chat.query(spec.prompt), timeout=spec.timeout_seconds)
             snap = await client.sessions.get(session.id)
             return self.result_from_snapshot(snap, text=getattr(result, "text", None))
         finally:
-            aclose = getattr(client, "aclose", None) or getattr(client, "close", None)
+            aclose = getattr(client, "aclose", None)
             if aclose is not None:
-                maybe = aclose()
-                if asyncio.iscoroutine(maybe):
-                    await maybe
+                await aclose()
 
     @staticmethod
     def result_from_snapshot(snap: Any, *, text: str | None) -> AgentRunResult:
-        status = getattr(snap, "status", None)
-        is_error = status == "failed"
-        error = None
-        last_task_error = getattr(snap, "last_task_error", None)
-        if last_task_error:
-            is_error = True
-            error = json.dumps(last_task_error) if isinstance(last_task_error, dict) else str(last_task_error)
-        elif is_error:
-            error = "omnigent session status=failed"
+        raw: dict[str, Any] = snap.model_dump(mode="json")
+        error = raw.get("last_task_error")
+        is_error = bool(error) or raw.get("status") == "failed"
 
         tokens_in = tokens_out = 0
-        usage_by_model = getattr(snap, "usage_by_model", None) or {}
-        try:
-            for usage in dict(usage_by_model).values():
-                tokens_in += int(getattr(usage, "input_tokens", 0) or usage.get("input_tokens", 0) or 0)
-                tokens_out += int(getattr(usage, "output_tokens", 0) or usage.get("output_tokens", 0) or 0)
-        except (TypeError, AttributeError, ValueError):
-            pass
-
-        raw: dict[str, Any]
-        dump = getattr(snap, "model_dump", None)
-        raw = dump(mode="json") if callable(dump) else {"repr": repr(snap)}
+        for usage in (raw.get("usage_by_model") or {}).values():
+            tokens_in += int(usage.get("input_tokens") or 0)
+            tokens_out += int(usage.get("output_tokens") or 0)
 
         return AgentRunResult(
             text=text,
-            cost_usd=float(getattr(snap, "total_cost_usd", 0.0) or 0.0),
+            cost_usd=float(raw.get("total_cost_usd") or 0.0),
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             is_error=is_error,
-            error=error,
-            session_id=getattr(snap, "id", None),
-            native_session_id=getattr(snap, "external_session_id", None),
+            error=json.dumps(error) if error else ("session status=failed" if is_error else None),
+            session_id=raw.get("id"),
+            native_session_id=raw.get("external_session_id"),
             returncode=1 if is_error else 0,
             raw=raw,
         )
 
-    # ── transcript export ────────────────────────────────────────────
-
     def export_transcript(self, session_id: str, work_dir: Path, dst_dir: Path) -> None:
-        """Write ``<session_id>.jsonl`` (session_meta + items, the same shape
-        as ``omni session export``) into ``dst_dir``; for backends whose
-        native transcript is discoverable (claude-sdk + upstream PR), also
-        mirror the wrapped agent's own transcript."""
+        """Write ``<session_id>.jsonl`` (same shape as ``omni session export``),
+        plus the wrapped agent's native transcript when discoverable."""
         if self.server_url is None:
             return
         try:
@@ -386,17 +293,14 @@ class OmnigentHarness(AgentHarness):
                         params["after"] = after
                     page = http.get(f"/v1/sessions/{session_id}/items", params=params).json()
                     data = page.get("data", [])
-                    for item in data:
-                        lines.append(json.dumps({"record_type": "item", **item}))
+                    lines.extend(json.dumps({"record_type": "item", **item}) for item in data)
                     if not data or not page.get("has_more"):
                         break
                     after = data[-1].get("id")
                 (dst_dir / f"{session_id}.jsonl").write_text("\n".join(lines) + "\n")
 
-                # Native transcript, when the backend exposes one: claude-sdk
-                # sessions record the Claude Code session uuid as
-                # external_session_id (upstream PR), which addresses
-                # ~/.claude/projects/<workspace-slug>/<uuid>.jsonl.
+                # external_session_id addresses the claude-sdk backend's
+                # native transcript under ~/.claude/projects/.
                 native = meta.get("external_session_id")
                 workspace = meta.get("workspace")
                 if native and workspace and self.backend == "claude-sdk":

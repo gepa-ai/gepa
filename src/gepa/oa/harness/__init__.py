@@ -1,12 +1,9 @@
 """Agent-harness registry for optimize_anything.
 
 ``OptimizeAnythingConfig.harness`` selects the runtime that executes agent
-sessions for the subprocess engines:
-
-- ``"claude-code"`` (default) — the existing ``claude --print`` CLI path.
-- ``"omnigent"`` — any Omnigent-wrapped backend; pass a dict for options,
-  e.g. ``{"type": "omnigent", "backend": "codex", "sandbox_type": "bwrap"}``.
-- an :class:`~gepa.oa.harness.base.AgentHarness` instance — used as-is.
+sessions: ``"claude-code"`` (default), ``"omnigent"`` / an options dict like
+``{"type": "omnigent", "backend": "codex"}``, or an ``AgentHarness``
+instance.
 """
 
 from __future__ import annotations
@@ -18,20 +15,9 @@ from gepa.oa.harness.base import AgentHarness, AgentRunResult, AgentRunSpec
 __all__ = ["AgentHarness", "AgentRunResult", "AgentRunSpec", "get_harness"]
 
 
-def get_harness(
-    spec: str | dict[str, Any] | AgentHarness,
-    *,
-    sandbox: bool = True,
-) -> AgentHarness:
-    """Build the harness named by ``spec``.
-
-    Args:
-        spec: Harness name, an options dict with a ``"type"`` key, or a
-            ready :class:`AgentHarness` instance (returned unchanged).
-        sandbox: The engine-level ``OptimizeAnythingConfig.sandbox`` value;
-            forwarded as each harness's default unless the options dict
-            overrides it.
-    """
+def get_harness(spec: str | dict[str, Any] | AgentHarness, *, sandbox: bool = True) -> AgentHarness:
+    """Build the harness named by ``spec``; ``sandbox`` is the engine-level
+    default, overridable via the options dict."""
     if isinstance(spec, AgentHarness):
         return spec
     if isinstance(spec, str):
