@@ -1,4 +1,10 @@
 import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
@@ -44,6 +50,168 @@ class _FakePopen:
 
     def kill(self) -> None:
         pass
+
+
+class _HangingFakePopen(_FakePopen):
+    def __init__(self, stdout: str = "", stderr: str = "") -> None:
+        super().__init__(-15, stdout, stderr)
+        self._running = True
+
+    def poll(self) -> int | None:
+        return None if self._running else self.returncode
+
+    def terminate(self) -> None:
+        self._running = False
+
+    def kill(self) -> None:
+        self._running = False
+
+
+def _engine_with_no_eval_watchdog(seconds: float) -> AutoResearchEngine:
+    return AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch",
+            sandbox=False,
+            engine_config={"ralph": False, "max_no_eval_seconds": seconds},
+        )
+    )
+
+
+def _run_once(engine: AutoResearchEngine, work_dir: Path, budget: BudgetTracker) -> subprocess.CompletedProcess[str]:
+    return engine._run_claude(
+        work_dir=work_dir,
+        session_id="test-session",
+        prompt="test prompt",
+        budget=budget,
+        adapter_cost=0.0,
+        resume=False,
+        env=dict(os.environ),
+    )
+
+
+def _fast_sleep(monkeypatch: pytest.MonkeyPatch) -> Callable[[float], None]:
+    real_sleep = time.sleep
+    monkeypatch.setattr("gepa.oa.engines.autoresearch.time.sleep", lambda _: real_sleep(0.01))
+    return real_sleep
+
+
+def test_autoresearch_drains_large_stdout_and_stderr_while_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_size = 256 * 1024
+    original_popen = subprocess.Popen
+    child_command = [
+        sys.executable,
+        "-c",
+        (
+            "import sys; "
+            f"sys.stdout.write('o' * {output_size}); sys.stdout.flush(); "
+            f"sys.stderr.write('e' * {output_size}); sys.stderr.flush()"
+        ),
+    ]
+
+    def launch_child(_: list[str], **kwargs: object) -> subprocess.Popen[str]:
+        return original_popen(child_command, **kwargs)
+
+    _fast_sleep(monkeypatch)
+    engine = _engine_with_no_eval_watchdog(1.0)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=launch_child):
+        completed = _run_once(engine, tmp_path, BudgetTracker(max_evals=1))
+
+    assert completed.returncode == 0, (len(completed.stdout), len(completed.stderr))
+    assert completed.stdout == "o" * output_size
+    assert completed.stderr == "e" * output_size
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process-group signalling is POSIX-specific")
+def test_autoresearch_watchdog_terminates_posix_process_group(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    grandchild_pid_file = tmp_path / "grandchild.pid"
+    grandchild_alive_file = tmp_path / "grandchild.alive"
+    original_popen = subprocess.Popen
+    grandchild_command = [
+        sys.executable,
+        "-c",
+        (
+            "import pathlib, time; "
+            "time.sleep(1); "
+            f"pathlib.Path({str(grandchild_alive_file)!r}).write_text('alive'); "
+            "time.sleep(30)"
+        ),
+    ]
+    child_command = [
+        sys.executable,
+        "-c",
+        (
+            "import pathlib, subprocess, sys, time; "
+            f"pid = subprocess.Popen({grandchild_command!r}).pid; "
+            f"pathlib.Path({str(grandchild_pid_file)!r}).write_text(str(pid)); "
+            "time.sleep(30)"
+        ),
+    ]
+
+    def launch_child(_: list[str], **kwargs: object) -> subprocess.Popen[str]:
+        proc = original_popen(child_command, **kwargs)
+        deadline = time.monotonic() + 2.0
+        while not grandchild_pid_file.exists() and time.monotonic() < deadline:
+            real_sleep(0.01)
+        return proc
+
+    real_sleep = _fast_sleep(monkeypatch)
+    engine = _engine_with_no_eval_watchdog(0.1)
+    try:
+        started = time.monotonic()
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=launch_child):
+            completed = _run_once(engine, tmp_path, BudgetTracker(max_evals=1))
+        elapsed = time.monotonic() - started
+        assert grandchild_pid_file.exists()
+        assert completed.returncode != 0
+        assert elapsed < 2.0
+        real_sleep(1.1)
+        assert not grandchild_alive_file.exists()
+    finally:
+        if grandchild_pid_file.exists():
+            try:
+                os.kill(int(grandchild_pid_file.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_autoresearch_no_eval_watchdog_preserves_reason_string(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _engine_with_no_eval_watchdog(0.0)
+    _fast_sleep(monkeypatch)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", return_value=_HangingFakePopen()):
+        completed = _run_once(engine, tmp_path, BudgetTracker(max_evals=1))
+
+    assert "NO_EVAL_PROGRESS" in completed.stderr
+
+
+def test_autoresearch_budget_watchdog_preserves_reason_string(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    budget = BudgetTracker(max_evals=1)
+    budget.record(0.0)
+    engine = _engine_with_no_eval_watchdog(60.0)
+    _fast_sleep(monkeypatch)
+    monkeypatch.setattr("gepa.oa.engines.autoresearch._BUDGET_EXHAUSTION_GRACE_SECONDS", 0.0)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", return_value=_HangingFakePopen()):
+        completed = _run_once(engine, tmp_path, budget)
+
+    assert "BUDGET_EXHAUSTED" in completed.stderr
+
+
+def test_autoresearch_uses_direct_process_fallback_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _engine_with_no_eval_watchdog(0.0)
+    fake = _HangingFakePopen()
+    captured_kwargs: dict[str, object] = {}
+
+    def capture_popen(_: list[str], **kwargs: object) -> _HangingFakePopen:
+        captured_kwargs.update(kwargs)
+        return fake
+
+    _fast_sleep(monkeypatch)
+    monkeypatch.setattr("gepa.oa.engines.autoresearch.os.name", "nt")
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=capture_popen):
+        _run_once(engine, tmp_path, BudgetTracker(max_evals=1))
+
+    assert "start_new_session" not in captured_kwargs
 
 
 def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path) -> None:

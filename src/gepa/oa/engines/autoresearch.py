@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -99,6 +100,74 @@ _RALPH_SAFETY_ITERATION_CAP = 1000
 _BUDGET_EXHAUSTION_GRACE_SECONDS = 120.0
 
 _BUDGET_EXHAUSTED_MARKER = "BUDGET_EXHAUSTED"
+
+
+@dataclass
+class _RunningClaudeProcess:
+    proc: subprocess.Popen[str]
+    stdout_file: Any
+    stderr_file: Any
+
+
+def _start_claude_process(cmd: list[str], work_dir: Path, env: dict[str, str]) -> _RunningClaudeProcess:
+    stdout_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+    stderr_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+    popen_kwargs: dict[str, Any] = {
+        "cwd": str(work_dir),
+        "env": env,
+        "stdout": stdout_file,
+        "stderr": stderr_file,
+        "text": True,
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    try:
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+    except BaseException:
+        stdout_file.close()
+        stderr_file.close()
+        raise
+    return _RunningClaudeProcess(proc, stdout_file, stderr_file)
+
+
+def _collect_claude_output(running: _RunningClaudeProcess) -> tuple[str, str]:
+    try:
+        running.stdout_file.seek(0)
+        running.stderr_file.seek(0)
+        stdout = running.stdout_file.read()
+        stderr = running.stderr_file.read()
+    finally:
+        running.stdout_file.close()
+        running.stderr_file.close()
+    if (stdout or stderr) or hasattr(running.proc, "wait"):
+        return stdout, stderr
+    stdout, stderr = running.proc.communicate()
+    return stdout or "", stderr or ""
+
+
+def _signal_claude_process(proc: subprocess.Popen[str], sig: int) -> None:
+    if os.name == "posix" and getattr(proc, "pid", None) is not None:
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            pass
+        return
+    if sig == signal.SIGTERM:
+        proc.terminate()
+    else:
+        proc.kill()
+
+
+def _terminate_claude_process(running: _RunningClaudeProcess) -> tuple[str, str]:
+    proc = running.proc
+    _signal_claude_process(proc, signal.SIGTERM)
+    if hasattr(proc, "wait"):
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _signal_claude_process(proc, signal.SIGKILL)
+            proc.wait()
+    return _collect_claude_output(running)
 
 
 EVAL_SCRIPT_SINGLE = """\
@@ -605,14 +674,8 @@ class AutoResearchEngine:
             cmd.extend(["--max-budget-usd", f"{remaining:.6f}"])
         cmd.append(prompt)
 
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(work_dir),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        running = _start_claude_process(cmd, work_dir, env)
+        proc = running.proc
         exhausted_since: float | None = None
         last_eval_used = budget.used
         last_eval_time = time.monotonic()
@@ -621,12 +684,7 @@ class AutoResearchEngine:
                 last_eval_used = budget.used
                 last_eval_time = time.monotonic()
             if self.max_no_eval_seconds is not None and time.monotonic() - last_eval_time >= self.max_no_eval_seconds:
-                proc.terminate()
-                try:
-                    stdout, stderr = proc.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    stdout, stderr = proc.communicate()
+                stdout, stderr = _terminate_claude_process(running)
                 stderr = (
                     (stderr or "")
                     + f"\nNO_EVAL_PROGRESS: terminated Claude Code after {self.max_no_eval_seconds:.1f}s without eval progress.\n"
@@ -636,19 +694,14 @@ class AutoResearchEngine:
                 if exhausted_since is None:
                     exhausted_since = time.monotonic()
                 elif time.monotonic() - exhausted_since >= _BUDGET_EXHAUSTION_GRACE_SECONDS:
-                    proc.terminate()
-                    try:
-                        stdout, stderr = proc.communicate(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        stdout, stderr = proc.communicate()
+                    stdout, stderr = _terminate_claude_process(running)
                     stderr = (
                         stderr or ""
                     ) + "\nBUDGET_EXHAUSTED: terminated Claude Code after eval budget was exhausted.\n"
                     return subprocess.CompletedProcess(cmd, proc.returncode, stdout or "", stderr)
             time.sleep(1.0)
 
-        stdout, stderr = proc.communicate()
+        stdout, stderr = _collect_claude_output(running)
         return subprocess.CompletedProcess(cmd, proc.returncode, stdout or "", stderr or "")
 
     def _has_budget_headroom(self, server: EvalServer, adapter_cost: float) -> bool:
