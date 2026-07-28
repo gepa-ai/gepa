@@ -101,7 +101,7 @@ def optimize_anything(
     background: str | None = None,
     test_set: list[Any] | None = None,
     config: OptimizeAnythingConfig | None = None,
-) -> Result:
+) -> Result | GEPAResult:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
     The signature mirrors :func:`gepa.gepa_launcher.optimize_anything`
@@ -150,32 +150,32 @@ def optimize_anything(
             under ``result.metadata["test_score(s)"]`` (optimized) and
             ``result.metadata["baseline_test_score(s)"]`` (seed).
         config: Engine selection, run ``name``, budgets, output directory, and
-            engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
-            at least one of ``config.max_evals`` or ``config.max_token_cost``
-            must be set. When ``config.name`` is omitted, a name is generated
-            from the engine, a short uuid, and a timestamp. A legacy
-            :class:`GEPAConfig` is also accepted and converted; the run uses
-            the gepa engine and returns the launcher's
-            :class:`~gepa.core.result.GEPAResult`.
+            engine-specific options. Defaults to ``OptimizeAnythingConfig()``
+            when omitted. Pass an explicit :class:`OptimizeAnythingConfig` to
+            get a :class:`Result`; omit ``config`` or pass a legacy
+            :class:`GEPAConfig` to get a
+            :class:`~gepa.core.result.GEPAResult`. At least one of
+            ``config.max_evals`` or ``config.max_token_cost`` must be set.
+            When ``config.name`` is omitted, a name is generated from the
+            engine, a short uuid, and a timestamp.
 
     Returns:
-        A :class:`Result` with ``best_candidate``, ``best_score``,
-        ``total_evals``, ``eval_log``, and ``metadata`` — or, when ``config``
-        is a legacy :class:`GEPAConfig`, the underlying
+        A :class:`Result` (``best_candidate``, ``best_score``, ``total_evals``,
+        ``eval_log``, ``metadata``) for an explicit
+        :class:`OptimizeAnythingConfig`, otherwise a
         :class:`~gepa.core.result.GEPAResult` (``candidates``, ``best_idx``,
-        ``val_aggregate_scores``, ...) so v0.1.x callers get the result shape
-        they were written against.
+        ``val_aggregate_scores``, ...) for the no-config / legacy path.
     """
-    legacy_config = False
+    return_gepa_result = not isinstance(config, OptimizeAnythingConfig)
+    if return_gepa_result and test_set is not None:
+        raise ValueError(
+            "test_set requires an explicit OptimizeAnythingConfig; "
+            "the GEPAResult return path has no place for held-out test scores."
+        )
     if config is None:
         config = OptimizeAnythingConfig()
-    elif not isinstance(config, OptimizeAnythingConfig):
-        if test_set is not None:
-            raise ValueError(
-                "test_set requires an OptimizeAnythingConfig; the legacy GEPAConfig API has no held-out test pass."
-            )
+    elif return_gepa_result:
         config = _from_legacy_config(config)
-        legacy_config = True
     if evaluator is None and batch_evaluator is None:
         raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
     if config.max_evals is None and config.max_token_cost is None:
@@ -208,14 +208,9 @@ def optimize_anything(
         output_dir=output_dir,
     )
     result = _run_engine(server, engine, owns_server=True)
-    if legacy_config:
-        # v0.1.x callers always get the launcher's result type back — the gepa
-        # engine stashes the underlying GEPAResult in the result metadata. If
-        # the eval budget died before GEPA core saved any state (e.g. budget
-        # smaller than the valset), synthesize a single-candidate snapshot.
-        # The public signature advertises only the new API; legacy
-        # GEPAConfig-in/GEPAResult-out is a runtime affordance, so the legacy
-        # result rides out through an Any-typed local.
+    if return_gepa_result:
+        # Prefer the GEPAResult stashed by the gepa engine; if the budget died
+        # before any state was saved, synthesize a single-candidate snapshot.
         legacy_result: Any = result.metadata.get("gepa_result") or _legacy_result_from(result, seed_candidate)
         return legacy_result
     return result

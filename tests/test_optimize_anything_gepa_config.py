@@ -77,6 +77,71 @@ def test_legacy_gepa_config_call_returns_gepa_result():
     assert result.val_aggregate_scores
 
 
+def test_no_config_returns_gepa_result(monkeypatch):
+    """``optimize_anything(seed, evaluator=fn)`` with config omitted/None must
+    return ``GEPAResult`` so simple-API callers can use ``val_aggregate_scores``,
+    ``best_idx``, ``candidates``, and ``to_dict()`` (issue #409 finding #1)."""
+    from gepa.core.result import GEPAResult
+    from gepa.oa.engine import Result
+    from gepa.optimize_anything import optimize_anything
+
+    stashed = GEPAResult(
+        candidates=[{"current_candidate": "improved"}],
+        parents=[[None]],
+        val_aggregate_scores=[0.42],
+        val_subscores=[{}],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[1],
+        total_metric_calls=1,
+        _str_candidate_key="current_candidate",
+    )
+
+    def _fake_run_engine(server, engine, *, owns_server):
+        return Result(
+            best_candidate="improved",
+            best_score=0.42,
+            total_evals=1,
+            metadata={"gepa_result": stashed},
+        )
+
+    monkeypatch.setattr("gepa.optimize_anything._run_engine", _fake_run_engine)
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+    )
+
+    assert isinstance(result, GEPAResult)
+    assert result is stashed
+    assert result.best_candidate == "improved"
+    assert result.best_idx == 0
+    assert result.candidates == [{"current_candidate": "improved"}]
+    assert result.val_aggregate_scores == [0.42]
+    assert isinstance(result.to_dict(), dict)
+
+
+def test_explicit_optimize_anything_config_still_returns_result():
+    """An explicit ``OptimizeAnythingConfig`` keeps the new ``Result`` shape."""
+    from gepa.oa.engine import Result
+    from gepa.optimize_anything import optimize_anything
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=4,
+            engine_config={"reflection": {"reflection_lm": _FakeLM()}},
+        ),
+    )
+
+    assert isinstance(result, Result)
+    assert result.best_score > 0.0
+    assert not hasattr(result, "val_aggregate_scores")
+
+
 def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
     """Budget smaller than the seed's valset pass: the engine has no GEPAResult
     to stash, so the legacy path synthesizes a single-candidate one — legacy
@@ -102,8 +167,8 @@ def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
 
 
 def test_legacy_gepa_config_rejects_test_set():
-    """``test_set`` is a new-API feature; combining it with a legacy
-    ``GEPAConfig`` fails fast instead of silently dropping the test scores."""
+    """``test_set`` needs an explicit OptimizeAnythingConfig; GEPAConfig returns
+    ``GEPAResult``, which has no place for held-out test scores."""
     from gepa.optimize_anything import GEPAConfig, optimize_anything
 
     with pytest.raises(ValueError, match="test_set"):
@@ -112,6 +177,19 @@ def test_legacy_gepa_config_rejects_test_set():
             evaluator=_evaluator,
             test_set=["x"],
             config=GEPAConfig(),
+        )
+
+
+def test_no_config_rejects_test_set():
+    """``test_set`` with config omitted also fails fast: that path returns
+    ``GEPAResult``, which has no place for held-out test scores."""
+    from gepa.optimize_anything import optimize_anything
+
+    with pytest.raises(ValueError, match="test_set"):
+        optimize_anything(
+            seed_candidate="short",
+            evaluator=_evaluator,
+            test_set=["x"],
         )
 
 
