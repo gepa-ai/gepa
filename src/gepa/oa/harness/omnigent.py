@@ -63,24 +63,24 @@ from typing import Any
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.harness.base import AgentHarness, AgentRunResult, AgentRunSpec
 
-_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
+SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
 
 #: Backends whose file/shell tools run through an Omnigent-managed OS
 #: environment; only these take an ``os_env`` block (mirrors Omnigent's
 #: ``_OS_ENV_HARNESSES``).
-_OS_ENV_BACKENDS = frozenset({"claude-sdk", "codex", "pi", "qwen", "goose", "kimi"})
+OS_ENV_BACKENDS = frozenset({"claude-sdk", "codex", "pi", "qwen", "goose", "kimi"})
 
-_DEFAULT_SYSTEM_PROMPT = (
+DEFAULT_SYSTEM_PROMPT = (
     "You are a coding agent executing one optimization step for GEPA's "
     "optimize_anything. Follow the instructions in the prompt exactly; write "
     "all outputs as files in the working directory."
 )
 
-_HEALTH_TIMEOUT_S = 60.0
-_POLL_INTERVAL_S = 0.25
+HEALTH_TIMEOUT_S = 60.0
+POLL_INTERVAL_S = 0.25
 
 
-def _find_free_port() -> int:
+def find_free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
@@ -123,12 +123,12 @@ class OmnigentHarness(AgentHarness):
         self.backend = backend
         self.sandbox = bool(sandbox) or sandbox_type is not None
         self.sandbox_type = sandbox_type
-        self._state_dir = Path(state_dir) if state_dir else None
-        self._server_url = server_url
-        self._runner_id = runner_id
-        self._managed = server_url is None
-        self._server_proc: subprocess.Popen[bytes] | None = None
-        self._runner_proc: subprocess.Popen[bytes] | None = None
+        self.state_dir = Path(state_dir) if state_dir else None
+        self.server_url = server_url
+        self.runner_id = runner_id
+        self.managed = server_url is None
+        self.server_proc: subprocess.Popen[bytes] | None = None
+        self.runner_proc: subprocess.Popen[bytes] | None = None
 
     # ── preflight / lifecycle ────────────────────────────────────────
 
@@ -142,7 +142,7 @@ class OmnigentHarness(AgentHarness):
                 "install Omnigent per https://omnigent.ai/quickstart/install, "
                 "or `uv pip install omnigent`."
             ) from e
-        if self._managed:
+        if self.managed:
             try:
                 import omnigent  # noqa: F401
             except ImportError as e:
@@ -151,24 +151,24 @@ class OmnigentHarness(AgentHarness):
                     "package must be importable to spawn a local server+runner."
                 ) from e
 
-    def _ensure_server(self, work_dir: Path) -> str:
+    def ensure_server(self, work_dir: Path) -> str:
         """Spawn (once) or return the Omnigent server this harness talks to."""
-        if self._server_url is not None:
-            return self._server_url
+        if self.server_url is not None:
+            return self.server_url
         # Managed mode. NOTE: this ports the spawn recipe from Omnigent's own
         # full-server test infrastructure; the env vars and runner entrypoint
         # are internal surfaces (ask: a supported local-embedded mode).
         from omnigent.runner.identity import token_bound_runner_id
 
-        state = self._state_dir or (work_dir / ".omnigent")
+        state = self.state_dir or (work_dir / ".omnigent")
         state.mkdir(parents=True, exist_ok=True)
         (state / "artifacts").mkdir(exist_ok=True)
-        port = _find_free_port()
+        port = find_free_port()
         base_url = f"http://127.0.0.1:{port}"
         binding_token = secrets.token_urlsafe(32)
         runner_id = token_bound_runner_id(binding_token)
 
-        self._server_proc = subprocess.Popen(
+        self.server_proc = subprocess.Popen(
             [
                 sys.executable,
                 "-m",
@@ -185,7 +185,7 @@ class OmnigentHarness(AgentHarness):
             stdout=(state / "server.log").open("wb"),
             stderr=subprocess.STDOUT,
         )
-        self._runner_proc = subprocess.Popen(
+        self.runner_proc = subprocess.Popen(
             [sys.executable, "-m", "omnigent.runner._entry"],
             env={
                 **os.environ,
@@ -197,16 +197,16 @@ class OmnigentHarness(AgentHarness):
             stdout=(state / "runner.log").open("wb"),
             stderr=subprocess.STDOUT,
         )
-        self._wait_ready(base_url, runner_id, state)
-        self._server_url = base_url
-        self._runner_id = runner_id
+        self.wait_ready(base_url, runner_id, state)
+        self.server_url = base_url
+        self.runner_id = runner_id
         return base_url
 
     @staticmethod
-    def _wait_ready(base_url: str, runner_id: str, state: Path) -> None:
+    def wait_ready(base_url: str, runner_id: str, state: Path) -> None:
         import httpx
 
-        deadline = time.monotonic() + _HEALTH_TIMEOUT_S
+        deadline = time.monotonic() + HEALTH_TIMEOUT_S
         while time.monotonic() < deadline:
             try:
                 health = httpx.get(f"{base_url}/health", timeout=2)
@@ -215,40 +215,40 @@ class OmnigentHarness(AgentHarness):
                     return
             except httpx.HTTPError:
                 pass
-            time.sleep(_POLL_INTERVAL_S)
+            time.sleep(POLL_INTERVAL_S)
         raise RuntimeError(
-            f"omnigent server+runner not ready within {_HEALTH_TIMEOUT_S}s; "
+            f"omnigent server+runner not ready within {HEALTH_TIMEOUT_S}s; "
             f"see {state / 'server.log'} and {state / 'runner.log'}"
         )
 
     def close(self) -> None:
-        for proc in (self._runner_proc, self._server_proc):
+        for proc in (self.runner_proc, self.server_proc):
             if proc is not None and proc.poll() is None:
                 proc.terminate()
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-        self._runner_proc = self._server_proc = None
-        if self._managed:
-            self._server_url = None
+        self.runner_proc = self.server_proc = None
+        if self.managed:
+            self.server_url = None
 
     # ── agent bundle ─────────────────────────────────────────────────
 
-    def _agent_config(self, spec: AgentRunSpec) -> dict[str, Any]:
+    def agent_config(self, spec: AgentRunSpec) -> dict[str, Any]:
         """Omnigent ``spec_version: 1`` agent config for this run."""
-        name = _SAFE_NAME_RE.sub("-", f"gepa-oa-{self.backend}")
+        name = SAFE_NAME_RE.sub("-", f"gepa-oa-{self.backend}")
         config: dict[str, Any] = {
             "spec_version": 1,
             "name": name,
-            "prompt": spec.system_prompt or _DEFAULT_SYSTEM_PROMPT,
+            "prompt": spec.system_prompt or DEFAULT_SYSTEM_PROMPT,
             "executor": {
                 "type": "omnigent",
                 "model": spec.model,
                 "config": {"harness": self.backend},
             },
         }
-        if self.backend in _OS_ENV_BACKENDS:
+        if self.backend in OS_ENV_BACKENDS:
             os_env: dict[str, Any] = {"type": "caller_process"}
             if self.sandbox_type is not None:
                 os_env["sandbox"] = {"type": self.sandbox_type}
@@ -260,7 +260,7 @@ class OmnigentHarness(AgentHarness):
         return config
 
     @staticmethod
-    def _bundle(config: dict[str, Any]) -> bytes:
+    def build_bundle(config: dict[str, Any]) -> bytes:
         import yaml
 
         buf = io.BytesIO()
@@ -274,9 +274,9 @@ class OmnigentHarness(AgentHarness):
     # ── run ──────────────────────────────────────────────────────────
 
     def run(self, spec: AgentRunSpec) -> AgentRunResult:
-        base_url = self._ensure_server(spec.work_dir)
+        base_url = self.ensure_server(spec.work_dir)
         try:
-            return asyncio.run(self._run_async(base_url, spec))
+            return asyncio.run(self.run_async(base_url, spec))
         except Exception as e:
             return AgentRunResult(
                 is_error=True,
@@ -285,7 +285,7 @@ class OmnigentHarness(AgentHarness):
                 returncode=1,
             )
 
-    async def _run_async(self, base_url: str, spec: AgentRunSpec) -> AgentRunResult:
+    async def run_async(self, base_url: str, spec: AgentRunSpec) -> AgentRunResult:
         from omnigent_client import OmnigentClient
         from omnigent_client._sessions_chat import SessionsChat
 
@@ -295,12 +295,12 @@ class OmnigentHarness(AgentHarness):
                 session = await client.sessions.get(spec.session_id)
             else:
                 session = await client.sessions.create(
-                    self._bundle(self._agent_config(spec)),
+                    self.build_bundle(self.agent_config(spec)),
                     workspace=str(spec.work_dir),
                     reasoning_effort=spec.effort if spec.max_thinking_tokens is None else None,
                 )
-                assert self._runner_id is not None
-                session = await client.sessions.bind_runner(session.id, runner_id=self._runner_id)
+                assert self.runner_id is not None
+                session = await client.sessions.bind_runner(session.id, runner_id=self.runner_id)
             chat = SessionsChat(
                 namespace=client.sessions,
                 files_uploader=None,
@@ -314,7 +314,7 @@ class OmnigentHarness(AgentHarness):
                 result = await query
 
             snap = await client.sessions.get(session.id)
-            return self._result_from_snapshot(snap, text=getattr(result, "text", None))
+            return self.result_from_snapshot(snap, text=getattr(result, "text", None))
         finally:
             aclose = getattr(client, "aclose", None) or getattr(client, "close", None)
             if aclose is not None:
@@ -323,7 +323,7 @@ class OmnigentHarness(AgentHarness):
                     await maybe
 
     @staticmethod
-    def _result_from_snapshot(snap: Any, *, text: str | None) -> AgentRunResult:
+    def result_from_snapshot(snap: Any, *, text: str | None) -> AgentRunResult:
         status = getattr(snap, "status", None)
         is_error = status == "failed"
         error = None
@@ -367,13 +367,13 @@ class OmnigentHarness(AgentHarness):
         as ``omni session export``) into ``dst_dir``; for backends whose
         native transcript is discoverable (claude-sdk + upstream PR), also
         mirror the wrapped agent's own transcript."""
-        if self._server_url is None:
+        if self.server_url is None:
             return
         try:
             import httpx
 
             dst_dir.mkdir(parents=True, exist_ok=True)
-            with httpx.Client(base_url=self._server_url, timeout=30) as http:
+            with httpx.Client(base_url=self.server_url, timeout=30) as http:
                 meta = http.get(
                     f"/v1/sessions/{session_id}",
                     params={"include_items": "false", "include_liveness": "false"},

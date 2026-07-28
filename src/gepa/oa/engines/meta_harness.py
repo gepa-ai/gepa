@@ -622,11 +622,11 @@ class MetaHarnessEngine:
         self.max_token_cost = config.max_token_cost
         # Agent runtime executing the proposer sessions ("claude-code" CLI by
         # default, or any Omnigent-wrapped backend via harness="omnigent").
-        self._harness = get_harness(config.harness, sandbox=bool(config.sandbox))
+        self.harness = get_harness(config.harness, sandbox=bool(config.sandbox))
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        self._harness.preflight(self.name)
+        self.harness.preflight(self.name)
         budget = server.budget
 
         # When sandbox=True, force tempdir work_dir even if run_dir is set —
@@ -683,7 +683,7 @@ class MetaHarnessEngine:
 
             propose_start = time.time()
             exit_code, cost, session_id = _run_proposer(
-                harness=self._harness,
+                harness=self.harness,
                 work_dir=work_dir,
                 iteration=iteration,
                 model=self.model,
@@ -935,8 +935,8 @@ class MetaHarnessEngine:
         transcripts_dir = dest / "sessions"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
         for sid in session_ids:
-            self._harness.export_transcript(sid, work_dir, transcripts_dir)
-        self._harness.close()
+            self.harness.export_transcript(sid, work_dir, transcripts_dir)
+        self.harness.close()
         if work_dir.exists() and not _is_under(work_dir, dest):
             shutil.copytree(work_dir, dest / "work", dirs_exist_ok=True)
         if self._pending_tempdir is not None:

@@ -93,10 +93,10 @@ class ClaudeCodeHarness(AgentHarness):
                 stderr=(e.stderr or "")[-4000:] if isinstance(e.stderr, str) else "",
             )
 
-        return self._parse(proc, session_id)
+        return self.parse_result(proc, session_id)
 
     @staticmethod
-    def _parse(proc: subprocess.CompletedProcess[str], session_id: str) -> AgentRunResult:
+    def parse_result(proc: subprocess.CompletedProcess[str], session_id: str) -> AgentRunResult:
         payload: dict[str, Any] = {}
         parse_error: str | None = None
         stdout = (proc.stdout or "").strip()
