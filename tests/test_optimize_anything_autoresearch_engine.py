@@ -13,7 +13,9 @@ import pytest
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engines.autoresearch import AutoResearchEngine
+from gepa.oa.eval_server import EvalServer
 from gepa.oa.task import Task
+from gepa.optimize_anything import _run_engine
 
 
 @pytest.fixture(autouse=True)
@@ -338,6 +340,61 @@ def test_autoresearch_engine_counts_failed_resume_cost(tmp_path: Path) -> None:
     assert len(calls) == 2
     assert result.metadata["adapter_cost"] == 0.30000000000000004
     assert result.metadata["ralph_iterations"] == 1
+
+
+def test_autoresearch_persists_final_cost_summary_after_failed_resume(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    task = Task(name="smoke", seed_candidate="seed")
+    server = EvalServer(
+        task,
+        lambda candidate: (1.0, {"cost": 0.05}),
+        BudgetTracker(max_evals=5),
+        output_dir=output_dir,
+    )
+    server.evaluate("seed")
+    calls = 0
+
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
+        nonlocal calls
+        calls += 1
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
+        if calls == 1:
+            return _FakePopen(
+                0,
+                json.dumps(
+                    {
+                        "total_cost_usd": 0.2,
+                        "adapter_cost_status": "standard_tier_upper_estimate_from_observed_usage",
+                    }
+                ),
+            )
+        return _FakePopen(
+            1,
+            json.dumps(
+                {
+                    "total_cost_usd": 0.1,
+                    "adapter_cost_status": "standard_tier_upper_estimate_from_observed_usage",
+                }
+            ),
+            stderr="failed",
+        )
+
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path / "work"), engine_config={})
+    )
+
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = _run_engine(server, engine, owns_server=True)
+
+    summary = json.loads((output_dir / "summary.json").read_text())
+    assert result.metadata["adapter_cost"] == pytest.approx(0.3)
+    assert result.metadata["adapter_cost_status"] == "standard_tier_upper_estimate_from_observed_usage"
+    assert result.metadata["total_cost"] == pytest.approx(0.35)
+    assert summary["eval_cost_usd"] == pytest.approx(0.05)
+    assert summary["adapter_cost_usd"] == pytest.approx(0.3)
+    assert summary["total_cost_usd"] == pytest.approx(result.metadata["total_cost"])
+    assert summary["total_cost"] == pytest.approx(result.metadata["total_cost"])
+    assert summary["adapter_cost_status"] == "standard_tier_upper_estimate_from_observed_usage"
 
 
 def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Path) -> None:

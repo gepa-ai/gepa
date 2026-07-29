@@ -540,7 +540,8 @@ class AutoResearchEngine:
 
         adapter_cost = 0.0
         ralph_iterations = 1
-        invocations: list[dict[str, float | int | None]] = []
+        invocations: list[dict[str, float | int | str | None]] = []
+        adapter_cost_statuses: list[str] = []
 
         proc = self._run_claude(
             work_dir=work_dir,
@@ -563,10 +564,12 @@ class AutoResearchEngine:
                 f"stdout_tail={_tail_text(proc.stdout)!r} "
                 f"stderr_tail={_tail_text(proc.stderr)!r}"
             )
-        iter_cost = _extract_claude_cost(proc.stdout)
+        iter_cost, iter_status = _extract_claude_cost_and_status(proc.stdout)
         adapter_cost += iter_cost
-        invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
-
+        adapter_cost_statuses.append(iter_status)
+        invocations.append(
+            {"cost": iter_cost, "status": iter_status, "score": server.best_score, "returncode": proc.returncode}
+        )
         if self.ralph:
             while ralph_iterations < _RALPH_SAFETY_ITERATION_CAP:
                 if _saw_budget_exhausted(proc):
@@ -590,9 +593,17 @@ class AutoResearchEngine:
                     resume=True,
                     env=env,
                 )
-                iter_cost = _extract_claude_cost(proc.stdout)
+                iter_cost, iter_status = _extract_claude_cost_and_status(proc.stdout)
                 adapter_cost += iter_cost
-                invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
+                adapter_cost_statuses.append(iter_status)
+                invocations.append(
+                    {
+                        "cost": iter_cost,
+                        "status": iter_status,
+                        "score": server.best_score,
+                        "returncode": proc.returncode,
+                    }
+                )
                 if _saw_budget_exhausted(proc):
                     break
                 if proc.returncode != 0:
@@ -619,6 +630,7 @@ class AutoResearchEngine:
             eval_log=server.eval_log,
             metadata={
                 "adapter_cost": adapter_cost,
+                "adapter_cost_status": _combined_adapter_cost_status(adapter_cost_statuses),
                 "session_id": session_id,
                 "work_dir": str(work_dir),
                 "ralph_iterations": ralph_iterations,
@@ -798,11 +810,23 @@ def _best_aggregate_candidate(server: EvalServer) -> tuple[str, float] | None:
 
 
 def _extract_claude_cost(stdout: str) -> float:
+    return _extract_claude_cost_and_status(stdout)[0]
+
+
+def _extract_claude_cost_and_status(stdout: str) -> tuple[float, str]:
     stdout = (stdout or "").strip()
     if not stdout:
-        return 0.0
+        return 0.0, "unknown"
     try:
         payload = json.loads(stdout)
-        return float(payload.get("total_cost_usd", 0.0) or 0.0)
+        cost = float(payload.get("total_cost_usd", 0.0) or 0.0)
     except (json.JSONDecodeError, ValueError, TypeError):
-        return 0.0
+        return 0.0, "unknown"
+    status = payload.get("adapter_cost_status")
+    return cost, status if isinstance(status, str) and status else "unknown"
+
+
+def _combined_adapter_cost_status(statuses: list[str]) -> str:
+    if not statuses:
+        return "unknown"
+    return statuses[0] if all(status == statuses[0] for status in statuses) else "mixed"

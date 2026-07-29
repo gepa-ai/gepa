@@ -289,7 +289,7 @@ def _run_proposer(
     log_dir: Path,
     max_thinking_tokens: int | None = None,
     sandbox: bool = True,
-) -> tuple[int, float, str]:
+) -> tuple[int, float, str, str]:
     state = work_dir / "state"
     prompt = (
         f"Run iteration {iteration} of the meta-harness evolution loop. "
@@ -363,7 +363,8 @@ def _run_proposer(
             indent=2,
         )
     )
-    return proc.returncode, cost_usd, session_id
+    status = result_payload.get("adapter_cost_status")
+    return proc.returncode, cost_usd, session_id, status if isinstance(status, str) and status else "unknown"
 
 
 def _parse_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
@@ -670,6 +671,7 @@ class MetaHarnessEngine:
         sessions_dir.mkdir(parents=True, exist_ok=True)
 
         session_ids: list[str] = []
+        adapter_cost_statuses: list[str] = []
         total_proposer_cost = 0.0
         cap = self.max_iterations if self.max_iterations is not None else 50
 
@@ -700,7 +702,7 @@ class MetaHarnessEngine:
                 pending_path.unlink()
 
             propose_start = time.time()
-            exit_code, cost, session_id = _run_proposer(
+            exit_code, cost, session_id, adapter_cost_status = _run_proposer(
                 work_dir=work_dir,
                 iteration=iteration,
                 model=self.model,
@@ -715,6 +717,7 @@ class MetaHarnessEngine:
             propose_time = time.time() - propose_start
             total_proposer_cost += cost
             session_ids.append(session_id)
+            adapter_cost_statuses.append(adapter_cost_status)
 
             _log(
                 f"  {_cyan('proposer')} exit={exit_code} cost=${cost:.3f} "
@@ -913,6 +916,7 @@ class MetaHarnessEngine:
         if best_score is None:
             best_score = server.best_score
 
+        adapter_cost_status = _combined_adapter_cost_status(adapter_cost_statuses)
         return Result(
             best_candidate=best_candidate,
             best_score=best_score if best_score is not None else server.best_score,
@@ -920,6 +924,7 @@ class MetaHarnessEngine:
             eval_log=server.eval_log,
             metadata={
                 "adapter_cost": total_proposer_cost,
+                "adapter_cost_status": adapter_cost_status,
                 "meta_harness": {
                     "iterations_run": iteration,
                     "stop_reason": stop_reason,
@@ -984,6 +989,12 @@ class MetaHarnessEngine:
 
 
 _SLUG_RE = re.compile(r"[^A-Za-z0-9-]")
+
+
+def _combined_adapter_cost_status(statuses: list[str]) -> str:
+    if not statuses:
+        return "unknown"
+    return statuses[0] if all(status == statuses[0] for status in statuses) else "mixed"
 
 
 def _claude_project_slug(cwd: Path) -> str:

@@ -585,6 +585,30 @@ class EvalServer:
             except OSError:
                 pass
 
+    def persist_final_summary(
+        self,
+        *,
+        adapter_cost: float,
+        total_cost: float,
+        adapter_cost_status: str = "unknown",
+    ) -> None:
+        """Atomically replace the live eval summary with final run costs."""
+        if self.output_dir is None:
+            return
+        with self._lock:
+            snapshot = self._snapshot()
+        snapshot.update(
+            {
+                "eval_cost_usd": snapshot["total_cost"],
+                "adapter_cost_usd": adapter_cost,
+                "total_cost_usd": total_cost,
+                "total_cost": total_cost,
+                "adapter_cost_status": adapter_cost_status,
+            }
+        )
+        with self._io_lock:
+            self._write_summary(snapshot)
+
     def _write_eval_record(self, idx: int, entry: dict[str, Any], candidate: str, info: dict[str, Any] | None) -> None:
         assert self._evals_dir is not None
         record = {**entry, "timestamp": time.time(), "candidate": candidate, "info": info}

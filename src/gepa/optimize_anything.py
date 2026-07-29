@@ -297,10 +297,19 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
     result.metadata["budget"] = server.budget.status()
     adapter_cost = float(result.metadata.get("adapter_cost", 0.0))
     result.metadata["total_cost"] = server.total_cost + adapter_cost
+    adapter_cost_status = result.metadata.get("adapter_cost_status", "unknown")
+    if not isinstance(adapter_cost_status, str) or not adapter_cost_status:
+        adapter_cost_status = "unknown"
+    result.metadata["adapter_cost_status"] = adapter_cost_status
     result.metadata["progress_log"] = server.progress_log
     result.metadata["engine"] = engine.name
     if server.output_dir is not None:
         result.metadata["output_dir"] = str(server.output_dir)
+        server.persist_final_summary(
+            adapter_cost=adapter_cost,
+            total_cost=result.metadata["total_cost"],
+            adapter_cost_status=adapter_cost_status,
+        )
 
     try:
         engine.process_result(result, server.output_dir)
