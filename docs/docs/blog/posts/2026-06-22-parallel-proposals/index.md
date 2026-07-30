@@ -99,7 +99,7 @@ We also probed how efficiently each setting spends its budget during the run. He
 
 #### Metric-call Budget
 
-On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. Single mutation dropped nine points from validation to test and 8×1 dropped six, consistent with the P-heavy behavior described above, while 2×4 dropped only two.
+On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. Single mutation dropped nine points from validation to test and 8×1 dropped six, matching the weaker transfer of P-heavy settings described above, while 2×4 dropped only two.
 
 Batched settings dominate small budgets: on LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation raises validation scores later in the budget, but scores the lowest on the held-out test set on both tasks.
 
@@ -113,7 +113,7 @@ Batched settings dominate small budgets: on LiveBench-Math both batched settings
 By measuring the total LLM spend (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $13 to $18 range.
 
 <figure markdown="span">
-  ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation, 2×4, and 8×1. Left, LiveBench-Math: single mutation reaches 0.783 by about $5.5 and ends at $13.2; 2×4 ends at 0.740 for $12.7 and 8×1 at 0.760 for $18.1. Right, HoVer: 8×1 jumps to 0.727 by $2.65 and ends at $15.3; 2×4 ends at 0.716 for $18.1 and single mutation at 0.709 for $13.4. Test stars match Figure 4.](images/pareto_cost.png){ style="width: 100%;" }
+  ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation, 2×4, and 8×1. Left, LiveBench-Math: single mutation reaches 0.783 by about $5.5 and ends at $13.2; 2×4 ends at 0.740 for $12.4 and 8×1 at 0.760 for $18.1. Right, HoVer: 8×1 jumps to 0.727 by $2.65 and ends at $14.2; 2×4 ends at 0.716 for $15.3 and single mutation at 0.709 for $13.4. Test stars match Figure 4.](images/pareto_cost.png){ style="width: 100%;" }
   <figcaption>Figure 5. Best validation quality against total LLM spend, solver and reflection calls combined. Batched settings reach strong validation quality within the first few dollars.</figcaption>
 </figure>
 
