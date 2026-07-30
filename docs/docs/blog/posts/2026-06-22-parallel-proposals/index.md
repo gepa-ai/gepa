@@ -101,7 +101,7 @@ We also probed how efficiently each setting spends its budget during the run. He
 
 On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set.
 
-The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation adapts after every proposal, steering 219 rounds of feedback against the same 100 validation problems, so a long run can fit their quirks, ultimately resulting in worse transfer from validation set to test set (dropped nine points from validation to test). The 2×4 run spent the same budget in 28 rounds and dropped only two points. 8×1 on LiveBench-Math shows the opposite pattern, a high validation curve with weak transfer, consistent with the P-heavy behavior described above.
+The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation dropped nine points from validation to test, while 2×4 dropped only two. 8×1 on LiveBench-Math shows the opposite pattern, a high validation curve with weak transfer, consistent with the P-heavy behavior described above.
 
 Batched settings dominate small budgets: on LiveBench-Math both width-8 settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation's late overtake on LiveBench-Math is the overfitting pattern above, validation gains that do not transfer.
 
