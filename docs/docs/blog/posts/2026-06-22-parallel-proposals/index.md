@@ -101,7 +101,7 @@ We also probed how efficiently each setting spends its budget during the run. He
 
 On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. Single mutation dropped nine points from validation to test and 8×1 dropped six, consistent with the P-heavy behavior described above, while 2×4 dropped only two.
 
-Batched settings dominate small budgets: on LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation's late overtake on LiveBench-Math is the overfitting pattern above, validation gains that do not transfer.
+Batched settings dominate small budgets: on LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation raises validation scores later in the budget, but scores the lowest on the held-out test set on both tasks.
 
 <figure markdown="span">
   ![Two step charts of best validation score against metric calls consumed, for single mutation, 2×4, and 8×1, with stars marking held-out test scores. On LiveBench-Math, 8×1 reaches 0.738 within about 450 calls and 2×4 reaches 0.740 by about 1,400, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 71.9% for 2×4, 69.6% for 8×1, and 68.9% for single mutation. On HoVer, both batched settings lead single mutation at every budget, ending at 0.727 (8×1) and 0.716 (2×4) against 0.709; test recall stars are 0.815, 0.767, and 0.760.](images/budget_pareto.png){ style="width: 100%;" }
@@ -122,16 +122,20 @@ By measuring the total LLM spend (sum of solver calls and reflection calls), we 
 Parallel proposals are available in [gepa](https://github.com/gepa-ai/gepa). Opt in with a simple setting change below. The sampling strategy says how many candidates to propose per step, and the selection strategy says which of the improved candidates to keep. For example, two parents with two mutations each gives four candidates per step.
 
 ```python
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
 from gepa.strategies.proposal_sampling import PxNSampling
 from gepa.strategies.proposal_selection import AllImprovements
 
-config = GEPAConfig(
-    engine=EngineConfig(
-        sampling_strategy=PxNSampling(p=2, n=2),   # 2 parents, 2 mutations each = 4 per step
-        selection_strategy=AllImprovements(),
-    ),
-    reflection=ReflectionConfig(reflection_lm="gpt-5-mini"),
+config = OptimizeAnythingConfig(
+    engine="gepa",
+    max_concurrency=64,
+    engine_config={
+        "engine": {
+            "sampling_strategy": PxNSampling(p=2, n=2),   # 2 parents, 2 mutations each = 4 per step
+            "selection_strategy": AllImprovements(),
+        },
+        "reflection": {"reflection_lm": "gpt-5-mini"},
+    },
 )
 
 result = optimize_anything(
@@ -140,7 +144,7 @@ result = optimize_anything(
 )
 ```
 
-GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers. Optionally, you may provide a custom `batch_evaluate` function to the `GEPAAdapter` (or pass it as the `batch_evaluator` argument to the `optimize_anything` API). You may choose or define other sampling and selection strategies; see the [API reference](https://gepa-ai.github.io/gepa/api/) for the full list.
+GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. You may choose or define other sampling and selection strategies; see the [API reference](https://gepa-ai.github.io/gepa/api/) for the full list.
 
 ## Notes
 
