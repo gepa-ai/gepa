@@ -91,7 +91,7 @@ def candidate_tree_dot_from_data(
         else:
             color = "lightgray"
 
-        dot_lines.append(f'    {idx} [label="{label}", fillcolor={color}, tooltip=" "];')
+        dot_lines.append(f'    {idx} [label="{label}", fillcolor={color}, tooltip="{tooltip}"];')
 
     for child in range(n):
         for parent in parents[child]:
