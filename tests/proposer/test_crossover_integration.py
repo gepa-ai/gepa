@@ -2,11 +2,17 @@
 
 A deterministic adapter scores an instruction 1.0 on an example when the
 instruction contains that example's required token ("ALPHA" for type-A inputs,
-"BETA" for type-B), else 0.2. Reflection is mocked to diversify: given an
-instruction containing one token it proposes the other, so the run produces one
-candidate strong on type-A inputs and another strong on type-B — a complementary
-pair. The crossover synthesis prompt (which contains "VARIANT A") returns an
-instruction with BOTH tokens, which wins everywhere and is accepted.
+"BETA" for type-B). Misses score asymmetrically by type (0.3 on type-A, 0.1 on
+type-B) so that the ALPHA-only candidate (2.2) and the BETA-only candidate (2.6)
+never tie on the full set: the engine's strict `>` acceptance would otherwise
+depend on float summation noise, which changed in Python 3.12 (`sum()` is more
+accurate, turning the near-tie into an exact tie and deadlocking the run).
+
+Reflection is mocked to diversify: given an instruction containing one token it
+proposes the other, so the run produces one candidate strong on type-A inputs and
+another strong on type-B — a complementary pair. The crossover synthesis prompt
+(which contains "VARIANT A") returns an instruction with BOTH tokens, which wins
+everywhere and is accepted.
 """
 
 import pytest
@@ -24,7 +30,8 @@ class _TokenAdapter:
         outputs, scores, trajectories = [], [], []
         for ex in batch:
             token = "ALPHA" if ex["type"] == "A" else "BETA"
-            score = 1.0 if token in instr else 0.2
+            miss = 0.3 if ex["type"] == "A" else 0.1
+            score = 1.0 if token in instr else miss
             outputs.append(instr)
             scores.append(score)
             trajectories.append({"type": ex["type"], "score": score, "instr": instr})
@@ -115,7 +122,7 @@ def test_engine_crossover_slot_rejects_regressing_synthesis():
     data = [{"type": "A"}, {"type": "A"}, {"type": "B"}, {"type": "B"}]
 
     def reflection_lm(prompt):
-        # Crossover synthesis prompt -> a regression: neither token, scores 0.2 everywhere.
+        # Crossover synthesis prompt -> a regression: neither token, only miss scores.
         if "VARIANT A" in prompt:
             return "```\nUseless synthesized instruction\n```"
         if "ALPHA" in prompt:
