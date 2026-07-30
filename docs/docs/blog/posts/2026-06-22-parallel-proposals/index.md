@@ -32,7 +32,7 @@ citation_keywords: "text optimization, prompt optimization, program optimization
 
 Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. The loop samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
 
-This release adds batch-based parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, this reduced wall-clock time substantially. Several batch configurations in our sweep also earned higher held-out scores.
+This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, this reduced wall-clock time substantially. In general, parallel proposals also score higher on the held-out test set.
 
 ## How parallel proposals work
 
@@ -66,7 +66,7 @@ We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [
 
 ### Batching cuts the wall-clock time
 
-A run's wall-clock time is the sum of the time spent on each iteration. With $k = P \cdot N$ proposals per step, every iteration incurs a fixed latency $L_{\text{step}}$ for the $k$ reflection calls and $k$ mini-batch evaluations, which run concurrently. Whenever one or more proposals beat their parent on the mini-batch, the iteration additionally pays a full-validation latency $L_{\text{val}}$ as all accepted proposals advance to the validation set and are evaluated there as one concurrent wave.
+A run's wall-clock time is the sum of the time spent on each iteration. With $k = P \cdot N$ proposals per step, every iteration incurs a step latency $L_{\text{step}}$ for the $k$ reflection calls and $k$ mini-batch evaluations, which run concurrently. Whenever one or more proposals beat their parent on the mini-batch, the iteration additionally pays a full-validation latency $L_{\text{val}}$ as all accepted proposals advance to the validation set and are evaluated there as one concurrent wave.
 
 A fixed metric-call budget pins the total number of proposals a run can afford, whether parallel or sequential (if we assume the candidate acceptance rate stays the same). The number of iterations is the number of proposals divided by $k$, so a width-$k$ run needs about $1/k$ as many iterations as single mutation. The main bottleneck is full validation. If each proposal is accepted with probability $a$, and proposal outcomes are independent, then an iteration triggers full validation with probability
 
@@ -76,20 +76,29 @@ which grows quickly with $k$. At the acceptance rates we observe, most wide iter
 
 $$\frac{T(k)}{T(1)} \approx \frac{L_{\text{step}} + q_k\,L_{\text{val}}}{k\,(L_{\text{step}} + a\,L_{\text{val}})}.$$
 
-The number of fixed-latency waves falls by the full factor of $k$, while the number of validation waves falls by only $ka/q_k$.
+The number of $L_{\text{step}}$ waves falls by the full factor of $k$, while the number of validation waves falls by only $ka/q_k$.
 
-The measured runs follow this pattern. On LiveBench-Math, moving from single mutation to 2×2 reduced the number of iterations from 219 to 45, a 4.9× reduction, while the chance of triggering validation in each iteration rose from 17% to 53%. The 2×2 run accepted $a = 0.24$ of its proposals, so independence would predict a trigger rate of $1-(1-0.24)^4 = 66\%$. The observed rate is lower because sibling proposals from the same parent tend to succeed or fail together. As a result, full-validation waves fell only from 38 to 24, and the run achieved a 1.9× speedup, from 7.7 to 4.1 hours. This lies between the 1.6× speedup expected if validation accounted for all latency and the 4.9× speedup expected if it accounted for none.
+The measured runs follow this pattern. For example, on LiveBench-Math, moving from single mutation to 2×2 reduced the number of iterations from 219 to 45, a 4.9× reduction, while the fraction of iterations that triggered full validation rose from 17% to 53%. The 2×2 run accepted $a = 0.24$ of its proposals, so independence would predict a trigger rate of $1-(1-0.24)^4 = 66\%$. The observed rate is lower because sibling proposals from the same parent tend to succeed or fail together. As a result, full-validation waves fell only from 38 to 24, and the run achieved a 1.9× speedup, from 7.7 to 4.1 hours. This lies between the 1.6× speedup expected if validation accounted for all latency and the 4.9× speedup expected if it accounted for none.
 
 In practice, two effects increase $L_{\text{step}}$ and $L_{\text{val}}$. First, the reflection wave takes as long as the slowest of its $k$ concurrent calls, so $L_{\text{step}}$ grows with width. Second, the worker pool is finite. With $W$ concurrent workers and a per-rollout latency of $T_e$, a wave of up to $kV$ rollouts ($k$ candidates, each on all $V$ validation examples) takes about $(kV/W) \cdot T_e$ once $kV$ exceeds $W$, so $L_{\text{val}} \propto kV/W$ when $kV>W$. According to strong scaling[^scaling], a run with a budget of $B$ metric calls needs at least $B \cdot T_e / W$ of wall-clock for evaluation alone. This is a hard limit for runtime, so we recommend not scaling $P \cdot N$ further once the runtime approaches it.
 
 <figure markdown="span">
   ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, a dashed lighter-purple curve with the optimization time predicted by the finite-worker model, and a dotted baseline. Measured time falls from 7.7 hours to about 2 on LiveBench-Math and from 47 to 14 minutes on HoVer, and the predicted curve tracks it, flattening near 2.2 hours and 15 minutes. Test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 49.0.](images/scaling_lines.png){ style="width: 100%;" }
-  <figcaption>As the per-step width P·N scales up, runtime falls with diminishing returns, and several settings score higher than single mutation.</figcaption>
+  <figcaption>As the per-step width P·N scales up, runtime falls with diminishing returns, following the optimization time predicted by our runtime model. Most settings perform as well as or better than single mutation on test, and the best setting scores much higher.</figcaption>
+</figure>
+
+### The best setting depends on the budget
+
+In principle, larger P extends more members of the frontier at once, which should help when no single generally good candidate exists and the frontier holds genuinely different specialists worth advancing in parallel, and larger N draws more mutations with different mini-batches, which should help when the dataset is rich enough to expose many distinct directions to improve one candidate. LiveBench-Math is the second case, with problems spanning multiple areas, so giving each parent several mutations (larger N) transferred better to test than spreading single mutations across more parents (larger P). HoVer additionally keeps a more complementary candidate pool, where different candidates succeed on different claims, and its test scores tend to grow with both P and N. Based on the results, we suggest scaling N first when in doubt.
+
+<figure markdown="span">
+  ![Two step charts of best validation score against metric calls consumed, for single mutation and one matched-width pair per task, with stars marking held-out test scores. On LiveBench-Math, 2×2 climbs past 4×1 within about 100 calls and reaches 0.748 by about 1,000, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 72.1% for 2×2 against 68.9% for single mutation and 68.7% for 4×1. On HoVer, 8×1 jumps to 0.727 within about 400 calls and leads single mutation at every budget, 2×4 finishes highest at 0.740, and single mutation ends at 0.709; test stars show recall of 0.815 for 8×1, 0.810 for 2×4, and 0.760 for single mutation.](images/budget_pareto.png){ style="width: 100%;" }
+  <figcaption>Best validation quality against metric calls consumed, for single mutation and one matched-width pair per task. The best setting changes with the budget, and batched settings dominate small budgets.</figcaption>
 </figure>
 
 ### Better final solutions with less overfitting
 
-We also measured whether batching found better solutions for the same number of metric calls. Here we focus on two settings, 2×2 on LiveBench-Math and 8×1 on HoVer, against single mutation. On the held-out test sets, parallel proposals won 3.2pp on LiveBench-Math (a gain mostly on the symbolic algebra problems), and 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but parallel proposals transferred better to the test set.
+We also measured whether batching found better solutions for the same number of metric calls. Here we focus on each task's best-scoring setting in the sweep above, 2×2 on LiveBench-Math and 8×1 on HoVer, against single mutation. On the held-out test sets, parallel proposals won 3.2pp on LiveBench-Math (a gain mostly on the symbolic algebra problems), and 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but parallel proposals transferred better to the test set.
 
 The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation adapts after every proposal, steering 219 rounds of feedback against the same 100 validation problems, so a long run can fit their quirks, ultimately resulting in worse transfer from validation set to test set (dropped nine points from validation to test). The batched run spent the same budget in 45 rounds and dropped only three points.
 
@@ -99,16 +108,6 @@ The plots below show how quality accumulates over each run's wall-clock time. Ea
   ![Two Pareto curves of best validation quality against runtime. Left, LiveBench-Math: single mutation climbs to 0.783 with a test star at 0.689, batch to 0.752 with a test star at 0.721. Right, HoVer: batch climbs to 0.727 validation recall in 21 minutes with a test star at 0.815, single mutation to 0.716 over 47 minutes with a test star at 0.760.](images/trajectories.png){ style="width: 100%;" }
   <figcaption>Best validation quality against optimization time. On LiveBench-Math (left), single mutation wins on validation but parallel proposals win on test, and finish sooner. On HoVer (right), parallel proposals reach a higher validation recall in less than half the time.</figcaption>
 </figure>
-
-### The best setting depends on the budget
-
-As the figure below shows, batched settings dominate small budgets on both tasks. In principle, the two axes hedge different risks. Larger P extends more members of the frontier at once, which should help when no single generally good candidate exists and the frontier holds genuinely different specialists worth advancing in parallel. Larger N draws more mutations around each parent, each reflecting on its own mini-batch sample, which should help when the dataset is rich enough to expose many distinct directions to improve one candidate. LiveBench-Math is the second case, with problems spanning multiple areas, so giving each parent several mutations (larger N) transferred better to test than spreading single mutations across more parents (larger P). HoVer additionally keeps a more complementary candidate pool, where different candidates succeed on different claims, and its test scores tend to grow with both P and N. Based on the results, we suggest scaling N first when in doubt.
-
-<figure markdown="span">
-  ![Two step charts of best validation score against metric calls consumed, for single mutation and one matched-width pair per task, with stars marking held-out test scores. On LiveBench-Math, 2×2 climbs past 4×1 within about 100 calls and reaches 0.748 by about 1,000, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 72.1% for 2×2 against 68.9% for single mutation and 68.7% for 4×1. On HoVer, 8×1 jumps to 0.727 within about 400 calls and leads single mutation at every budget, 2×4 finishes highest at 0.740, and single mutation ends at 0.709; test stars show recall of 0.815 for 8×1, 0.810 for 2×4, and 0.760 for single mutation.](images/budget_pareto.png){ style="width: 100%;" }
-  <figcaption>Best validation quality against metric calls consumed, for single mutation and one matched-width pair per task. The best setting changes with the budget, and batched settings dominate small budgets.</figcaption>
-</figure>
-
 
 ### Dollar cost comparison
 
