@@ -97,13 +97,11 @@ In principle, larger P extends more members of the frontier at once, which shoul
 
 We also probed how efficiently each setting spends its budget during the run. Here we focus on one N-scaled and one P-scaled setting at the same width, 2×4 and 8×1, against single mutation on both tasks.
 
-#### Generalization Gap
+#### Metric-call Budget
 
-On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set.
+On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. Single mutation dropped nine points from validation to test and 8×1 dropped six, consistent with the P-heavy behavior described above, while 2×4 dropped only two.
 
-The validation-to-test drop on LiveBench-Math is an overfitting signal. Single mutation dropped nine points from validation to test, while 2×4 dropped only two. 8×1 on LiveBench-Math shows the opposite pattern, a high validation curve with weak transfer, consistent with the P-heavy behavior described above.
-
-Batched settings dominate small budgets: on LiveBench-Math both width-8 settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation's late overtake on LiveBench-Math is the overfitting pattern above, validation gains that do not transfer.
+Batched settings dominate small budgets: on LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation's late overtake on LiveBench-Math is the overfitting pattern above, validation gains that do not transfer.
 
 <figure markdown="span">
   ![Two step charts of best validation score against metric calls consumed, for single mutation, 2×4, and 8×1, with stars marking held-out test scores. On LiveBench-Math, 8×1 reaches 0.738 within about 450 calls and 2×4 reaches 0.740 by about 1,400, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 71.9% for 2×4, 69.6% for 8×1, and 68.9% for single mutation. On HoVer, both batched settings lead single mutation at every budget, ending at 0.727 (8×1) and 0.716 (2×4) against 0.709; test recall stars are 0.815, 0.767, and 0.760.](images/budget_pareto.png){ style="width: 100%;" }
@@ -112,7 +110,7 @@ Batched settings dominate small budgets: on LiveBench-Math both width-8 settings
 
 #### Dollar Cost
 
-By measuring the total LLM spend (sum of solver calls and reflection calls), we found that batched settings are more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 passes a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65, a fraction of single mutation's $14.2 run. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, in the $13 to $18 range.
+By measuring the total LLM spend (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $13 to $18 range.
 
 <figure markdown="span">
   ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation, 2×4, and 8×1. Left, LiveBench-Math: single mutation reaches 0.783 by about $5.5 and ends at $13.2; 2×4 ends at 0.740 for $12.7 and 8×1 at 0.760 for $18.1. Right, HoVer: 8×1 jumps to 0.727 by $2.65 and ends at $15.3; 2×4 ends at 0.716 for $18.1 and single mutation at 0.709 for $13.4. Test stars match Figure 4.](images/pareto_cost.png){ style="width: 100%;" }
