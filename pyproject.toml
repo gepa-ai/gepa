@@ -87,6 +87,17 @@ langchain = [
     "tqdm>=4.66",
 ]
 
+# Client-side requirements for driving a local Hugging Face model served by
+# vLLM (or any OpenAI-compatible endpoint). GEPA only ever talks to the server
+# over HTTP via LiteLLM, so it never imports `vllm`/`torch` in-process — this
+# extra is intentionally lean and adds no heavy (torch/CUDA) footprint to the
+# lockfile. Install the server itself separately, on the serving box:
+#     pip install vllm
+# See docs/docs/guides/local-models-vllm.md.
+vllm = [
+    "gepa[full]",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/gepa-ai/gepa"
 "Bug Tracker" = "https://github.com/gepa-ai/gepa/issues"

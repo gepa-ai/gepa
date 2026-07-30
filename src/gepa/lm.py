@@ -187,6 +187,66 @@ class LM:
         return f"LM({', '.join(params)})"
 
 
+def make_vllm_lm(
+    model: str,
+    api_base: str = "http://localhost:8000/v1",
+    api_key: str = "EMPTY",
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    num_retries: int = 3,
+    **kwargs: Any,
+) -> LM:
+    """Build an :class:`LM` backed by a local vLLM (or any OpenAI-compatible) server.
+
+    vLLM serves Hugging Face models behind an OpenAI-compatible endpoint::
+
+        python -m vllm.entrypoints.openai.api_server \\
+            --model Qwen/Qwen2.5-7B-Instruct \\
+            --served-model-name qwen2.5-7b-instruct \\
+            --port 8000
+
+    This helper points GEPA's LiteLLM-backed :class:`LM` at that endpoint. It is a
+    thin convenience wrapper — the equivalent explicit form is
+    ``LM("openai/<served-model-name>", api_base=..., api_key="EMPTY")``.
+
+    **No import-time dependency is added:** ``vllm``/``transformers`` only need to be
+    installed on the machine *serving* the model, never in the GEPA process. LiteLLM
+    (already an optional GEPA dependency, imported lazily) does the HTTP call. The
+    returned :class:`LM` is a plain ``LanguageModel`` callable, usable as either the
+    task model or the ``reflection_lm``, and mixes freely with hosted providers.
+
+    Args:
+        model: The vLLM ``--served-model-name`` (e.g. ``"qwen2.5-7b-instruct"``).
+            A LiteLLM provider prefix is prepended automatically when missing
+            (``"openai/"``), so pass the served name as-is. To force a specific
+            route, prefix it yourself (e.g. ``"hosted_vllm/qwen2.5-7b-instruct"``);
+            an existing ``openai/`` or ``hosted_vllm/`` prefix is left untouched.
+        api_base: The server's OpenAI-compatible base URL, **including** the ``/v1``
+            suffix. Defaults to ``"http://localhost:8000/v1"``.
+        api_key: Ignored by vLLM but required by the OpenAI client contract; defaults
+            to ``"EMPTY"``.
+        temperature: Optional sampling temperature.
+        max_tokens: Optional maximum tokens to generate.
+        num_retries: Retries on transient failures (default 3).
+        **kwargs: Extra keyword arguments forwarded to ``litellm.completion``
+            (e.g. ``top_p``, ``timeout``).
+
+    Returns:
+        An :class:`LM` instance targeting the local endpoint.
+    """
+    if not model.startswith(("openai/", "hosted_vllm/")):
+        model = f"openai/{model}"
+    return LM(
+        model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        num_retries=num_retries,
+        api_base=api_base,
+        api_key=api_key,
+        **kwargs,
+    )
+
+
 class TrackingLM:
     """Wraps an arbitrary callable to track estimated token usage.
 

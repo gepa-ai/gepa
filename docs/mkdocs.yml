@@ -22,6 +22,7 @@ nav:
     - Guides:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
+        - Local Models (vLLM & Hugging Face): guides/local-models-vllm.md
         - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
         - Confidence-Aware Classification: guides/confidence-adapter.md
