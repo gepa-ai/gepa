@@ -18,7 +18,7 @@ equal_contribution:
 slug: parallel-proposals
 readtime: 10
 title: "Batching the Optimization Loop: Parallel Proposals in GEPA"
-description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter to a third. Batch configurations also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 49.0% to 60.0% on HoVer (with 8×1)."
+description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter to a third. Batched settings also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 49.0% to 60.0% on HoVer (with 8×1)."
 social_image: blog/2026-07-30-parallel-proposals/images/throughput.png
 citation_keywords: "text optimization, prompt optimization, program optimization, parallel proposals, batched inference, Pareto optimization, GEPA, LiveBench, HoVer, multi-hop retrieval"
 ---
@@ -32,7 +32,7 @@ citation_keywords: "text optimization, prompt optimization, program optimization
 
 Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. The loop samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
 
-This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, this reduced wall-clock time substantially. We found that most batch configurations also achieved higher held-out test scores.
+This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, this reduced wall-clock time substantially. We found that most batched settings also achieved higher held-out test scores.
 
 ## How parallel proposals work
 
@@ -62,7 +62,7 @@ We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [
 ??? note "Task setup details"
 
     - **[LiveBench-Math](https://livebench.ai/)** asks a model to solve competition math problems (AMC and AIME questions, symbolic algebra, and olympiad problems), graded by LiveBench's own scorers, with the [Terrarium](https://github.com/gepa-ai/terrarium) split of 100 training, 100 validation, and 168 test problems. Budget: 5,000 metric calls, each one `gpt-4.1-mini` solution attempt.
-    - **[HoVer](https://hover-nlp.github.io/)** asks a system to gather the Wikipedia pages needed to verify a multi-hop claim. We optimize the two prompts (a query writer and a note taker) of a four-hop `gpt-4.1-mini` retrieval program over a BM25 index of 5.2 million 2017 Wikipedia abstracts, on three-hop claims split into 200 training, 150 validation, and 200 test claims; one rollout makes about eight calls. During optimization, GEPA scores each rollout by the fraction of the claim's three gold pages that appear in the retrieved pages; the reported headline metric is the strict version, the share of test claims with all three pages retrieved. Budget: 3,000 metric calls, each one full program rollout.
+    - **[HoVer](https://hover-nlp.github.io/)** asks a system to gather the Wikipedia pages needed to verify a multi-hop claim. We optimize the two prompts (a query writer and a note taker) of a four-hop `gpt-4.1-mini` retrieval program over a BM25 index of 5.2 million 2017 Wikipedia abstracts, on three-hop claims split into 200 training, 150 validation, and 200 test claims; one rollout makes about eight calls. During optimization, GEPA scores each rollout by the fraction of the claim's three gold pages that appear in the retrieved pages (top-5 recall); the HoVer validation curves and test stars in Figures 4 and 5 use this metric. The headline numbers in the text and in Figure 3 are the strict version, the share of test claims with all three gold pages retrieved. Budget: 3,000 metric calls, each one full program rollout.
 
 ### Runtime
 
@@ -104,7 +104,7 @@ On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math
 Batched settings dominate small budgets: on LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation raises validation scores later in the budget, but scores the lowest on the held-out test set on both tasks.
 
 <figure markdown="span">
-  ![Two step charts of best validation score against metric calls consumed, for single mutation, 2×4, and 8×1, with stars marking held-out test scores. On LiveBench-Math, 8×1 reaches 0.738 within about 450 calls and 2×4 reaches 0.740 by about 1,400, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 71.9% for 2×4, 69.6% for 8×1, and 68.9% for single mutation. On HoVer, both batched settings lead single mutation at every budget, ending at 0.727 (8×1) and 0.716 (2×4) against 0.709; test recall stars are 0.815, 0.767, and 0.760.](images/budget_pareto.png){ style="width: 100%;" }
+  ![Two step charts of best validation score against metric calls consumed, for single mutation, 2×4, and 8×1, with stars marking held-out test scores. On LiveBench-Math, 8×1 reaches 0.738 within about 450 calls and 2×4 reaches 0.740 by about 1,400, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 71.9% for 2×4, 69.6% for 8×1, and 68.9% for single mutation. On HoVer, both batched settings lead single mutation at every budget, ending at 0.727 (8×1) and 0.716 (2×4) against 0.709; test recall stars are 0.815, 0.810, and 0.760.](images/budget_pareto.png){ style="width: 100%;" }
   <figcaption>Figure 4. Best validation quality against metric calls consumed, for single mutation and the width-8 pair 2×4 and 8×1. The best setting changes with the budget, and batched settings dominate small budgets.</figcaption>
 </figure>
 
