@@ -1,8 +1,8 @@
 ---
 date:
-  created: 2026-06-30
+  created: 2026-07-30
 authors:
- - jialin
+ - ben
  - lakshya
  - shangyin
  - donghyun
@@ -16,10 +16,10 @@ equal_contribution:
   - "Shangyin Tan"
   - "Donghyun Lee"
 slug: parallel-proposals
-readtime: 8
+readtime: 10
 title: "Batching the Optimization Loop: Parallel Proposals in GEPA"
 description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter to a third. Batch configurations also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 49.0% to 60.0% on HoVer (with 8×1)."
-social_image: blog/2026-06-22-parallel-proposals/images/throughput.png
+social_image: blog/2026-07-30-parallel-proposals/images/throughput.png
 citation_keywords: "text optimization, prompt optimization, program optimization, parallel proposals, batched inference, Pareto optimization, GEPA, LiveBench, HoVer, multi-hop retrieval"
 ---
 
@@ -110,7 +110,7 @@ Batched settings dominate small budgets: on LiveBench-Math both batched settings
 
 #### Dollar Cost
 
-By measuring the total LLM spend (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $13 to $18 range.
+By measuring the total LLM spend (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $12 to $18 range.
 
 <figure markdown="span">
   ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation, 2×4, and 8×1. Left, LiveBench-Math: single mutation reaches 0.783 by about $5.5 and ends at $13.2; 2×4 ends at 0.740 for $12.4 and 8×1 at 0.760 for $18.1. Right, HoVer: 8×1 jumps to 0.727 by $2.65 and ends at $14.2; 2×4 ends at 0.716 for $15.3 and single mutation at 0.709 for $13.4. Test stars match Figure 4.](images/pareto_cost.png){ style="width: 100%;" }
