@@ -83,7 +83,7 @@ We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [
     - **[LiveBench-Math](https://livebench.ai/)** asks a model to solve competition math problems (AMC and AIME questions, symbolic algebra, and olympiad problems), graded by LiveBench's own scorers, with the [Terrarium](https://github.com/gepa-ai/terrarium) split of 100 training, 100 validation, and 168 test problems. Budget: 5,000 metric calls, each one `gpt-4.1-mini` solution attempt.
     - **[HoVer](https://hover-nlp.github.io/)** asks a system to gather the Wikipedia pages needed to verify a multi-hop claim. We optimize the two prompts (a query writer and a note taker) of a four-hop `gpt-4.1-mini` retrieval program over a BM25 index of 5.2 million 2017 Wikipedia abstracts, on three-hop claims split into 200 training, 150 validation, and 200 test claims; one rollout makes about eight calls. During optimization, GEPA scores each rollout by the fraction of the claim's three gold pages that appear in the retrieved pages (top-5 recall); the HoVer validation curves and test stars in Figures 4 and 5 use this metric. The headline numbers in the text and in Figure 3 are the strict version, the share of test claims with all three gold pages retrieved. Budget: 3,000 metric calls, each one full program rollout.
 
-### Speed
+### Batching cuts the wall-clock time
 
 The measured runs align with the runtime model above. For example, on LiveBench-Math, moving from single mutation to 2×2 cut the number of iterations by 4.9× (219 to 45), but the fraction of iterations that triggered full validation rose from 17% to 53%, so the run gained a 1.9× speedup (7.7 to 4.1 hours) rather than the full 4.9×. Across the whole sweep, Figure 3 shows the measured runtimes tracking the model's predicted curve.
 
@@ -92,15 +92,15 @@ The measured runs align with the runtime model above. For example, on LiveBench-
   <figcaption>Figure 3. As the per-step width P·N scales up, runtime falls with diminishing returns, following the optimization time predicted by our runtime model. Most settings perform as well as or better than single mutation on test, and the best setting scores much higher.</figcaption>
 </figure>
 
-### Performance
+### When in doubt, scale N first
 
 In principle, larger P extends more members of the frontier at once, which should help when no single generally good candidate exists and the frontier holds genuinely different specialists worth advancing in parallel, and larger N draws more mutations with different mini-batches, which should help when the dataset is rich enough to expose many distinct directions to improve one candidate. LiveBench-Math is the second case, with problems spanning multiple areas, so giving each parent several mutations (larger N) transferred better to test than spreading single mutations across more parents (larger P). HoVer additionally keeps a more complementary candidate pool, where different candidates succeed on different claims, and its test scores tend to grow with both P and N. By holding P=2 and comparing different N, test scores rise from 68.6 at 2×1 to 71.6-72.1 at 2×2 through 2×8 on LiveBench-Math, and from 52.5 to 55.0 on HoVer (as shown in Figure 3). Based on the results, we suggest scaling N first when in doubt.
 
-### Budget Efficiency
+### Batched settings are more budget-efficient
 
 We also probed how efficiently each setting spends its budget during the run. Here we focus on one N-scaled and one P-scaled setting at the same width, 2×4 and 8×1, against single mutation on both tasks.
 
-#### Metric-call Budget
+#### More quality per metric call
 
 On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. Single mutation dropped nine points from validation to test and 8×1 dropped six, matching the weaker transfer of P-heavy settings described above, while 2×4 dropped only two.
 
@@ -111,7 +111,7 @@ Batched settings dominate small budgets: on LiveBench-Math both batched settings
   <figcaption>Figure 4. Best validation quality against metric calls consumed, for single mutation and the width-8 pair 2×4 and 8×1. The best setting changes with the budget, and batched settings dominate small budgets.</figcaption>
 </figure>
 
-#### Dollar Cost
+#### More quality per dollar
 
 By measuring the total LLM spend (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $12 to $18 range.
 
