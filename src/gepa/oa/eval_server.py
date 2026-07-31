@@ -11,18 +11,23 @@ The api always creates the EvalServer; engines never construct their own.
 HTTP Protocol
 -------------
 POST /evaluate
-    Body: {"candidate": "<text>", "example_id": "<optional>"}
+    Body: {"candidate": "<text>", "example_id": "<optional>",
+           "evaluation_session_id": "<optional external-engine token>"}
     Response: {"score": 1.23, "info": {...}, "budget": {"used": 5, ...}}
     Status 429 when budget exhausted.
 
 POST /evaluate_examples
-    Body: {"candidate": "<text>", "example_ids": ["a","b","c"]}
+    Body: {"candidate": "<text>", "example_ids": ["a","b","c"],
+           "evaluation_session_id": "<optional external-engine token>"}
        or {"candidate": "<text>"}                # default: full agent-visible pool
     Evaluates the candidate on the requested examples in parallel,
     respecting the concurrency limit. Each example = 1 budget tick.
 
     The agent-visible pool is ``train_set + val_set`` (val merged in so
     engines/agents see one combined set).
+
+    A closed external-engine token returns status 409 and cannot modify a
+    completed engine result.
 
 GET /status   → {"budget": {...}, "task": "...", "best_score": ..., ...}
 GET /task     → task metadata (objective/background/seed_candidate/...)
@@ -38,6 +43,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -46,6 +52,20 @@ from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.task import Task
 
 DEFAULT_MAX_CONCURRENCY = 8
+
+
+class EvaluationSessionClosedError(RuntimeError):
+    """Raised when an external engine submits work after its session closes."""
+
+
+@dataclass
+class _EvaluationSession:
+    best_candidate: str
+    active_evaluations: int = 0
+    closed: bool = False
+    best_score: float = float("-inf")
+    best_aggregate_candidate: str | None = None
+    best_aggregate_score: float = float("-inf")
 
 
 def _resolve_id(item: Any, fallback: str) -> str:
@@ -186,6 +206,9 @@ class EvalServer:
         self._candidate_registry: dict[str, int] = {}
         self._next_candidate_id: int = 0
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._active_evaluations = 0
+        self._evaluation_sessions: dict[str, _EvaluationSession] = {}
         self._io_lock = threading.Lock()
         self.output_dir: Path | None = None
         self._evals_dir: Path | None = None
@@ -230,7 +253,42 @@ class EvalServer:
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
-    def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
+    def open_evaluation_session(self, initial_candidate: str) -> str:
+        """Create an admission token for one external engine invocation."""
+        session_id = uuid.uuid4().hex
+        with self._idle:
+            self._evaluation_sessions[session_id] = _EvaluationSession(best_candidate=initial_candidate)
+        return session_id
+
+    def close_evaluation_session(self, session_id: str, *, timeout: float) -> tuple[str, float]:
+        """Reject later requests for ``session_id`` and return its completed best result."""
+        with self._idle:
+            session = self._evaluation_sessions.get(session_id)
+            if session is None:
+                raise ValueError(f"Unknown evaluation session: {session_id}")
+            session.closed = True
+            if not self._idle.wait_for(lambda: session.active_evaluations == 0, timeout=timeout):
+                raise TimeoutError(f"Evaluation session did not drain within {timeout:.1f}s")
+            return session.best_candidate, session.best_score
+
+    def evaluation_session_aggregate(self, session_id: str) -> tuple[str, float] | None:
+        """Return the highest full-pool score recorded for one external session."""
+        with self._idle:
+            session = self._evaluation_sessions.get(session_id)
+            if session is None:
+                raise ValueError(f"Unknown evaluation session: {session_id}")
+            if session.best_aggregate_candidate is None:
+                return None
+            return session.best_aggregate_candidate, session.best_aggregate_score
+
+    def evaluate(
+        self,
+        candidate: str,
+        example: Any | None = None,
+        *,
+        evaluation_session_id: str | None = None,
+        **kwargs: Any,
+    ) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate with budget enforcement.
 
         Failed attempts consume budget (launcher parity). Extra kwargs (e.g.
@@ -240,33 +298,39 @@ class EvalServer:
         Raises:
             BudgetExhausted: When the budget has been used up.
         """
-        self._eval_semaphore.acquire()
+        self._begin_evaluation(evaluation_session_id)
         try:
-            self.budget.check()
-
+            self._eval_semaphore.acquire()
             try:
-                if example is not None:
-                    score, info = self.eval_fn(candidate, example, **kwargs)
-                else:
-                    score, info = self.eval_fn(candidate, **kwargs)
-            except Exception:
-                # check() passed above, so this record cannot itself raise.
-                self.budget.record(0.0)
-                raise
+                self.budget.check()
 
-            self.budget.record(score)
-            self._track(candidate, score, info)
+                try:
+                    if example is not None:
+                        score, info = self.eval_fn(candidate, example, **kwargs)
+                    else:
+                        score, info = self.eval_fn(candidate, **kwargs)
+                except Exception:
+                    # check() passed above, so this record cannot itself raise.
+                    self.budget.record(0.0)
+                    raise
 
-            info = dict(info) if info else {}
-            info["_budget"] = self.budget.status()
-            return score, info
+                self.budget.record(score)
+                self._track(candidate, score, info, evaluation_session_id=evaluation_session_id)
+
+                info = dict(info) if info else {}
+                info["_budget"] = self.budget.status()
+                return score, info
+            finally:
+                self._eval_semaphore.release()
         finally:
-            self._eval_semaphore.release()
+            self._finish_evaluation(evaluation_session_id)
 
     def evaluate_batch(
         self,
         pairs: list[tuple[str, Any]],
         opt_states: list[Any] | None = None,
+        *,
+        evaluation_session_id: str | None = None,
     ) -> list[tuple[float, dict[str, Any]]]:
         """Evaluate ``pairs`` in ONE call to the user's ``batch_evaluate`` function.
 
@@ -284,36 +348,42 @@ class EvalServer:
         """
         if self.batch_fn is None:
             raise RuntimeError("evaluate_batch requires the server to be constructed with batch_evaluate")
-        self._eval_semaphore.acquire()
+        self._begin_evaluation(evaluation_session_id)
         try:
-            self.budget.check()
+            self._eval_semaphore.acquire()
             try:
-                results = self.batch_fn(pairs, opt_states=opt_states)
-            except Exception:
-                # Guard each record so crossing the cap while recording
-                # failures never masks the user's original exception.
-                for _ in pairs:
-                    try:
-                        self.budget.record(0.0)
-                    except BudgetExhausted:
-                        break
-                raise
+                self.budget.check()
+                try:
+                    results = self.batch_fn(pairs, opt_states=opt_states)
+                except Exception:
+                    # Guard each record so crossing the cap while recording
+                    # failures never masks the user's original exception.
+                    for _ in pairs:
+                        try:
+                            self.budget.record(0.0)
+                        except BudgetExhausted:
+                            break
+                    raise
+            finally:
+                self._eval_semaphore.release()
+            out: list[tuple[float, dict[str, Any]]] = []
+            for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
+                self.budget.record(score)
+                self._track(candidate, score, info, evaluation_session_id=evaluation_session_id)
+                info = dict(info)
+                info["_budget"] = self.budget.status()
+                out.append((score, info))
+            return out
         finally:
-            self._eval_semaphore.release()
-        out: list[tuple[float, dict[str, Any]]] = []
-        for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
-            self.budget.record(score)
-            self._track(candidate, score, info)
-            info = dict(info)
-            info["_budget"] = self.budget.status()
-            out.append((score, info))
-        return out
+            self._finish_evaluation(evaluation_session_id)
 
     def evaluate_examples(
         self,
         candidate: str,
         example_ids: list[str] | None = None,
         split: str | None = None,
+        *,
+        evaluation_session_id: str | None = None,
     ) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate on specific examples or a whole split, in parallel.
 
@@ -325,110 +395,136 @@ class EvalServer:
         Returns:
             (average_score, info_dict) with per-example scores and metadata.
         """
-        if not self.task.has_dataset:
-            score, info = self.evaluate(candidate)
-            return score, {
-                "scores": {"_single": score},
-                "infos": {"_single": info},
-                "num_evaluated": 1,
-                "num_total": 1,
-                "partial": False,
-                "_budget": self.budget.status(),
-            }
+        self._begin_evaluation(evaluation_session_id)
+        try:
+            if not self.task.has_dataset:
+                score, info = self.evaluate(candidate, evaluation_session_id=evaluation_session_id)
+                return score, {
+                    "scores": {"_single": score},
+                    "infos": {"_single": info},
+                    "num_evaluated": 1,
+                    "num_total": 1,
+                    "partial": False,
+                    "_budget": self.budget.status(),
+                }
 
-        examples: list[tuple[str, Any]] = []
-        if example_ids is not None:
-            for eid in example_ids:
-                if eid in self._examples:
-                    examples.append((eid, self._examples[eid]))
-        elif split is not None:
-            splits = ("train", "val") if split == "all" else (split,)
-            for s in splits:
-                examples.extend(self.iter_split(s))
-        elif self.task.train_set:
-            examples.extend(self.iter_split("train"))
+            examples: list[tuple[str, Any]] = []
+            if example_ids is not None:
+                for eid in example_ids:
+                    if eid in self._examples:
+                        examples.append((eid, self._examples[eid]))
+            elif split is not None:
+                splits = ("train", "val") if split == "all" else (split,)
+                for s in splits:
+                    examples.extend(self.iter_split(s))
+            elif self.task.train_set:
+                examples.extend(self.iter_split("train"))
 
-        if not examples:
-            score, info = self.evaluate(candidate)
-            return score, {
-                "scores": {"_single": score},
-                "infos": {"_single": info},
-                "num_evaluated": 1,
-                "num_total": 1,
-                "partial": False,
-                "_budget": self.budget.status(),
-            }
+            if not examples:
+                score, info = self.evaluate(candidate, evaluation_session_id=evaluation_session_id)
+                return score, {
+                    "scores": {"_single": score},
+                    "infos": {"_single": info},
+                    "num_evaluated": 1,
+                    "num_total": 1,
+                    "partial": False,
+                    "_budget": self.budget.status(),
+                }
 
-        if self.budget.remaining is not None and self.budget.remaining < len(examples):
-            raise BudgetExhausted(
-                f"Not enough budget to evaluate all examples: {self.budget.remaining} remaining, {len(examples)} needed"
-            )
+            if self.budget.remaining is not None and self.budget.remaining < len(examples):
+                raise BudgetExhausted(
+                    f"Not enough budget to evaluate all examples: {self.budget.remaining} remaining, {len(examples)} needed"
+                )
 
-        scores: dict[str, float] = {}
-        infos: dict[str, dict[str, Any]] = {}
-        errors: dict[str, str] = {}
+            scores: dict[str, float] = {}
+            infos: dict[str, dict[str, Any]] = {}
+            errors: dict[str, str] = {}
 
-        grouped_done = False
-        if self.batch_fn is not None:
+            grouped_done = False
+            if self.batch_fn is not None:
             # Multi-pair evaluations prefer the grouped path (launcher parity):
             # the user's batch function sees all pairs in one call.
-            try:
-                results = self.evaluate_batch([(candidate, ex) for _eid, ex in examples])
-            except BudgetExhausted:
-                raise
-            except Exception:
+                try:
+                    results = self.evaluate_batch(
+                        [(candidate, ex) for _eid, ex in examples], evaluation_session_id=evaluation_session_id
+                    )
+                except BudgetExhausted:
+                    raise
+                except Exception:
                 # A failed grouped call must not zero the whole stage: fall
                 # through to per-pair evaluation so one bad pair costs one 0.0,
                 # matching the per-pair path's isolation. Both attempts consume
                 # budget — each was a real eval call.
-                pass
-            else:
-                grouped_done = True
-                for (eid, _ex), (score, ex_info) in zip(examples, results, strict=True):
-                    scores[eid] = score
-                    infos[eid] = ex_info
-        if not grouped_done:
-
-            def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
-                try:
-                    score, info = self.evaluate(candidate, ex)
-                    return (eid, score, info, None)
-                except Exception as e:
-                    return (eid, 0.0, None, str(e))
-
-            futures = {self._pool.submit(_eval_one, eid, ex): eid for eid, ex in examples}
-            for future in as_completed(futures):
-                eid, score, ex_info, err = future.result()
-                if err is not None:
-                    errors[eid] = err
+                    pass
                 else:
-                    scores[eid] = score
-                    if ex_info is not None:
+                    grouped_done = True
+                    for (eid, _ex), (score, ex_info) in zip(examples, results, strict=True):
+                        scores[eid] = score
                         infos[eid] = ex_info
+            if not grouped_done:
 
-        all_scores = {**scores, **dict.fromkeys(errors, 0.0)}
-        avg = sum(all_scores.values()) / len(all_scores)
-        info: dict[str, Any] = {
-            "scores": all_scores,
-            "infos": infos,
-            "num_evaluated": len(examples),
-            "_budget": self.budget.status(),
-        }
-        if errors:
-            info["errors"] = errors
-        return avg, info
+                def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
+                    try:
+                        score, info = self.evaluate(candidate, ex, evaluation_session_id=evaluation_session_id)
+                        return (eid, score, info, None)
+                    except Exception as e:
+                        return (eid, 0.0, None, str(e))
 
-    def validate(self, candidate: str) -> dict[str, Any]:
+                futures = {self._pool.submit(_eval_one, eid, ex): eid for eid, ex in examples}
+                for future in as_completed(futures):
+                    eid, score, ex_info, err = future.result()
+                    if err is not None:
+                        errors[eid] = err
+                    else:
+                        scores[eid] = score
+                        if ex_info is not None:
+                            infos[eid] = ex_info
+
+            all_scores = {**scores, **dict.fromkeys(errors, 0.0)}
+            avg = sum(all_scores.values()) / len(all_scores)
+            info: dict[str, Any] = {
+                "scores": all_scores,
+                "infos": infos,
+                "num_evaluated": len(examples),
+                "_budget": self.budget.status(),
+            }
+            if errors:
+                info["errors"] = errors
+            return avg, info
+        finally:
+            self._finish_evaluation(evaluation_session_id)
+
+    def validate(self, candidate: str, *, evaluation_session_id: str | None = None) -> dict[str, Any]:
         """Evaluate ``candidate`` on the hidden ``val_set`` and log progress."""
         if not self.task.val_set:
             raise ValueError("validate() requires a task with val_set")
-        avg_score, _ = self.evaluate_examples(candidate, example_ids=list(self._split_ids["val"]))
-        return self.log_progress(avg_score, candidate=candidate)
+        avg_score, _ = self.evaluate_examples(
+            candidate, example_ids=list(self._split_ids["val"]), evaluation_session_id=evaluation_session_id
+        )
+        return self.log_progress(avg_score, candidate=candidate, evaluation_session_id=evaluation_session_id)
 
     def log_progress(
-        self, val_score: float, candidate: str | None = None, reflection_cost: float = 0.0
+        self,
+        val_score: float,
+        candidate: str | None = None,
+        reflection_cost: float = 0.0,
+        *,
+        evaluation_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Record a progress checkpoint."""
+        self._begin_evaluation(evaluation_session_id)
+        try:
+            return self._record_progress(val_score, candidate, reflection_cost, evaluation_session_id)
+        finally:
+            self._finish_evaluation(evaluation_session_id)
+
+    def _record_progress(
+        self,
+        val_score: float,
+        candidate: str | None,
+        reflection_cost: float,
+        evaluation_session_id: str | None,
+    ) -> dict[str, Any]:
         candidate_id: int | None = None
         if candidate is not None:
             candidate_id = self._register_candidate(candidate)
@@ -446,6 +542,11 @@ class EvalServer:
             }
             if candidate_id is not None:
                 entry["candidate_id"] = candidate_id
+            if evaluation_session_id is not None:
+                session = self._evaluation_sessions[evaluation_session_id]
+                if candidate is not None and val_score > session.best_aggregate_score:
+                    session.best_aggregate_candidate = candidate
+                    session.best_aggregate_score = val_score
             self._progress_log.append(entry)
 
         if self.output_dir is not None:
@@ -480,6 +581,36 @@ class EvalServer:
     def progress_log(self) -> list[dict[str, Any]]:
         with self._lock:
             return list(self._progress_log)
+
+    def wait_for_idle(self, evaluation_session_id: str | None = None, *, timeout: float | None = None) -> bool:
+        """Wait for active evaluations without stopping the server."""
+        with self._idle:
+            if evaluation_session_id is None:
+                return self._idle.wait_for(lambda: self._active_evaluations == 0, timeout=timeout)
+            session = self._evaluation_sessions.get(evaluation_session_id)
+            if session is None:
+                raise ValueError(f"Unknown evaluation session: {evaluation_session_id}")
+            return self._idle.wait_for(lambda: session.active_evaluations == 0, timeout=timeout)
+
+    def _begin_evaluation(self, evaluation_session_id: str | None) -> None:
+        with self._idle:
+            session = None
+            if evaluation_session_id is not None:
+                session = self._evaluation_sessions.get(evaluation_session_id)
+                if session is None or session.closed:
+                    raise EvaluationSessionClosedError("Evaluation session is closed")
+            self._active_evaluations += 1
+            if session is not None:
+                session.active_evaluations += 1
+
+    def _finish_evaluation(self, evaluation_session_id: str | None) -> None:
+        with self._idle:
+            self._active_evaluations -= 1
+            if evaluation_session_id is not None:
+                session = self._evaluation_sessions.get(evaluation_session_id)
+                if session is not None:
+                    session.active_evaluations -= 1
+            self._idle.notify_all()
 
     # ── HTTP server (used by external engines) ─────────────────────────
 
@@ -539,7 +670,14 @@ class EvalServer:
 
     # ── Internal ────────────────────────────────────────────────────────
 
-    def _track(self, candidate: str, score: float, info: dict[str, Any] | None = None) -> None:
+    def _track(
+        self,
+        candidate: str,
+        score: float,
+        info: dict[str, Any] | None = None,
+        *,
+        evaluation_session_id: str | None = None,
+    ) -> None:
         cost = float(info.get("cost", 0.0)) if info else 0.0
         with self._lock:
             self.total_cost += cost
@@ -557,6 +695,11 @@ class EvalServer:
             if score > self.best_score:
                 self.best_score = score
                 self.best_candidate = candidate
+            if evaluation_session_id is not None:
+                session = self._evaluation_sessions[evaluation_session_id]
+                if score > session.best_score:
+                    session.best_score = score
+                    session.best_candidate = candidate
             snapshot = self._snapshot()
 
         if self.output_dir is not None:
@@ -597,10 +740,25 @@ class EvalServer:
         """Train + val ids combined. Agents see one merged set; test is held outside the server."""
         return list(self._split_ids["train"]) + list(self._split_ids["val"])
 
+    def _require_http_evaluation_session(self, evaluation_session_id: str | None) -> None:
+        """Require HTTP callers to join an open external-engine session."""
+        with self._idle:
+            if evaluation_session_id is None and any(
+                not session.closed for session in self._evaluation_sessions.values()
+            ):
+                raise EvaluationSessionClosedError("Evaluation session id is required while an external engine is active")
+
     def _handle_evaluate(self, handler: BaseHTTPRequestHandler) -> None:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_id = body.get("example_id")
+        evaluation_session_id = body.get("evaluation_session_id")
+
+        try:
+            self._require_http_evaluation_session(evaluation_session_id)
+        except EvaluationSessionClosedError as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=409)
+            return
 
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
@@ -619,10 +777,12 @@ class EvalServer:
 
         try:
             example = self._examples.get(example_id) if example_id else None
-            score, info = self.evaluate(candidate, example)
+            score, info = self.evaluate(candidate, example, evaluation_session_id=evaluation_session_id)
             self._send_json(handler, {"score": score, "info": info, "budget": self.budget.status()})
         except BudgetExhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+        except EvaluationSessionClosedError as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=409)
         except Exception as e:
             self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
 
@@ -630,6 +790,13 @@ class EvalServer:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_ids = body.get("example_ids")
+        evaluation_session_id = body.get("evaluation_session_id")
+
+        try:
+            self._require_http_evaluation_session(evaluation_session_id)
+        except EvaluationSessionClosedError as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=409)
+            return
 
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
@@ -654,10 +821,15 @@ class EvalServer:
         else:
             target_ids = self._agent_visible_ids()
 
+        session_started = False
         try:
-            avg_score, info = self.evaluate_examples(candidate, example_ids=target_ids)
+            self._begin_evaluation(evaluation_session_id)
+            session_started = True
+            avg_score, info = self.evaluate_examples(
+                candidate, example_ids=target_ids, evaluation_session_id=evaluation_session_id
+            )
             if set(target_ids) == visible:
-                self.log_progress(avg_score, candidate=candidate)
+                self._record_progress(avg_score, candidate, 0.0, evaluation_session_id)
             self._send_json(
                 handler,
                 {
@@ -671,25 +843,49 @@ class EvalServer:
             )
         except BudgetExhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+        except EvaluationSessionClosedError as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=409)
         except Exception as e:
             self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
+        finally:
+            if session_started:
+                self._finish_evaluation(evaluation_session_id)
 
     def _handle_validate(self, handler: BaseHTTPRequestHandler) -> None:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
+        evaluation_session_id = body.get("evaluation_session_id")
+        try:
+            self._require_http_evaluation_session(evaluation_session_id)
+        except EvaluationSessionClosedError as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=409)
+            return
         if not self.task.val_set:
             self._send_json(handler, {"error": "Task has no validation set"}, status=400)
             return
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
+        session_started = False
         try:
-            result = self.validate(candidate)
+            self._begin_evaluation(evaluation_session_id)
+            session_started = True
+            avg_score, _ = self.evaluate_examples(
+                candidate,
+                example_ids=list(self._split_ids["val"]),
+                evaluation_session_id=evaluation_session_id,
+            )
+            result = self._record_progress(avg_score, candidate, 0.0, evaluation_session_id)
             self._send_json(handler, {**result, "budget": self.budget.status()})
         except BudgetExhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+        except EvaluationSessionClosedError as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=409)
         except Exception as e:
             self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
+        finally:
+            if session_started:
+                self._finish_evaluation(evaluation_session_id)
 
     def _handle_status(self, handler: BaseHTTPRequestHandler) -> None:
         self._send_json(

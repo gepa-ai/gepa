@@ -117,6 +117,205 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         self.assertEqual(payload["average_score"], 1.0)
         self.assertEqual(server.progress_log, [])
 
+    def test_http_rejects_a_closed_evaluation_session(self) -> None:
+        import urllib.error
+        import urllib.request
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=1))
+        session_id = server.open_evaluation_session("seed")
+        server.close_evaluation_session(session_id, timeout=0.1)
+        server.start()
+        try:
+            req = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "late", "evaluation_session_id": session_id}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(req, timeout=5)
+        finally:
+            server.stop()
+
+        self.assertEqual(raised.exception.code, 409)
+        self.assertEqual(server.best_candidate, "seed")
+
+    def test_http_requires_a_token_while_an_external_engine_is_active(self) -> None:
+        import urllib.error
+        import urllib.request
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=2))
+        session_id = server.open_evaluation_session("seed")
+        server.start()
+        try:
+            req = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "untracked"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(req, timeout=5)
+            score, _ = server.evaluate("direct")
+        finally:
+            server.close_evaluation_session(session_id, timeout=0.1)
+            server.stop()
+
+        self.assertEqual(raised.exception.code, 409)
+        self.assertEqual(score, 1.0)
+
+    def test_close_waits_for_http_aggregate_progress(self) -> None:
+        import urllib.request
+
+        task = Task(name="task", seed_candidate="seed", train_set=["example"])
+        server = EvalServer(task, lambda candidate, example: (1.0, {}), BudgetTracker(max_evals=1))
+        session_id = server.open_evaluation_session("seed")
+        admitted = threading.Event()
+        release = threading.Event()
+        close_done = threading.Event()
+        closed: list[tuple[str, float]] = []
+        original_register = server._register_candidate
+
+        def block_register(candidate: str) -> int:
+            admitted.set()
+            self.assertTrue(release.wait(timeout=2))
+            return original_register(candidate)
+
+        server._register_candidate = block_register  # type: ignore[method-assign]
+        server.start()
+        try:
+            request = urllib.request.Request(
+                f"{server.url}/evaluate_examples",
+                data=json.dumps({"candidate": "good", "evaluation_session_id": session_id}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            response: list[object] = []
+            request_thread = threading.Thread(
+                target=lambda: response.append(urllib.request.urlopen(request, timeout=5)), daemon=True
+            )
+            request_thread.start()
+            self.assertTrue(admitted.wait(timeout=2))
+
+            def close_session() -> None:
+                closed.append(server.close_evaluation_session(session_id, timeout=2))
+                close_done.set()
+
+            close_thread = threading.Thread(target=close_session)
+            close_thread.start()
+            self.assertFalse(close_done.wait(timeout=0.1))
+            release.set()
+            request_thread.join(timeout=2)
+            close_thread.join(timeout=2)
+        finally:
+            release.set()
+            server.stop()
+
+        self.assertTrue(close_done.is_set())
+        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(len(server.progress_log), 1)
+
+    def test_close_waits_between_http_evaluation_and_progress(self) -> None:
+        import urllib.request
+
+        task = Task(name="task", seed_candidate="seed", train_set=["example"])
+        server = EvalServer(task, lambda candidate, example: (1.0, {}), BudgetTracker(max_evals=1))
+        session_id = server.open_evaluation_session("seed")
+        evaluation_returned = threading.Event()
+        release = threading.Event()
+        close_done = threading.Event()
+        closed: list[tuple[str, float]] = []
+        original_evaluate_examples = server.evaluate_examples
+
+        def pause_before_progress(*args: object, **kwargs: object) -> tuple[float, dict[str, object]]:
+            result = original_evaluate_examples(*args, **kwargs)
+            evaluation_returned.set()
+            self.assertTrue(release.wait(timeout=2))
+            return result
+
+        server.evaluate_examples = pause_before_progress  # type: ignore[method-assign]
+        server.start()
+        try:
+            request = urllib.request.Request(
+                f"{server.url}/evaluate_examples",
+                data=json.dumps({"candidate": "good", "evaluation_session_id": session_id}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            response: list[object] = []
+            request_thread = threading.Thread(
+                target=lambda: response.append(urllib.request.urlopen(request, timeout=5)), daemon=True
+            )
+            request_thread.start()
+            self.assertTrue(evaluation_returned.wait(timeout=2))
+
+            def close_session() -> None:
+                closed.append(server.close_evaluation_session(session_id, timeout=2))
+                close_done.set()
+
+            close_thread = threading.Thread(target=close_session)
+            close_thread.start()
+            self.assertFalse(close_done.wait(timeout=0.1))
+            release.set()
+            request_thread.join(timeout=2)
+            close_thread.join(timeout=2)
+        finally:
+            release.set()
+            server.stop()
+
+        self.assertTrue(close_done.is_set())
+        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(len(server.progress_log), 1)
+
+    def test_close_waits_between_http_validation_and_progress(self) -> None:
+        import urllib.request
+
+        task = Task(name="task", seed_candidate="seed", val_set=["example"])
+        server = EvalServer(task, lambda candidate, example: (1.0, {}), BudgetTracker(max_evals=1))
+        session_id = server.open_evaluation_session("seed")
+        evaluation_returned = threading.Event()
+        release = threading.Event()
+        close_done = threading.Event()
+        closed: list[tuple[str, float]] = []
+        original_evaluate_examples = server.evaluate_examples
+
+        def pause_before_progress(*args: object, **kwargs: object) -> tuple[float, dict[str, object]]:
+            result = original_evaluate_examples(*args, **kwargs)
+            evaluation_returned.set()
+            self.assertTrue(release.wait(timeout=2))
+            return result
+
+        server.evaluate_examples = pause_before_progress  # type: ignore[method-assign]
+        server.start()
+        try:
+            request = urllib.request.Request(
+                f"{server.url}/validate",
+                data=json.dumps({"candidate": "good", "evaluation_session_id": session_id}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            response: list[object] = []
+            request_thread = threading.Thread(
+                target=lambda: response.append(urllib.request.urlopen(request, timeout=5)), daemon=True
+            )
+            request_thread.start()
+            self.assertTrue(evaluation_returned.wait(timeout=2))
+
+            def close_session() -> None:
+                closed.append(server.close_evaluation_session(session_id, timeout=2))
+                close_done.set()
+
+            close_thread = threading.Thread(target=close_session)
+            close_thread.start()
+            self.assertFalse(close_done.wait(timeout=0.1))
+            release.set()
+            request_thread.join(timeout=2)
+            close_thread.join(timeout=2)
+        finally:
+            release.set()
+            server.stop()
+
+        self.assertTrue(close_done.is_set())
+        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(len(server.progress_log), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
