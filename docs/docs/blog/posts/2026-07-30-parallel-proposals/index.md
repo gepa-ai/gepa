@@ -149,7 +149,7 @@ result = optimize_anything(
 
 GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, you may use any inference backend that supports batch completion to run reflections in parallel. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details. 
 
-## Appendix: Axes for scaling
+## Appendix: Axes of parallel scaling
 
 <figure markdown="span">
   ![A diagram derived from Figure 2. On the left, parent circles P1 to P3 each connect to a row of child boxes, with a vertical arrow labeled "more parents per step (P)" and a horizontal arrow labeled "more mutations per parent (N)" marking the two width axes, and trailing dots suggesting each can grow. On the right, one child is zoomed into a teal panel labeled "larger mini-batch per mutation", where a stack of Sample cards feeds a ComBEE Reflector that produces the mutation.](images/scaling_axes.svg){ style="width: 100%;" }
