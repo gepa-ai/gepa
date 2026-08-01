@@ -39,7 +39,7 @@ This release adds batched parallel proposals. Instead of advancing one proposal 
 On each step, GEPA now samples several parents from its Pareto frontier, draws several reflective mutations of each, and scores all of the proposals concurrently.
 
 <figure markdown="span">
-  ![Diagram: sample P (=3) parent nodes at once; each parent spawns N (=4) child mutations from its own mini-batch sample, giving P×N children; all P·N children are sent as one batch to a "Parallel evaluator" that scores them together.](images/pxn_diagram.svg){ style="width: 100%;" }
+  ![Diagram: sample P (=3) parent nodes at once from the Pareto front; each parent spawns N (=4) child mutations from its own mini-batch sample, giving P×N children; all P·N children are sent as one batch to a "Parallel evaluator" that scores them together.](images/pxn_diagram.svg){ style="width: 100%;" }
   <figcaption>Figure 2. One batched iteration. GEPA samples P parents from the frontier, draws N reflective mutations for each parent, and scores all P·N children in one parallel evaluation. This lets GEPA propose more candidates in each iteration while paying the iteration latency once.</figcaption>
 </figure>
 
@@ -85,7 +85,7 @@ We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [
 
 ### Batching cuts the wall-clock time
 
-The measured runs align with the runtime model above. For example, on LiveBench-Math, moving from single mutation to 2×2 cut the number of iterations by 4.9× (219 to 45), but the fraction of iterations that triggered full validation rose from 17% to 53%, so the run gained a 1.9× speedup (7.7 to 4.1 hours) rather than the full 4.9×. Across the whole sweep, Figure 3 shows the measured runtimes tracking the model's predicted curve.
+The measured runs align with the runtime model above. For example, on LiveBench-Math, moving from single mutation to 2×2 cut the number of iterations by 4.9× (219 to 45), but the fraction of iterations that triggered full validation rose from 17% to 53%, so the run gained a 1.9× speedup (7.7 to 4.1 hours) rather than the full 4.9×. Across the whole sweep, Figure 3 shows the measured runtimes tracking the model's predicted curve. When scaling up to 16-way parallelism, the speedup is about 3 to 4×.
 
 <figure markdown="span">
   ![Two dual-axis line charts across the nine settings from single to 8×2: an orange line with held-out test performance on the left axis, a purple line with optimization time on the right axis, a dashed lighter-purple curve with the optimization time predicted by the finite-worker model, and a dotted baseline. Measured time falls from 7.7 hours to about 2 on LiveBench-Math and from 47 to 14 minutes on HoVer, and the predicted curve tracks it, flattening near 2.2 hours and 15 minutes. Test performance ranges from 66.7 to 72.1 on LiveBench-Math and from 49.0 to 60.0 on HoVer against single mutation's 68.9 and 49.0.](images/scaling_lines.png){ style="width: 100%;" }
@@ -147,11 +147,17 @@ result = optimize_anything(
 )
 ```
 
-GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. You may choose or define other sampling and selection strategies; see the [API reference](https://gepa-ai.github.io/gepa/api/) for the full list.
+GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, you may use any inference backend that supports batch completion to run reflections in parallel. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details. 
 
-## Notes
+## Appendix: Axes for scaling
 
-The default is still single mutation, matching GEPA's earlier behavior, so existing runs do not change.
+<figure markdown="span">
+  ![A diagram derived from Figure 2. On the left, parent circles P1 to P3 each connect to a row of child boxes, with a vertical arrow labeled "more parents per step (P)" and a horizontal arrow labeled "more mutations per parent (N)" marking the two width axes, and trailing dots suggesting each can grow. On the right, one child is zoomed into a teal panel labeled "larger mini-batch per mutation", where a stack of Sample cards feeds a ComBEE Reflector that produces the mutation.](images/scaling_axes.svg){ style="width: 100%;" }
+  <figcaption>Figure 6. GEPA can now scale along three orthogonal axes: more parents per step (P), more mutations per parent (N), and more compute per single mutation (ComBEE).</figcaption>
+</figure>
+
+Parallel proposals fit into a bigger picture of scaling the optimization step, along several orthogonal axes. P sets how many programs are selected for mutation per step, and N sets how many mutations each selected program receives, as studied above. Approaches like ComBEE[^combee] scale the compute spent on each single mutation, by reflecting over a much larger mini-batch of examples and rollouts through a map-reduce-style pipeline. This allows more knowledge to be distilled into a prompt. These axes complement rather than replace each other. GEPA now supports ComBEE as a reflection strategy, and it can be directly composed with P×N sampling.
 
 [^batchopt]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
 [^scaling]: Gene M. Amdahl, "[Validity of the single processor approach to achieving large scale computing capabilities](https://dl.acm.org/doi/10.1145/1465482.1465560)," AFIPS 1967.
+[^combee]: Hanchen Li, Runyuan He, Qizheng Zhang, et al., "[Combee: Scaling Prompt Learning for Self-Improving Language Model Agents](https://arxiv.org/abs/2604.04247)," 2026.
