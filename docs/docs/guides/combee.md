@@ -64,6 +64,32 @@ result = gepa.optimize(
 
 ### `optimize_anything`
 
+Through the engine-pluggable API, `engine_config` maps onto `GEPAConfig`
+field-for-field:
+
+```python
+from gepa.optimize_anything import OptimizeAnythingConfig, ReflectionConfig, optimize_anything
+from gepa.proposer.reflective_mutation.combee import ComBEEReflectionLM
+
+result = optimize_anything(
+    seed_candidate=seed,
+    evaluator=my_evaluator,
+    dataset=dataset,
+    config=OptimizeAnythingConfig(
+        engine="gepa",
+        max_evals=600,
+        engine_config={
+            "reflection": ReflectionConfig(
+                reflection_strategy=ComBEEReflectionLM("openai/gpt-5.1"),
+                reflection_minibatch_size=40,
+            ),
+        },
+    ),
+)
+```
+
+The legacy launcher config is also still accepted directly:
+
 ```python
 from gepa.optimize_anything import GEPAConfig, ReflectionConfig, optimize_anything
 from gepa.proposer.reflective_mutation.combee import ComBEEReflectionLM

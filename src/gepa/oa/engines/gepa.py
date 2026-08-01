@@ -163,12 +163,19 @@ class GepaEngine:
     def _resolve_cost_source(self, gepa_config: Any) -> Any | None:
         """Return the live LM/proposer whose ``total_cost`` we track and cap.
 
-        A custom candidate proposer (e.g. ``ClaudeCodeAgentProposer``) is the
-        cost source when set. Otherwise, if ``reflection.reflection_lm`` is a
-        model-name string, build the ``LM`` now and place it back on the config
-        so GEPA core reuses the same object (rather than building its own,
-        which we couldn't then read cost from).
+        A reflection strategy (e.g. ``ComBEEReflectionLM``) accumulates its own
+        spend and is the cost source when set; a custom candidate proposer
+        (e.g. ``ClaudeCodeAgentProposer``) likewise. The two are mutually
+        exclusive (the proposer constructor raises if both are given).
+        Otherwise, if ``reflection.reflection_lm`` is a model-name string,
+        build the ``LM`` now and place it back on the config so GEPA core
+        reuses the same object (rather than building its own, which we
+        couldn't then read cost from). Mirrors the launcher's precedence:
+        strategy -> custom proposer -> reflection_lm.
         """
+        strategy = gepa_config.reflection.reflection_strategy
+        if strategy is not None and hasattr(strategy, "total_cost"):
+            return strategy
         proposer = gepa_config.reflection.custom_candidate_proposer
         if proposer is not None:
             return proposer

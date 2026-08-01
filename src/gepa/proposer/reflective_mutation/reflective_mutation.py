@@ -221,7 +221,7 @@ class ReflectiveMutationProposer:
         # transport (and potentially its result) despite there being no PxN
         # parallelism to exploit.
         if len(jobs) == 1:
-            return [self.propose_new_texts(*jobs[0])]
+            return [self.propose_new_texts(*jobs[0], metadata=mds[0])]
 
         reflect_many = getattr(self._reflection_lm, "reflect_many", None)
         if reflect_many is not None:
