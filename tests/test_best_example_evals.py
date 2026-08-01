@@ -5,7 +5,7 @@
 
 import pytest
 
-from gepa.optimize_anything import (
+from gepa.gepa_launcher import (
     EngineConfig,
     GEPAConfig,
     OptimizationState,
@@ -34,12 +34,14 @@ def create_fitness_fn_with_best_evals_tracking(call_log: list):
         best_example_evals = opt_state.best_example_evals if opt_state else []
 
         # Log the call with best_example_evals info
-        call_log.append({
-            "guess": guess,
-            "score": score,
-            "best_example_evals": best_example_evals,
-            "num_best_evals": len(best_example_evals),
-        })
+        call_log.append(
+            {
+                "guess": guess,
+                "score": score,
+                "best_example_evals": best_example_evals,
+                "num_best_evals": len(best_example_evals),
+            }
+        )
 
         side_info = {
             "guess": guess,

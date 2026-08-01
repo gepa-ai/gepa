@@ -45,6 +45,7 @@ def mock_state():
     state.parent_program_for_candidate.append([0])
     state.named_predictor_id_to_update_next_for_program_candidate.append(0)
     state.num_metric_calls_by_discovery.append(0)
+    state.iteration_ids_by_candidate_idx.append("test-iter-1")
 
     for i in range(len(state.pareto_front_valset)):
         state.program_at_pareto_front_valset[i] = {0, 1}

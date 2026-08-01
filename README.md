@@ -130,6 +130,17 @@ result = optimize_anything(
 )
 ```
 
+### Use GEPA as an Agent Skill
+
+GEPA also ships as an **[Agent Skill](https://agentskills.io/)** so coding agents can drive `optimize_anything` for you. In a clone of this repo, Claude Code — and other agents that read `.claude/skills/` (Cursor, VS Code/Copilot, Codex, Gemini CLI) — auto-discover it at [`.claude/skills/gepa-optimize-anything/`](.claude/skills/gepa-optimize-anything/). To use it in any other project, install the plugin from this repo's marketplace:
+
+```bash
+/plugin marketplace add gepa-ai/gepa
+/plugin install gepa-optimize-anything@gepa
+```
+
+See the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/) for details.
+
 ---
 
 ## How It Works

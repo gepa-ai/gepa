@@ -1,6 +1,6 @@
 # EngineConfig
 
-::: gepa.optimize_anything.EngineConfig
+::: gepa.gepa_launcher.EngineConfig
     handler: python
     options:
         show_source: true

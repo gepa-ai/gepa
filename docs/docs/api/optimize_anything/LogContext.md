@@ -1,6 +1,6 @@
 # LogContext
 
-::: gepa.optimize_anything.LogContext
+::: gepa.gepa_launcher.LogContext
     handler: python
     options:
         show_source: true

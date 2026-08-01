@@ -5,10 +5,10 @@ internal engine.  It handles:
 
 - **Evaluation**: calls the user's wrapped evaluator (single or parallel)
 - **Caching**: optional memory or disk cache for ``(candidate, example)`` pairs
-- **Refinement**: when :class:`~gepa.optimize_anything.RefinerConfig` is set,
+- **Refinement**: when :class:`~gepa.gepa_launcher.RefinerConfig` is set,
   iteratively improves candidates via an LLM after each evaluation
 - **Best-evals tracking**: maintains top-K evaluations per example for
-  warm-starting via :class:`~gepa.optimize_anything.OptimizationState`
+  warm-starting via :class:`~gepa.gepa_launcher.OptimizationState`
 - **Reflective dataset**: formats evaluation results for the reflection LLM
 """
 
@@ -23,13 +23,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-logger = logging.getLogger(__name__)
-
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
-    from gepa.optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
+    from gepa.gepa_launcher import Candidate, OptimizationState, RefinerConfig, SideInfo
 
 
 REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
@@ -169,7 +169,7 @@ class BatchEvaluatorWrapper:
 class OptimizeAnythingAdapter(GEPAAdapter):
     """Adapter connecting the ``optimize_anything`` API to GEPA's engine.
 
-    Created automatically by :func:`~gepa.optimize_anything.optimize_anything` —
+    Created automatically by :func:`~gepa.gepa_launcher.optimize_anything` —
     users do not instantiate this directly.
     """
 
@@ -300,7 +300,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _build_opt_state(self, example: Any) -> "OptimizationState":
         """Build an OptimizationState for the given example."""
-        from gepa.optimize_anything import OptimizationState
+        from gepa.gepa_launcher import OptimizationState
 
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 
@@ -553,13 +553,19 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt = candidate.get("refiner_prompt", "")
 
         # 1. Evaluate original candidate
-        original_score, original_output, original_side_info = self._call_evaluator(candidate, example)
+        original_score, _original_output, original_side_info = self._call_evaluator(candidate, example)
 
-        # Update best evals with original evaluation
-        self._update_best_example_evals(example, original_score, original_side_info)
+        # Update best evals with original evaluation. Skip synthetic
+        # whole-batch failures (raise_on_exception=False): with only a
+        # batch_evaluator, ``_resolve_pair`` routes this singleton through it,
+        # so a transient infra error surfaces here as a placeholder 0.0 that
+        # would otherwise poison the warm-start pool (mirror of
+        # ``_assemble_no_refiner_batch``).
+        if not (isinstance(original_side_info, dict) and original_side_info.get("_gepa_transient_failure")):
+            self._update_best_example_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
-        best_refined_score, best_refined_candidate, best_refined_side_info, all_attempts = self._refine_and_evaluate(
+        best_refined_score, best_refined_candidate, _best_refined_side_info, all_attempts = self._refine_and_evaluate(
             candidate, example, refiner_prompt, original_score, original_side_info
         )
 
@@ -695,6 +701,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Package outputs as (score, candidate, side_info) tuples.
         eval_output = [(score, (score, candidate, side_info), side_info) for score, _, side_info in raw_results]
         for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
+            # Synthetic whole-batch failure results (raise_on_exception=False)
+            # carry a placeholder 0.0 score; feeding them into the best-evals
+            # history would poison the warm-start pool with fake zero-score
+            # entries. They are excluded from the eval cache for the same
+            # reason (see ``_resolve_pair_cached``).
+            if isinstance(side_info, dict) and side_info.get("_gepa_transient_failure"):
+                continue
             self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
@@ -799,7 +812,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
                 # Reconstruct full candidate: refined params + original refiner_prompt
                 refined_candidate_dict = {**parsed_refined, "refiner_prompt": candidate.get("refiner_prompt", "")}
-                refined_score, refined_output, refined_eval_side_info = self._call_evaluator(
+                refined_score, _refined_output, refined_eval_side_info = self._call_evaluator(
                     refined_candidate_dict, example
                 )
 
@@ -865,7 +878,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         ret: dict[str, list[dict[str, Any]]] = {}
         for component_name in components_to_update:
             ret[component_name] = []
-            for score, side_info in zip(scores, side_infos, strict=False):
+            for _score, side_info in zip(scores, side_infos, strict=False):
                 ret[component_name].append({})
                 for k, v in side_info.items():
                     if k == "scores":
