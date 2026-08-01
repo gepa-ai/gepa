@@ -116,7 +116,7 @@ ComBEEReflectionLM(
     reflection_prompt_template=None,   # Level-1 template: str, or dict per component
     aggregation_prompt_template=None,  # Level-2 template (must contain <curr_param> and <side_info>)
     duplication_factor=2,              # p — augmented-shuffle duplication (§3.2)
-    rng=random.Random(0),              # optional independent shuffle stream
+    rng=None,                          # None -> engine-bound RNG; pass random.Random(...) for an independent stream
     logger=None,                       # GEPA injects its configured logger when omitted
     batch_reflection=True,             # batches only when the LM provides batch_complete
 )
