@@ -43,12 +43,16 @@ block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, 
 `background` inside `engine_config`) now crash. See `api.md` for each backend's valid keys.
 
 ## 6. Agentic backends have launch-time prerequisites
-`autoresearch` / `meta_harness` `subprocess.Popen(["claude", ...])`. A missing `claude` CLI — or, on
-Linux, a missing `bwrap` (bubblewrap) while the default `sandbox=True` is in effect — aborts the run
-at launch with a boxed message and install instructions (`npm install -g @anthropic-ai/claude-code`;
-`sudo apt/dnf install bubblewrap`). An *unauthenticated* CLI or a missing `jq` (used by
-autoresearch's generated `eval.sh`) still surfaces only mid-run, and `sandbox=False` runs the agent
-unconfined (loud warning) — so run `scripts/preflight.py` first either way.
+`autoresearch` / default `meta_harness` shell out to `claude`; `meta_harness` with
+`engine_config={"proposer": "codex"}` shells out to `codex exec`. A missing CLI — or, on Linux, a
+missing `bwrap` (bubblewrap) while the default `sandbox=True` is in effect — aborts the run at
+launch with a boxed message and install instructions (`npm install -g @anthropic-ai/claude-code` or
+`npm install -g @openai/codex`; `sudo apt/dnf install bubblewrap`). An *unauthenticated* CLI or a
+missing `jq` (used by autoresearch's generated `eval.sh`) still surfaces only mid-run, and
+`sandbox=False` runs the agent unconfined (loud warning) — so run `scripts/preflight.py` first
+(`--proposer codex` when using Codex). Codex has no USD cost signal, so a non-`None`
+`max_token_cost` with `proposer="codex"` raises at construction — bound those runs with
+`max_evals` / `max_iterations` instead.
 
 ## 7. Give runs a real stop condition (`stop_at_score` / `max_token_cost`)
 `max_evals` caps eval calls, but two situations still burn money or time past the point of useful
@@ -61,8 +65,9 @@ work:
   emitting cache-hitting candidates without consuming eval budget and can spin until your process
   times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or
   `max_token_cost` (plus a wall-clock `timeout` on the launched process) are mandatory.
-Agentic backends also spend LLM tokens between evals — cap them with `max_token_cost`
-(enforced as `--max-budget-usd`).
+Agentic backends also spend LLM tokens between evals — cap Claude proposers with
+`max_token_cost` (enforced as `--max-budget-usd`); for Codex use `max_evals` /
+`max_iterations` instead.
 
 ## 8. Pick the right mode
 The mode is implicit in which sets you pass (`api.md`): no `dataset`/`valset` → single-task;

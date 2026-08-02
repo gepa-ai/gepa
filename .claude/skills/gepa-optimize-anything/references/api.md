@@ -55,7 +55,7 @@ you want an unbiased number to report; skip it otherwise.
 | `engine` | `"gepa"` | `"gepa"` / `"autoresearch"` / `"meta_harness"` (or `"best_of_n"`, a baseline), or a constructed `Engine` instance (custom engines can be added via `gepa.oa.registry.register_engine`). |
 | `name` | `None` | run id (logging + default output dir). Auto-generated (`<engine>-<uuid>-<timestamp>`) if `None`. |
 | `max_evals` | **`100`** | server-side cap on eval calls. `None` = unlimited. Size it — the default is rarely right (see SKILL.md). |
-| `max_token_cost` | `None` | USD cap on the engine's **own** optimizer-LLM spend (reflection/agent). Enforced by the engine (gepa: `max_reflection_cost` stopper; agent engines: `--max-budget-usd`), not the eval server. |
+| `max_token_cost` | `None` | USD cap on the engine's **own** optimizer-LLM spend (reflection/agent). Enforced by the engine (gepa: `max_reflection_cost` stopper; Claude agent engines: `--max-budget-usd`), not the eval server. `meta_harness` with `proposer="codex"` rejects a non-`None` value (no USD signal) — use `max_evals` / `max_iterations` instead. |
 | `max_concurrency` | `8` | eval-server thread-pool size. |
 | `output_dir` | `None` | where the eval server writes per-eval JSON, `progress_log.jsonl`, `summary.json`. `None` → `outputs/optimize_anything/<task>/<engine>/<timestamp>/`. |
 | `run_dir` | `None` | engine workspace (gepa run dir / agent work dir; with `engine.write_agent_state=True` the gepa backend writes an agent-readable `iterations/` + `pareto/` tree here). Distinct from `output_dir`. `None` → subprocess engines use a tempdir; set it to persist artifacts. |
@@ -78,7 +78,7 @@ changing one argument. Each backend parses `engine_config` into its own typed da
 |---|---|---|---|
 | `gepa` | an LLM reflects on evaluator feedback and mutates the candidate; keeps a Pareto frontier | in-process | reflection-LM creds (default `openai/gpt-5.1`) or a custom LM |
 | `autoresearch` | one Claude Code subprocess iterates in a work dir (`program.md`, `candidate.txt`, `eval.sh` → HTTP eval server) | subprocess | `claude` on PATH + headless auth, `jq` |
-| `meta_harness` | a Claude subprocess reads frontier/history and writes `pending_eval.json` candidates; the engine benchmarks each | subprocess | `claude` on PATH + headless auth |
+| `meta_harness` | a Claude or Codex subprocess reads frontier/history and writes `pending_eval.json` candidates; the engine benchmarks each | subprocess | `claude` (default) or `codex` on PATH + headless auth (`engine_config.proposer`) |
 | `best_of_n` *(baseline)* | independent single-shot samples from one LLM; keep the best — no feedback, no history | in-process | LiteLLM creds for `model` (default `claude-sonnet-4-6`) |
 
 `scripts/preflight.py` checks a backend's prerequisites before a long run.
@@ -142,14 +142,23 @@ unreachable over HTTP.
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`
 | key | default | meaning |
 |---|---|---|
-| `model` | `"claude-sonnet-4-6"` | proposer model id. |
+| `proposer` | `"claude"` | coding-agent CLI: `"claude"` (Claude Code) or `"codex"` (OpenAI Codex). `"claude-code"` is an alias of `"claude"`. |
+| `model` | `"claude-sonnet-4-6"` | proposer model id. When `proposer="codex"` and this Claude default is left in place, it is rewritten to `"gpt-5.6-terra"`. |
 | `max_iterations` | `None` | hard cap on proposer sessions; `None` = until budget. |
 | `max_candidates_per_iter` | `3` | upper bound on candidates proposed per iteration. |
-| `effort` | `None` | `claude --effort` value. |
-| `max_thinking_tokens` | `None` | fixed thinking-token budget. |
+| `effort` | `None` | `claude --effort` value (ignored for Codex). |
+| `max_thinking_tokens` | `None` | fixed thinking-token budget (ignored for Codex). |
 
 Each iteration the proposer subprocess reads the frontier + history state files, writes
 `pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.
+
+```python
+# Claude Code (default)
+engine_config={"model": "claude-sonnet-4-6"}
+
+# OpenAI Codex CLI
+engine_config={"proposer": "codex", "model": "gpt-5.6-terra"}
+```
 
 ### `best_of_n` (baseline) — `engine_config` → `BestOfNConfig`
 Deliberately naive: each sample is one independent LLM call — no feedback, no history, no

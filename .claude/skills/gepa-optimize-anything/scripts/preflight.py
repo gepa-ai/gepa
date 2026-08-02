@@ -52,9 +52,16 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", default="gepa",
                     choices=["gepa", "best_of_n", "autoresearch", "meta_harness"])
+    ap.add_argument(
+        "--proposer",
+        default="claude",
+        choices=["claude", "codex", "claude-code"],
+        help="meta_harness proposer CLI (ignored for other engines); default claude",
+    )
     ap.add_argument("--test-lm", action="store_true",
                     help="make a 1-call round-trip to the reflection LM (costs a few tokens)")
     a = ap.parse_args()
+    proposer = "claude" if a.proposer in ("claude", "claude-code") else a.proposer
 
     print("== optimize_anything preflight ==")
 
@@ -77,20 +84,35 @@ def main() -> int:
         ok, fix = _creds_for(effective_lm)
         check(f"LLM creds present for '{effective_lm}'", ok, fix)
 
-    # 3) agentic engines need the claude CLI (and autoresearch's eval.sh uses jq)
-    if a.engine in ("autoresearch", "meta_harness"):
+    # 3) agentic engines need a coding-agent CLI (and autoresearch's eval.sh uses jq)
+    if a.engine == "autoresearch" or (a.engine == "meta_harness" and proposer == "claude"):
         cli = shutil.which("claude")
         check(f"`claude` CLI on PATH (required by {a.engine})", bool(cli),
               "install + authenticate the Claude Code CLI headless")
         if cli:
             print(f"      claude -> {cli}")
-        if a.engine == "autoresearch":
-            check("`jq` on PATH (used by the generated eval.sh)", bool(shutil.which("jq")),
-                  "install jq")
-        if sys.platform.startswith("linux"):
-            check("`bwrap` on PATH (default sandbox=True jails claude with bubblewrap)",
-                  bool(shutil.which("bwrap")),
-                  "sudo apt/dnf install bubblewrap, or pass sandbox=False (runs unconfined)")
+    if a.engine == "meta_harness" and proposer == "codex":
+        cli = shutil.which("codex")
+        check("`codex` CLI on PATH (required by meta_harness proposer=codex)", bool(cli),
+              "install + authenticate the Codex CLI (`npm i -g @openai/codex` / `brew install --cask codex`)")
+        if cli:
+            print(f"      codex -> {cli}")
+        has_auth = bool(os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+        # ChatGPT-login auth lives in ~/.codex/auth.json — presence is enough for a soft check.
+        auth_file = os.path.expanduser("~/.codex/auth.json")
+        has_auth = has_auth or os.path.isfile(auth_file)
+        check(
+            "Codex auth present (CODEX_API_KEY / OPENAI_API_KEY / ~/.codex/auth.json)",
+            has_auth,
+            "run `codex login` or export CODEX_API_KEY",
+        )
+    if a.engine == "autoresearch":
+        check("`jq` on PATH (used by the generated eval.sh)", bool(shutil.which("jq")),
+              "install jq")
+    if a.engine in ("autoresearch", "meta_harness") and sys.platform.startswith("linux"):
+        check("`bwrap` on PATH (default sandbox=True jails the agent with bubblewrap)",
+              bool(shutil.which("bwrap")),
+              "sudo apt/dnf install bubblewrap, or pass sandbox=False (runs unconfined)")
 
     # 4) optional live LM round-trip
     if a.test_lm and a.engine in ("gepa", "best_of_n"):

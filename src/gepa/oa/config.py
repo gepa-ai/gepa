@@ -39,9 +39,12 @@ class OptimizeAnythingConfig:
             unlimited. This is **not** an eval-budget field: the eval server
             never sees proposer spend (a subprocess's cost isn't even knowable
             until it exits). Each engine reads it at construction and enforces
-            it itself (gepa: ``max_reflection_cost``; autoresearch/meta_harness:
-            ``--max-budget-usd``). At least one of ``max_evals`` /
-            ``max_token_cost`` must be set so a run is bounded.
+            it itself (gepa: ``max_reflection_cost``; autoresearch /
+            ``meta_harness`` with Claude: ``--max-budget-usd``).
+            ``meta_harness`` with ``proposer="codex"`` cannot enforce this
+            (Codex reports no USD) and rejects a non-``None`` value — use
+            ``max_evals`` / ``max_iterations`` instead. At least one of
+            ``max_evals`` / ``max_token_cost`` must be set so a run is bounded.
         max_concurrency: Eval server thread-pool size.
         output_dir: Where the eval server persists per-eval JSON,
             ``progress_log.jsonl``, and ``summary.json``. When ``None``, the
@@ -53,11 +56,12 @@ class OptimizeAnythingConfig:
             use a tempdir; in-process engines skip artifact writes. Set
             explicitly to persist them.
         stop_at_score: Score threshold for early stop. Each engine interprets.
-        sandbox: OS-jail the subprocess engines' ``claude`` sessions (bwrap on
+        sandbox: OS-jail the subprocess engines' agent sessions (bwrap on
             Linux — requires the ``bubblewrap`` package — Claude Code's
-            Seatbelt sandbox on macOS). Default ``True``. Linux runs abort at
-            engine start when ``bwrap`` is missing; ``False`` prints a loud
-            warning and runs the agent unsandboxed with full host access.
+            Seatbelt sandbox or Codex ``workspace-write`` on macOS). Default
+            ``True``. Linux runs abort at engine start when ``bwrap`` is
+            missing; ``False`` prints a loud warning and runs the agent
+            unsandboxed with full host access.
         engine_config: Engine-specific options that don't generalize across
             engines. Each engine reads the keys it understands and warns about
             leftovers so typos surface. The keys an engine accepts are
@@ -80,13 +84,15 @@ class OptimizeAnythingConfig:
             - ``best_of_n`` — ``model``, ``temperature``, ``max_n``,
               ``lm_kwargs``, ``effort``, ``max_thinking_tokens`` (see
               ``BestOfNEngine`` / ``_BON_CONFIG_KEYS``).
-            - ``meta_harness`` — ``model``, ``max_iterations``,
+            - ``meta_harness`` — ``proposer`` (``"claude"`` default, or
+              ``"codex"``), ``model``, ``max_iterations``,
               ``max_candidates_per_iter``, ``effort``, ``max_thinking_tokens``
-              (see ``MetaHarnessEngine`` / ``_MH_CONFIG_KEYS``).
+              (see ``MetaHarnessEngine`` / ``MetaHarnessConfig``).
 
             ``effort`` (``claude --effort``) and ``max_thinking_tokens`` are
             Claude-CLI knobs, so they live in each agent engine's
-            ``engine_config``; the gepa engine takes reasoning knobs through
+            ``engine_config`` (ignored when ``meta_harness`` uses
+            ``proposer="codex"``); the gepa engine takes reasoning knobs through
             ``reflection.reflection_lm_kwargs`` instead.
     """
 

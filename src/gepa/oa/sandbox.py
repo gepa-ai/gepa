@@ -1,8 +1,8 @@
-"""External bubblewrap jail for ``claude --print`` subprocesses.
+"""External bubblewrap jail for coding-agent subprocesses (Claude / Codex).
 
-Wraps the whole ``claude`` invocation in our own ``bwrap`` namespace instead
-of relying on Claude Code's built-in ``sandbox.enabled: true`` settings. The
-internal sandbox crashes on Ubuntu 24.04 with
+Wraps the whole agent invocation in our own ``bwrap`` namespace instead of
+relying on each CLI's built-in sandbox. Claude Code's internal sandbox
+crashes on Ubuntu 24.04 with
 ``bwrap: Can't mount tmpfs on /newroot/sbin: No such file or directory``
 because it tries to mount tmpfs on top of ``/sbin``, which is a symlink in
 the merged-``/usr`` layout. We control the bwrap argv, so we can detect
@@ -17,17 +17,18 @@ Layout we expose inside the jail:
 - ``/etc``: only the handful of files needed for DNS, certs, and user
   lookups (``resolv.conf``, ``hosts``, ``passwd``, ``group``, ``ssl``...).
 - ``/proc``, ``/dev``, ``/tmp``: standard mounts.
-- ``$HOME/.claude``, ``$HOME/.claude.json``, ``$HOME/.cache``: writable.
-- ``$HOME/.local``: read-only — ``claude`` itself lives under here.
+- Agent home dirs (``agent=`` selects which):
+  - ``claude``: ``$HOME/.claude``, ``$HOME/.claude.json``, ``$HOME/.cache``
+    writable; ``$HOME/.local`` read-only (where ``claude`` often lives).
+  - ``codex``: ``$HOME/.codex``, ``$HOME/.cache`` writable — no Claude paths.
 - ``work_dir``: the only writable path under ``/data``-style trees.
 
 Network namespace is shared with the host so the agent can reach
-``localhost:<eval-server-port>`` and ``api.anthropic.com``. ``WebFetch`` /
+``localhost:<eval-server-port>`` and the model API. Claude's ``WebFetch`` /
 ``WebSearch`` are denied at the tool layer via :data:`DENY_WEB_TOOLS`.
 
-macOS fallback: bwrap is Linux-only. On macOS we use Claude Code's
-built-in Seatbelt sandbox via :func:`claude_settings_args`, which the
-caller appends to the ``claude --print`` argv.
+macOS fallback: bwrap is Linux-only. On macOS Claude uses Seatbelt via
+:func:`claude_settings_args`; Codex uses ``--sandbox workspace-write``.
 """
 
 from __future__ import annotations
@@ -98,20 +99,70 @@ def _etc_bind_args() -> list[str]:
     return args
 
 
+def _bind_if_exists(args: list[str], path: Path, *, readonly: bool = False) -> None:
+    """Append a bwrap bind for ``path`` when it already exists on the host."""
+    if not (path.exists() or path.is_symlink()):
+        return
+    flag = "--ro-bind" if readonly else "--bind"
+    resolved = str(path.resolve()) if path.exists() else str(path)
+    args.extend([flag, resolved, resolved])
+
+
+def _agent_home_bind_args(home: Path, agent: str) -> list[str]:
+    """Return agent-specific ``$HOME`` binds for the bwrap jail.
+
+    Ensures writable dirs we own exist before binding so a Codex-only host
+    never needs Claude Code paths, and a Claude host never needs ``~/.codex``.
+    """
+    raw = (agent or "claude").strip().lower()
+    if raw in ("claude", "claude-code"):
+        agent_key = "claude"
+    elif raw == "codex":
+        agent_key = "codex"
+    else:
+        raise ValueError(f"bwrap_prefix agent must be 'claude' or 'codex', got {agent!r}")
+
+    args: list[str] = []
+    cache = home / ".cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    _bind_if_exists(args, cache)
+
+    if agent_key == "claude":
+        claude_dir = home / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        _bind_if_exists(args, claude_dir)
+        claude_json = home / ".claude.json"
+        # Preserve prior Claude behavior: bind the credentials file when present.
+        # Do not create an empty file — auth must come from a real CLI login.
+        _bind_if_exists(args, claude_json)
+        _bind_if_exists(args, home / ".local", readonly=True)
+    else:
+        codex_dir = home / ".codex"
+        codex_dir.mkdir(parents=True, exist_ok=True)
+        _bind_if_exists(args, codex_dir)
+
+    return args
+
+
 def bwrap_prefix(
     work_dir: Path | str,
     *,
     extra_writable: list[Path | str] | None = None,
+    agent: str = "claude",
 ) -> list[str]:
     """Return the ``bwrap`` argv prefix that jails everything that follows.
 
-    Returns ``[]`` on macOS — that platform uses :func:`claude_settings_args`
-    as a fallback because ``bwrap`` is Linux-only. Caller usage works on both
-    platforms::
+    Returns ``[]`` on macOS — that platform uses per-CLI sandboxes (Claude
+    Seatbelt via :func:`claude_settings_args`, Codex ``workspace-write``)
+    because ``bwrap`` is Linux-only. Caller usage works on both platforms::
 
         cmd = bwrap_prefix(work_dir)               # Linux: bwrap argv. macOS: [].
         cmd += ["claude", "--print", ...]
         cmd += claude_settings_args(work_dir)      # macOS: --settings JSON. Linux: [].
+
+    ``agent`` selects which ``$HOME`` auth/config dirs are bound (``"claude"``
+    default, or ``"codex"``). Absent optional paths are skipped so a Codex-only
+    host does not need Claude Code installed.
     """
     if _IS_MACOS:
         return []
@@ -129,18 +180,7 @@ def bwrap_prefix(
         "/tmp",
         *_system_bind_args(),
         *_etc_bind_args(),
-        "--bind",
-        str(home / ".claude"),
-        str(home / ".claude"),
-        "--bind",
-        str(home / ".claude.json"),
-        str(home / ".claude.json"),
-        "--ro-bind",
-        str(home / ".local"),
-        str(home / ".local"),
-        "--bind",
-        str(home / ".cache"),
-        str(home / ".cache"),
+        *_agent_home_bind_args(home, agent),
         "--bind",
         str(work),
         str(work),
@@ -300,6 +340,34 @@ def require_claude_cli(engine_name: str) -> None:
     )
 
 
+def require_codex_cli(engine_name: str) -> None:
+    """Abort with a boxed error when the ``codex`` CLI is not on PATH.
+
+    ``meta_harness`` with ``proposer="codex"`` shells out to ``codex exec``;
+    fail up front with install instructions instead of a mid-run
+    ``FileNotFoundError``.
+    """
+    if shutil.which("codex"):
+        return
+    print(
+        _boxed_message(
+            "CODEX CLI NOT FOUND",
+            [
+                f"The {engine_name!r} engine is configured with proposer='codex',",
+                "but no `codex` executable is on PATH.",
+                "",
+                "Install the OpenAI Codex CLI first:",
+                "  npm install -g @openai/codex",
+                "  (or: brew install --cask codex)",
+                "then run `codex login` (or set CODEX_API_KEY) and retry.",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    raise RuntimeError(f"the {engine_name!r} engine requires the Codex CLI (`codex`), which was not found on PATH")
+
+
 def require_bwrap(engine_name: str) -> None:
     """Abort with a boxed error when ``sandbox=True`` can't be honored.
 
@@ -313,7 +381,7 @@ def require_bwrap(engine_name: str) -> None:
         _boxed_message(
             "SANDBOX UNAVAILABLE: bwrap NOT FOUND",
             [
-                "sandbox=True jails the Claude Code subprocess with bubblewrap on",
+                "sandbox=True jails the agent subprocess with bubblewrap on",
                 "Linux, but no `bwrap` executable is on PATH.",
                 "",
                 "Install it:",
@@ -333,20 +401,20 @@ def require_bwrap(engine_name: str) -> None:
     )
 
 
-def warn_sandbox_disabled(engine_name: str) -> None:
+def warn_sandbox_disabled(engine_name: str, *, agent: str = "Claude Code") -> None:
     """Print a boxed warning when the user opts out of sandboxing. Continues."""
     print(
         _boxed_message(
             "SANDBOX DISABLED",
             [
-                f"sandbox=False: the {engine_name!r} engine's Claude Code subprocess",
-                "runs with --permission-mode bypassPermissions and NO OS-level",
-                "confinement — unrestricted Bash plus read/write access to your",
-                "files as this user. Only web tools (WebFetch/WebSearch) are",
-                "disabled. While normally harmless, this is potentially DANGEROUS!",
+                f"sandbox=False: the {engine_name!r} engine's {agent} subprocess",
+                "runs with NO OS-level confinement — unrestricted Bash plus",
+                "read/write access to your files as this user. While normally",
+                "harmless, this is potentially DANGEROUS!",
                 "",
                 "Set sandbox=True (the default) to confine it to a throwaway",
-                "work dir (bwrap on Linux, Seatbelt on macOS).",
+                "work dir (bwrap on Linux; Claude Seatbelt / Codex",
+                "workspace-write on macOS).",
             ],
         ),
         file=sys.stderr,
@@ -366,4 +434,18 @@ def preflight_claude_engine(engine_name: str, *, sandbox: bool) -> None:
     if sandbox:
         require_bwrap(engine_name)
     else:
-        warn_sandbox_disabled(engine_name)
+        warn_sandbox_disabled(engine_name, agent="Claude Code")
+
+
+def preflight_codex_engine(engine_name: str, *, sandbox: bool) -> None:
+    """Run all launch-time checks for a Codex-subprocess engine.
+
+    Used by ``meta_harness`` when ``proposer="codex"``: verifies the ``codex``
+    CLI exists, then either verifies the bwrap jail can be built on Linux
+    (``sandbox=True``) or warns that the agent will run unconfined.
+    """
+    require_codex_cli(engine_name)
+    if sandbox:
+        require_bwrap(engine_name)
+    else:
+        warn_sandbox_disabled(engine_name, agent="Codex")
