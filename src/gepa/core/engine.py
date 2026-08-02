@@ -662,9 +662,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # 4) Add each selected candidate to the pool, in order.
         any_accepted = False
-        for k, (proposal, (valset_evaluation, num_actual_evals)) in enumerate(
-            zip(selected, valset_evals, strict=True)
-        ):
+        for k, (proposal, (valset_evaluation, num_actual_evals)) in enumerate(zip(selected, valset_evals, strict=True)):
             new_sum = sum(proposal.subsample_scores_after or [])
             self.logger.log(
                 f"Iteration {iteration}: Accepted candidate (subsample score "
@@ -1213,14 +1211,38 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         ``"candidates"`` table in WandB / MLflow.
         """
         metadata = proposal.metadata or {}
-        components = {k.split(":", 1)[1] for k in metadata if k.startswith("prompt:") or k.startswith("raw_lm_output:")}
-        if not components:
-            return
-
         status = "accepted" if candidate_idx >= 0 else "rejected"
         subsample_before = sum(proposal.subsample_scores_before or [])
         subsample_after = sum(proposal.subsample_scores_after or [])
         parent_ids_str = str(proposal.parent_program_ids)
+        components = {k.split(":", 1)[1] for k in metadata if k.startswith("prompt:") or k.startswith("raw_lm_output:")}
+
+        # Strategy diagnostics are stored separately from the final LM prompt
+        # and output columns. This keeps ComBEE's map/reduce details queryable
+        # without duplicating them once per component in the proposals table.
+        reflection_metadata = {
+            key: value
+            for key, value in metadata.items()
+            if key != "proposal_id" and not key.startswith(("prompt:", "raw_lm_output:"))
+        }
+        if reflection_metadata:
+            self.experiment_tracker.log_table(
+                "proposal_reflection_metadata",
+                columns=["iteration", "status", "candidate_idx", "parent_ids", "proposal_id", "reflection_metadata"],
+                data=[
+                    [
+                        iteration,
+                        status,
+                        candidate_idx,
+                        parent_ids_str,
+                        metadata.get("proposal_id", ""),
+                        json.dumps(reflection_metadata, sort_keys=True, default=str),
+                    ]
+                ],
+            )
+
+        if not components:
+            return
 
         rows = []
         for comp in sorted(components):
