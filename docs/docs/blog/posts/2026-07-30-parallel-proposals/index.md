@@ -17,22 +17,22 @@ equal_contribution:
   - "Donghyun Lee"
 slug: parallel-proposals
 readtime: 10
-title: "Batching the Optimization Loop: Parallel Proposals in GEPA"
+title: "Batching the Reflective Optimization Loop: Parallel Proposals in GEPA"
 description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter to a third. Batched settings also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 49.0% to 60.0% on HoVer (with 8×1)."
 social_image: blog/2026-07-30-parallel-proposals/images/throughput.png
 citation_keywords: "text optimization, prompt optimization, program optimization, parallel proposals, batched inference, Pareto optimization, GEPA, LiveBench, HoVer, multi-hop retrieval"
 ---
 
-# Batching the Optimization Loop: Parallel Proposals in GEPA
+# Batching the Reflective Optimization Loop: Parallel Proposals in GEPA
 
 <figure markdown="span">
   ![Two scatter plots of held-out test performance against optimization wall-clock time. In each, a purple dot labeled Parallel Proposals (P×N) sits above and left of an orange diamond labeled Sequential, inside a shaded region of results that are both faster and better; a dashed line marks the unoptimized baseline, and two arrows from the diamond point up (Better than single mutation) and left (Faster than single mutation). LiveBench-Math: 71.6% in 2.5 hours against 68.9% in 7.7 hours. HoVer: 55.0% in 15 minutes against 49.0% in 47 minutes.](images/throughput.png){ style="width: 100%;" }
-  <figcaption>Figure 1. At the same metric-call budget, parallel proposals are faster and better than single mutation — up to about 3–4× faster while scoring up to 11 points higher on the held-out test set.</figcaption>
+  <figcaption>Figure 1. At the same metric-call budget, parallel proposals are faster and better than single mutation, achieving up to about a 3 to 4× speedup, while scoring up to 11 points higher on the held-out test set.</figcaption>
 </figure>
 
 Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. The loop samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
 
-This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, this reduced wall-clock time substantially — most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter to a third — while at the same time generating candidates that achieved significantly higher held-out test scores (68.9% to 72.1% on LiveBench-Math and 49.0% to 60.0% on HoVer).
+This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, this reduced wall-clock time substantially (most batched runs finished in half the time or less, and the fastest in about a quarter to a third), while at the same time generating candidates that achieved significantly higher held-out test scores (68.9% to 72.1% on LiveBench-Math and 49.0% to 60.0% on HoVer).
 
 ## How parallel proposals work
 
@@ -102,7 +102,7 @@ We also probed how efficiently each setting spends its budget during the run. He
 
 #### More quality per metric call
 
-On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. This drop from validation to test — the generalization gap — was smallest for the batched settings: single mutation dropped nine points and 8×1 dropped six, matching the weaker transfer of P-heavy settings described above, while 2×4 dropped only two. This is consistent with the hypothesis above, that committing to more proposals before adapting to the validation set transfers better beyond it.
+On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. On LiveBench-Math, single mutation actually scored higher on the validation set, but the batched settings transferred better to the test set. The generalization gap (the gap between validation score and test score) was smaller for the batched settings: single mutation dropped nine points and 8×1 dropped six, matching the weaker transfer of P-heavy settings described above, while 2×4 dropped only two. This is consistent with the hypothesis above, that committing to more proposals before adapting to the validation set transfers better beyond it.
 
 Batched settings dominate small budgets: on LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation raises validation scores later in the budget, but scores the lowest on the held-out test set on both tasks.
 
@@ -113,7 +113,7 @@ Batched settings dominate small budgets: on LiveBench-Math both batched settings
 
 #### More quality per dollar
 
-By measuring the total LLM spend during optimization (solver and reflection calls made over the whole run, not the cost of running the optimized program afterward), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $12 to $18 range.
+By measuring the total LLM spend during optimization (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its selected program for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $12 to $18 range.
 
 <figure markdown="span">
   ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation, 2×4, and 8×1. Left, LiveBench-Math: single mutation reaches 0.783 by about $5.5 and ends at $13.2; 2×4 ends at 0.740 for $12.4 and 8×1 at 0.760 for $18.1. Right, HoVer: 8×1 jumps to 0.727 by $2.65 and ends at $14.2; 2×4 ends at 0.716 for $15.3 and single mutation at 0.709 for $13.4. Test stars match Figure 4.](images/pareto_cost.png){ style="width: 100%;" }
@@ -147,7 +147,7 @@ result = optimize_anything(
 )
 ```
 
-GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose: you can plug in any concurrency or distributed-execution framework — Ray, Slurm, Modal, Daytona, and the like — to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details. 
+GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, and the like) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details. 
 
 ## Appendix: Axes of parallel scaling
 
