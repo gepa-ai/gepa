@@ -81,7 +81,7 @@ According to strong scaling[^scaling], a run with a budget of $B$ metric calls n
 ## Results
 
 
-We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [HoVer](https://hover-nlp.github.io/), where the optimized prompt or program is selected using a validation set and then measured on a held-out test set. For both tasks, we used `gpt-5-mini` as the proposer. As in standard GEPA runs, we measured the optimization budget by the number of metric calls. One metric call corresponds to evaluating one candidate on one example. Every setting on a task received the same total metric-call budget.
+We evaluated parallel proposals on [LiveBench-Math](https://livebench.ai/) and [HoVer](https://hover-nlp.github.io/), where the optimized agent is selected using a validation set and then measured on a held-out test set. For both tasks, we used `gpt-5-mini` as the proposer. As in standard GEPA runs, we measured the optimization budget by the number of metric calls. One metric call corresponds to evaluating one candidate on one example. Every setting on a task received the same total metric-call budget.
 
 ??? note "Task setup details"
 
@@ -163,7 +163,7 @@ GEPA by default calls your `evaluate` function in parallel, so all you need is t
   <figcaption>Figure 7. GEPA can now scale along three orthogonal axes: more parents per step (P), more mutations per parent (N), and more compute per single mutation (ComBEE).</figcaption>
 </figure>
 
-Parallel proposals fit into a bigger picture of scaling the optimization step, along several orthogonal axes: P sets how many programs are selected for mutation per step, N sets how many mutations each selected program receives, as studied above, and approaches like ComBEE[^combee] scale the compute spent on each single mutation, by reflecting over a much larger mini-batch of examples and rollouts through a map-reduce-style pipeline. This allows more knowledge to be distilled into a prompt. GEPA now supports ComBEE as a reflection strategy, and it can be directly composed with P×N sampling.
+Parallel proposals fit into the bigger picture of scaling the optimization step, along several orthogonal axes: P sets how many programs are selected for mutation per step, N sets how many mutations each selected program receives, as studied above, and approaches like ComBEE[^combee] scale the compute spent on each single mutation, by reflecting over a much larger mini-batch of examples and rollouts through a map-reduce-style pipeline and distilling more knowledge into the agent. GEPA now supports ComBEE as a reflection strategy, too, so you can compose and scale P, N, and ComBEE batch size altogether.
 
 [^batchopt]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
 [^scaling]: Gene M. Amdahl, "[Validity of the single processor approach to achieving large scale computing capabilities](https://dl.acm.org/doi/10.1145/1465482.1465560)," AFIPS 1967.
