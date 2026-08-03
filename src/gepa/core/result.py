@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
@@ -61,6 +61,15 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     # This is the internal dict key used to wrap str seed_candidates.
     _str_candidate_key: str | None = None
 
+    # Universal-core run data, populated on every run regardless of engine.
+    # Generic (non-gepa) engines return a single-candidate snapshot but still
+    # carry their eval log and free-form metadata (wall time, budget, cost,
+    # held-out test scores, ...). These are runtime conveniences and are
+    # intentionally NOT part of ``to_dict()`` — that stays a JSON-safe pool
+    # snapshot for the frozen serialization contract.
+    eval_log: list[dict[str, Any]] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
     # -------- Convenience properties --------
@@ -76,6 +85,24 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def best_idx(self) -> int:
         scores = self.val_aggregate_scores
         return max(range(len(scores)), key=lambda i: scores[i])
+
+    @property
+    def best_score(self) -> float:
+        """Aggregate validation score of the best candidate.
+
+        The lean-``Result`` accessor, computed from the pool so it is valid on
+        every run (generic engines carry a single-candidate pool). Returns
+        ``-inf`` only for the degenerate empty pool.
+        """
+        scores = self.val_aggregate_scores
+        return scores[self.best_idx] if scores else float("-inf")
+
+    @property
+    def total_evals(self) -> int:
+        """Total eval-server calls, mirroring the lean ``Result.total_evals``."""
+        if self.total_metric_calls is not None:
+            return self.total_metric_calls
+        return sum(self.discovery_eval_counts)
 
     @property
     def best_candidate(self) -> str | dict[str, str]:

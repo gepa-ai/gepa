@@ -102,7 +102,7 @@ def optimize_anything(
     background: str | None = None,
     test_set: list[Any] | None = None,
     config: OptimizeAnythingConfig | None = None,
-) -> Result | GEPAResult:
+) -> GEPAResult:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
     The signature mirrors :func:`gepa.gepa_launcher.optimize_anything`
@@ -151,31 +151,27 @@ def optimize_anything(
             under ``result.metadata["test_score(s)"]`` (optimized) and
             ``result.metadata["baseline_test_score(s)"]`` (seed).
         config: Engine selection, run ``name``, budgets, output directory, and
-            engine-specific options. Defaults to ``OptimizeAnythingConfig()``
-            when omitted. Pass an explicit :class:`OptimizeAnythingConfig` to
-            get a :class:`Result`; omit ``config`` or pass a legacy
-            :class:`GEPAConfig` to get a
-            :class:`~gepa.core.result.GEPAResult`. At least one of
-            ``config.max_evals`` or ``config.max_token_cost`` must be set.
-            When ``config.name`` is omitted, a name is generated from the
-            engine, a short uuid, and a timestamp.
+            engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
+            at least one of ``config.max_evals`` or ``config.max_token_cost``
+            must be set. When ``config.name`` is omitted, a name is generated
+            from the engine, a short uuid, and a timestamp. A legacy
+            :class:`GEPAConfig` is also accepted and converted to run the gepa
+            engine.
 
     Returns:
-        A :class:`Result` (``best_candidate``, ``best_score``, ``total_evals``,
-        ``eval_log``, ``metadata``) for an explicit
-        :class:`OptimizeAnythingConfig`, otherwise a
-        :class:`~gepa.core.result.GEPAResult` (``candidates``, ``best_idx``,
-        ``val_aggregate_scores``, ...) for the no-config / legacy path.
+        A single :class:`~gepa.core.result.GEPAResult` for every run. The
+        universal core is always populated — ``best_candidate``, ``best_score``,
+        ``total_evals``, ``eval_log``, ``metadata`` (the lean accessors), plus
+        the ``candidates`` / ``best_idx`` / ``val_aggregate_scores`` /
+        ``to_dict()`` pool surface. The gepa engine fills the full candidate
+        pool and Pareto data; other engines return a single-candidate snapshot
+        with the gepa-only fields (``per_val_instance_best_candidates``,
+        ``val_aggregate_subscores``, ...) left ``None``/empty. Held-out
+        ``test_set`` scores land in ``metadata`` on any engine.
     """
-    return_gepa_result = not isinstance(config, OptimizeAnythingConfig)
-    if return_gepa_result and test_set is not None:
-        raise ValueError(
-            "test_set requires an explicit OptimizeAnythingConfig; "
-            "the GEPAResult return path has no place for held-out test scores."
-        )
     if config is None:
         config = OptimizeAnythingConfig()
-    elif return_gepa_result:
+    elif not isinstance(config, OptimizeAnythingConfig):
         config = _from_legacy_config(config)
     if evaluator is None and batch_evaluator is None:
         raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
@@ -186,6 +182,40 @@ def optimize_anything(
             stacklevel=2,
         )
 
+    result = _optimize_to_result(
+        seed_candidate,
+        evaluator=evaluator,
+        batch_evaluator=batch_evaluator,
+        dataset=dataset,
+        valset=valset,
+        objective=objective,
+        background=background,
+        test_set=test_set,
+        config=config,
+    )
+    return _to_gepa_result(result, seed_candidate)
+
+
+def _optimize_to_result(
+    seed_candidate: str | Candidate | None,
+    *,
+    evaluator: Callable[..., Any] | None,
+    batch_evaluator: Callable[..., Any] | None,
+    dataset: list[Any] | None,
+    valset: list[Any] | None,
+    objective: str | None,
+    background: str | None,
+    test_set: list[Any] | None,
+    config: OptimizeAnythingConfig,
+) -> Result:
+    """Run one engine over a freshly-built server and return the mutable core.
+
+    This is the internal Result-producing path shared by the public
+    :func:`optimize_anything` (which wraps the result into a
+    :class:`~gepa.core.result.GEPAResult`) and by ensemble helpers such as
+    :func:`~gepa.oa.ensemble.optimize_anything_from_task` (which thread the
+    mutable :class:`Result` across stages).
+    """
     task = Task(
         name=config.name or _default_run_name(config.engine),
         seed_candidate=seed_candidate,
@@ -208,13 +238,28 @@ def optimize_anything(
         max_concurrency=config.max_concurrency,
         output_dir=output_dir,
     )
-    result = _run_engine(server, engine, owns_server=True)
-    if return_gepa_result:
-        # Prefer the GEPAResult stashed by the gepa engine; if the budget died
-        # before any state was saved, synthesize a single-candidate snapshot.
-        legacy_result: Any = result.metadata.get("gepa_result") or _legacy_result_from(result, seed_candidate)
-        return legacy_result
-    return result
+    return _run_engine(server, engine, owns_server=True)
+
+
+def _to_gepa_result(result: Result, seed_candidate: Any) -> GEPAResult:
+    """Project the mutable engine :class:`Result` onto the unified GEPAResult.
+
+    The gepa engine stashes the full candidate pool under
+    ``result.metadata["gepa_result"]``; use it as the rich base. Every other
+    engine reports only a best candidate, so synthesize a single-candidate
+    snapshot. Either way the universal core (eval log, run metadata, held-out
+    test scores) rides out on the returned result — so a generic run returns
+    the maximum information it has, with the gepa-only pool fields left at their
+    ``None``/empty defaults.
+    """
+    metadata = dict(result.metadata)
+    rich = metadata.pop("gepa_result", None)
+    base: GEPAResult = rich if rich is not None else _legacy_result_from(result, seed_candidate)
+    if not result.eval_log and not metadata:
+        # Nothing to attach (e.g. a pre-built GEPAResult with no engine run
+        # around it) — return the base untouched so identity is preserved.
+        return base
+    return dataclasses.replace(base, eval_log=list(result.eval_log), metadata=metadata)
 
 
 def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
@@ -247,12 +292,14 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
 
 
 def _legacy_result_from(result: Result, seed_candidate: Any) -> GEPAResult:
-    """Fallback :class:`GEPAResult` when the gepa engine had none to report.
+    """Single-candidate :class:`GEPAResult` when there is no candidate pool.
 
-    Happens when the eval budget is exhausted before GEPA core saved any
-    state (e.g. the budget is smaller than the seed's valset pass). Returns a
-    single-candidate snapshot of the best the eval server saw, so legacy
-    callers still get the result shape they were written against.
+    Used for every non-gepa engine (which reports only a best candidate) and
+    for the gepa engine when the eval budget is exhausted before GEPA core
+    saved any state (e.g. the budget is smaller than the seed's valset pass).
+    Returns a single-candidate snapshot of the best the eval server saw, so the
+    unified result still exposes the pool surface (``candidates``, ``best_idx``,
+    ``val_aggregate_scores``, ``to_dict()``) with the gepa-only fields empty.
     """
     best = result.best_candidate or seed_candidate
     if isinstance(best, dict):

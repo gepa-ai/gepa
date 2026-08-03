@@ -74,26 +74,25 @@ def optimize_anything_from_task(
     is preserved by threading it through ``config`` when ``config.name`` is unset.
     """
     # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
-    from gepa.optimize_anything import optimize_anything
+    # Use the internal Result-producing path, not the public optimize_anything:
+    # ensembles thread the *mutable* Result across stages, whereas the public
+    # entry point wraps it into a frozen GEPAResult.
+    from gepa.optimize_anything import _optimize_to_result
 
     if config is None:
         config = OptimizeAnythingConfig()
     if config.name is None:
         config = replace(config, name=task.name)
-    # config is always a concrete OptimizeAnythingConfig here, so
-    # optimize_anything returns Result (not the GEPAResult union arm).
-    return cast(
-        Result,
-        optimize_anything(
-            task.seed_candidate,
-            evaluator=evaluate,
-            dataset=task.train_set,
-            valset=task.val_set,
-            objective=task.objective,
-            background=task.background,
-            test_set=task.test_set,
-            config=config,
-        ),
+    return _optimize_to_result(
+        task.seed_candidate,
+        evaluator=evaluate,
+        batch_evaluator=None,
+        dataset=task.train_set,
+        valset=task.val_set,
+        objective=task.objective,
+        background=task.background,
+        test_set=task.test_set,
+        config=config,
     )
 
 
