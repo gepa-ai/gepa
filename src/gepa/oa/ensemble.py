@@ -80,15 +80,20 @@ def optimize_anything_from_task(
         config = OptimizeAnythingConfig()
     if config.name is None:
         config = replace(config, name=task.name)
-    return optimize_anything(
-        task.seed_candidate,
-        evaluator=evaluate,
-        dataset=task.train_set,
-        valset=task.val_set,
-        objective=task.objective,
-        background=task.background,
-        test_set=task.test_set,
-        config=config,
+    # config is always a concrete OptimizeAnythingConfig here, so
+    # optimize_anything returns Result (not the GEPAResult union arm).
+    return cast(
+        Result,
+        optimize_anything(
+            task.seed_candidate,
+            evaluator=evaluate,
+            dataset=task.train_set,
+            valset=task.val_set,
+            objective=task.objective,
+            background=task.background,
+            test_set=task.test_set,
+            config=config,
+        ),
     )
 
 
