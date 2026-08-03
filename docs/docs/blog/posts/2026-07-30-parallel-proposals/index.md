@@ -30,7 +30,7 @@ citation_keywords: "text optimization, prompt optimization, program optimization
   <figcaption>Figure 1. At the same metric-call budget, parallel proposals are faster and better than single mutation, achieving up to about a 3 to 4× speedup, while scoring up to 11 points higher on the held-out test set.</figcaption>
 </figure>
 
-Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. The loop samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
+Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. In each iteration, GEPA samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
 
 This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, batching cut the wall-clock time down to about a quarter, while raising held-out test scores from 68.9% to 72.1% on LiveBench-Math and from 49.0% to 60.0% on HoVer.
 
@@ -56,7 +56,7 @@ On each step, GEPA now samples several parents from its Pareto frontier, draws s
 The mechanism is closely analogous to batch Bayesian optimization[^batchopt], which proposes and evaluates a batch of candidates per round rather than adapting after every single one. Similar to how GEPA uses a Pareto frontier instead of a single best numerical score to select candidates, parallel proposals push the idea further by drawing several extensions of the frontier within each step (Figure 3), thus reducing how often the search adapts to the validation set. [Prior work](https://www.science.org/doi/10.1126/science.aaa9375) also shows that repeatedly steering decisions with one fixed holdout can inflate its apparent performance, so committing to more proposals simultaneously should transfer better beyond the validation set.
 
 <figure markdown="span">
-  ![Three schematic search trees, with Pareto-front candidates in orange. Left, SelectBestCandidate: only the single best candidate is orange and circled, and every mutation extends it. Middle, Pareto-based candidate sampling: three orange frontier candidates sit in different subtrees, with one circled as the sampled parent. Right, parallel proposals: the same orange frontier, where two circled members are each extended by three purple mutations, grouped in a dashed box labeled "P×N proposals per step".](images/concept_sampling.svg){ style="width: 100%;" }
+  ![Three schematic search trees, with Pareto-front candidates in orange and each step's proposals in indigo. Left, SelectBestCandidate: only the single best candidate is orange and circled, and it proposes one indigo mutation. Middle, Pareto-based candidate sampling: three orange frontier candidates sit in different subtrees; the circled one is sampled and proposes one indigo mutation. Right, parallel proposals: the same orange frontier, where two circled members each propose three indigo mutations, grouped in a dashed box labeled "P×N proposals per step".](images/concept_sampling.svg){ style="width: 100%;" }
   <figcaption>Figure 3. From best-candidate selection to parallel proposals, SelectBestCandidate extends only the current best candidate, GEPA's Pareto-based candidate sampling explores a broader tree one proposal at a time, and parallel proposals (P×N) extend several frontier candidates at once.</figcaption>
 </figure>
 
@@ -154,7 +154,7 @@ result = optimize_anything(
 )
 ```
 
-GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, and the like) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details. 
+GEPA by default calls your `evaluate` function in parallel, so all you need is to set the maximum number of workers through `max_concurrency`. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, and more) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details. 
 
 ## Appendix: Axes of parallel scaling
 
@@ -163,7 +163,7 @@ GEPA by default calls your `evaluate` function in parallel, so all you need is t
   <figcaption>Figure 7. GEPA can now scale along three orthogonal axes: more parents per step (P), more mutations per parent (N), and more compute per single mutation (ComBEE).</figcaption>
 </figure>
 
-Parallel proposals fit into a bigger picture of scaling the optimization step, along several orthogonal axes. P sets how many programs are selected for mutation per step, and N sets how many mutations each selected program receives, as studied above. Approaches like ComBEE[^combee] scale the compute spent on each single mutation, by reflecting over a much larger mini-batch of examples and rollouts through a map-reduce-style pipeline. This allows more knowledge to be distilled into a prompt. GEPA now supports ComBEE as a reflection strategy, and it can be directly composed with P×N sampling.
+Parallel proposals fit into a bigger picture of scaling the optimization step, along several orthogonal axes: P sets how many programs are selected for mutation per step, N sets how many mutations each selected program receives, as studied above, and approaches like ComBEE[^combee] scale the compute spent on each single mutation, by reflecting over a much larger mini-batch of examples and rollouts through a map-reduce-style pipeline. This allows more knowledge to be distilled into a prompt. GEPA now supports ComBEE as a reflection strategy, and it can be directly composed with P×N sampling.
 
 [^batchopt]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
 [^scaling]: Gene M. Amdahl, "[Validity of the single processor approach to achieving large scale computing capabilities](https://dl.acm.org/doi/10.1145/1465482.1465560)," AFIPS 1967.
