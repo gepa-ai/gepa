@@ -279,6 +279,13 @@ def optimize(
                     "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
                     "total_cost property on the strategy, or remove max_reflection_cost."
                 )
+            _supports_cost_tracking = getattr(reflection_strategy, "supports_cost_tracking", None)
+            if callable(_supports_cost_tracking) and not _supports_cost_tracking():
+                raise ValueError(
+                    "max_reflection_cost requires a reflection strategy backed by a cost-tracking LM. "
+                    "ComBEE plain callables use TrackingLM token estimates and cannot report provider spend; "
+                    "pass gepa.lm.LM (or another callable with real total_cost), or remove max_reflection_cost."
+                )
             stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_strategy))
         else:
             stop_callbacks_list.append(
@@ -400,6 +407,20 @@ def optimize(
     evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
+
+    if reflection_strategy is not None:
+        _bind_rng = getattr(reflection_strategy, "bind_rng", None)
+        if callable(_bind_rng):
+            # Preserve #307's shared-stream semantics for ComBEE and any other
+            # strategy that opts into SeedableReflectionLM. An explicit
+            # strategy RNG remains the opt-in isolation mechanism.
+            _bind_rng(rng)
+        _bind_logger = getattr(reflection_strategy, "bind_logger", None)
+        if callable(_bind_logger):
+            _bind_logger(logger)
+        _bind_lm_kwargs = getattr(reflection_strategy, "bind_lm_kwargs", None)
+        if callable(_bind_lm_kwargs):
+            _bind_lm_kwargs(reflection_lm_kwargs)
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
