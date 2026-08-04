@@ -62,13 +62,13 @@ The mechanism is closely analogous to batch Bayesian optimization[^batchopt], wh
 
 ## Runtime Analysis
 
-A run's wall-clock time is the sum of the time spent on each iteration. With $k = P \cdot N$ proposals per step, every iteration incurs a step latency $L_{\text{step}}$ for the $k$ reflection calls and $k$ mini-batch evaluations, which run concurrently. Whenever one or more proposals beat their parent on the mini-batch, the iteration additionally pays a full-validation latency $L_{\text{val}}$ to evaluate all accepted proposals on the validation set in parallel.
+Write $T(k)$ for the wall-clock time of a run with $k = P \cdot N$ proposals per step, so that $T(1)$ is a single-mutation run. It is the sum of the time spent on each iteration. Every iteration incurs a step latency $L_{\text{step}}$ for the $k$ reflection calls and $k$ mini-batch evaluations, which run concurrently. Whenever one or more proposals beat their parent on the mini-batch, the iteration additionally pays a full-validation latency $L_{\text{val}}$ to evaluate all accepted proposals on the validation set in parallel.
 
 The metric-call budget determines the total number of proposals a run can afford, whether parallel or sequential (if we assume the candidate acceptance rate stays the same). The number of iterations is the number of proposals divided by $k$, so a width-$k$ run needs about $1/k$ as many iterations as single mutation. The main bottleneck is full validation. If each proposal is accepted with probability $a$, and proposal outcomes are independent, then an iteration triggers full validation with probability
 
 $$q_k = 1 - (1-a)^k,$$
 
-which grows with $k$. The resulting speedup of a width-$k$ run over single mutation is approximately
+which grows with $k$. Multiplying the per-iteration cost by the number of iterations gives the speedup of a width-$k$ run over single mutation,
 
 $$\frac{T(1)}{T(k)} \approx \frac{k\,(L_{\text{step}} + a\,L_{\text{val}})}{L_{\text{step}} + q_k\,L_{\text{val}}}.$$
 
