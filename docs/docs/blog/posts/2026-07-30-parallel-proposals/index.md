@@ -18,13 +18,13 @@ equal_contribution:
   - "Donghyun Lee"
 slug: parallel-proposals
 readtime: 10
-title: "Batching the Reflective Optimization Loop: Parallel Proposals in GEPA"
+title: "Batching the Reflective Optimization Loop: Parallel Proposals Make GEPA Faster and Better"
 description: "GEPA now supports proposing and evaluating a batch of candidates on each optimization step instead of one candidate at a time. In our sweep on two tasks, most batched runs finished in half the wall-clock time or less, and the fastest in about a quarter to a third. Batched settings also achieved higher held-out test scores: from 68.9% to 72.1% on LiveBench-Math (with 2×2) and from 49.0% to 60.0% on HoVer (with 8×1)."
 social_image: blog/2026-07-30-parallel-proposals/images/throughput.png
 citation_keywords: "text optimization, prompt optimization, program optimization, parallel proposals, batched inference, Pareto optimization, GEPA, LiveBench, HoVer, multi-hop retrieval"
 ---
 
-# Batching the Reflective Optimization Loop: Parallel Proposals in GEPA
+# Batching the Reflective Optimization Loop: Parallel Proposals Make GEPA Faster and Better
 
 <figure markdown="span">
   ![Two scatter plots of held-out test performance against optimization wall-clock time. In each, a purple dot labeled Parallel Proposals (P×N) sits above and left of an orange diamond labeled Sequential, inside a shaded region of results that are both faster and better; a dashed line marks the unoptimized baseline, and two arrows from the diamond point up (Better than single mutation) and left (Faster than single mutation). LiveBench-Math: 71.6% in 2.5 hours against 68.9% in 7.7 hours. HoVer: 55.0% in 15 minutes against 49.0% in 47 minutes.](images/throughput.png){ style="width: 100%;" }
@@ -33,15 +33,24 @@ citation_keywords: "text optimization, prompt optimization, program optimization
 
 Running GEPA on a task can take hours because each optimization step waits for a proposal and its evaluation before the next step begins. In each iteration, GEPA samples a parent, proposes a mutation, evaluates it on a mini-batch, and, if it improves on its parent, evaluates it on the full validation set.
 
-This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. In our experiments, batching cut the wall-clock time down to about a quarter, while raising held-out test scores from 68.9% to 72.1% on LiveBench-Math and from 49.0% to 60.0% on HoVer.
+This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. This allows for evaluating more proposals at a time, so the same budget of metric calls finishes in less wall-clock time, and it delivers better results, by exploring more of the search tree per step. In our experiments, batching cut the wall-clock time down to about a quarter, while raising held-out test scores from 68.9% to 72.1% on LiveBench-Math and from 49.0% to 60.0% on HoVer.
+
+Faster and better optimization cycles reduce the barrier to running GEPA in the first place, and let power users test more ablations in the time one run used to take.
 
 ## How parallel proposals work
+
+Standard GEPA advances one proposal per step, extending a single candidate drawn from its Pareto frontier. Parallel proposals extend several frontier candidates at the same time.
+
+<figure markdown="span">
+  ![Three schematic search trees, with Pareto-front candidates in orange and each step's proposals in indigo. Left, SelectBestCandidate: only the single best candidate is orange and circled, and it proposes one indigo mutation. Middle, Pareto-based candidate sampling: three orange frontier candidates sit in different subtrees; the circled one is sampled and proposes one indigo mutation. Right, parallel proposals: the same orange frontier, where two circled members each propose three indigo mutations, grouped in a dashed box labeled "P×N proposals per step".](images/concept_sampling.svg){ style="width: 100%;" }
+  <figcaption>Figure 2. From best-candidate selection to parallel proposals, SelectBestCandidate extends only the current best candidate, GEPA's Pareto-based candidate sampling explores a broader tree one proposal at a time, and parallel proposals (P×N) extend several frontier candidates at once.</figcaption>
+</figure>
 
 On each step, GEPA now samples several parents from its Pareto frontier, draws several reflective mutations of each, and scores all of the proposals concurrently.
 
 <figure markdown="span">
   ![Diagram: sample P (=3) parent nodes at once from the Pareto front; each parent spawns N (=4) child mutations from its own mini-batch sample, giving P×N children; all P·N children are sent as one batch to a "Parallel evaluator" that scores them together.](images/pxn_diagram.svg){ style="width: 100%;" }
-  <figcaption>Figure 2. One batched iteration. GEPA samples P parents from the frontier, draws N reflective mutations for each parent, and scores all P·N children in one parallel evaluation. This lets GEPA propose more candidates in each iteration while paying the iteration latency once.</figcaption>
+  <figcaption>Figure 3. One batched iteration. GEPA samples P parents from the frontier, draws N reflective mutations for each parent, and scores all P·N children in one parallel evaluation. This lets GEPA propose more candidates in each iteration while paying the iteration latency once.</figcaption>
 </figure>
 
 ??? note "One P×N step in detail"
@@ -54,12 +63,7 @@ On each step, GEPA now samples several parents from its Pareto frontier, draws s
     4. screens the proposals by batch-evaluating them again on their mini-batches;
     5. evaluates accepted candidates on the full validation set in parallel, then updates the frontier.
 
-The mechanism is closely analogous to batch Bayesian optimization[^batchopt], which proposes and evaluates a batch of candidates per round rather than adapting after every single one. Similar to how GEPA uses a Pareto frontier instead of a single best numerical score to select candidates, parallel proposals push the idea further by drawing several extensions of the frontier within each step (Figure 3), thus reducing how often the search adapts to the validation set. [Prior work](https://www.science.org/doi/10.1126/science.aaa9375) also shows that repeatedly steering decisions with one fixed holdout can inflate its apparent performance, so committing to more proposals simultaneously should transfer better beyond the validation set.
-
-<figure markdown="span">
-  ![Three schematic search trees, with Pareto-front candidates in orange and each step's proposals in indigo. Left, SelectBestCandidate: only the single best candidate is orange and circled, and it proposes one indigo mutation. Middle, Pareto-based candidate sampling: three orange frontier candidates sit in different subtrees; the circled one is sampled and proposes one indigo mutation. Right, parallel proposals: the same orange frontier, where two circled members each propose three indigo mutations, grouped in a dashed box labeled "P×N proposals per step".](images/concept_sampling.svg){ style="width: 100%;" }
-  <figcaption>Figure 3. From best-candidate selection to parallel proposals, SelectBestCandidate extends only the current best candidate, GEPA's Pareto-based candidate sampling explores a broader tree one proposal at a time, and parallel proposals (P×N) extend several frontier candidates at once.</figcaption>
-</figure>
+The mechanism is closely analogous to batch Bayesian optimization[^batchopt], which proposes and evaluates a batch of candidates per round rather than adapting after every single one. Similar to how GEPA uses a Pareto frontier instead of a single best numerical score to select candidates, parallel proposals push the idea further by drawing several extensions of the frontier within each step (Figure 2), thus reducing how often the search adapts to the validation set. [Prior work](https://www.science.org/doi/10.1126/science.aaa9375) also shows that repeatedly steering decisions with one fixed holdout can inflate its apparent performance, so committing to more proposals simultaneously should transfer better beyond the validation set.
 
 ## Runtime Analysis
 
@@ -77,7 +81,7 @@ In practice, two effects slow wide steps down. First, the reflection stage takes
 
 $$L_{\text{val}} \approx \begin{cases} T_e & \text{if } kV \le W, \\ (kV/W)\,T_e & \text{if } kV > W. \end{cases}$$
 
-According to strong scaling[^scaling], a run with a budget of $B$ metric calls needs at least $B \cdot T_e / W$ of wall-clock time for evaluation alone. This floor is set by the size of your worker pool. Past that point, widening $P \cdot N$ stops buying wall-clock speedup on a fixed pool, but the floor itself moves out as you add workers, so $P \cdot N$ keeps scaling with your infrastructure.
+According to strong scaling[^scaling], a run with a budget of $B$ metric calls needs at least $B \cdot T_e / W$ of wall-clock time for evaluation alone. This floor is set by the size of your worker pool. Past that point, widening $P \cdot N$ stops buying wall-clock speedup on a fixed pool, but the floor itself moves out as you add workers or distribute evaluation across Ray, Slurm, or Modal, so $P \cdot N$ keeps scaling with your infrastructure. Our runs used fixed pools of 512 workers on LiveBench-Math and 64 on HoVer, well below what production API limits allow, so the floors in our measurements are properties of those pools, and the same settings can accelerate further with more capacity.
 
 ## Results
 
@@ -160,7 +164,7 @@ GEPA by default calls your `evaluate` function in parallel, so all you need is t
 ## Appendix: Axes of parallel scaling
 
 <figure markdown="span">
-  ![A diagram derived from Figure 2. On the left, parent circles P1 to P3 each connect to a row of child boxes, with a vertical arrow labeled "more parents per step (P)" and a horizontal arrow labeled "more mutations per parent (N)" marking the two width axes, and trailing dots suggesting each can grow. On the right, one child is zoomed into a teal panel labeled "larger mini-batch per mutation", where a stack of Sample cards feeds a ComBEE Reflector that produces the mutation.](images/scaling_axes.svg){ style="width: 100%;" }
+  ![A diagram derived from Figure 3. On the left, parent circles P1 to P3 each connect to a row of child boxes, with a vertical arrow labeled "more parents per step (P)" and a horizontal arrow labeled "more mutations per parent (N)" marking the two width axes, and trailing dots suggesting each can grow. On the right, one child is zoomed into a teal panel labeled "larger mini-batch per mutation", where a stack of Sample cards feeds a ComBEE Reflector that produces the mutation.](images/scaling_axes.svg){ style="width: 100%;" }
   <figcaption>Figure 7. Scaling axes for the optimization step: more parents per step (P), more mutations per parent (N), and a larger reflection mini-batch per mutation (ComBEE).</figcaption>
 </figure>
 
