@@ -110,26 +110,26 @@ In principle, larger P extends more members of the frontier at once, which shoul
 
 ### Batched settings are more budget-efficient
 
-We also probed how efficiently each setting spends its budget during the run. Here we compare one N-scaled and one P-scaled setting at the same width, 2×4 and 8×1, against single mutation on both tasks.
+We also probed how efficiently each setting spends its budget during the run. Here we compare a batched setting, 2×4, against single mutation on both tasks.
 
 #### More quality per metric call
 
-Batched settings dominate small budgets. On LiveBench-Math both batched settings reach validation scores that single mutation needs about 2,000 calls to match, and on HoVer they lead at every budget. Single mutation raises validation scores later in the budget, but still scores the lowest on the held-out test set on both tasks.
+2×4 dominates small budgets: on LiveBench-Math it reaches validation scores that single mutation needs about 2,000 calls to match, and on HoVer it leads at every budget. Single mutation raises validation scores later in the budget, but still scores lower on the held-out test set on both tasks.
 
 <figure markdown="span">
-  ![Two step charts of best validation score against metric calls consumed, for single mutation, 2×4, and 8×1, with stars marking held-out test scores. On LiveBench-Math, 8×1 reaches 0.738 within about 450 calls and 2×4 reaches 0.740 by about 1,400, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 71.9% for 2×4, 69.6% for 8×1, and 68.9% for single mutation. On HoVer, both batched settings lead single mutation at every budget, ending at 0.727 (8×1) and 0.716 (2×4) against 0.709; test recall stars are 0.815, 0.810, and 0.760.](images/budget_pareto.png){ style="width: 100%;" }
-  <figcaption>Figure 5. Best validation quality against metric calls consumed, for single mutation and the width-8 pair 2×4 and 8×1. The best setting changes with the budget, and batched settings dominate small budgets.</figcaption>
+  ![Two step charts of best validation score against metric calls consumed, for single mutation and 2×4, with stars marking held-out test scores. On LiveBench-Math, 2×4 reaches 0.740 by about 1,400 calls, while single mutation overtakes on validation at about 2,000 calls and ends at 0.783; test stars are 71.9% for 2×4 and 68.9% for single mutation. On HoVer, 2×4 leads single mutation at every budget, ending at 0.716 against 0.709; test recall stars are 0.810 and 0.760.](images/budget_pareto.png){ style="width: 100%;" }
+  <figcaption>Figure 5. Best validation quality against metric calls consumed, for single mutation and 2×4. 2×4 dominates small budgets and scores higher on the held-out test set.</figcaption>
 </figure>
 
-On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math, and 8×1 won 11.0pp on HoVer. The validation scores tell a different story: on LiveBench-Math, single mutation scored the highest on validation but the lowest on test. Its generalization gap (the drop from validation score to test score) was nine points, against six for 8×1 and only two for 2×4; the larger drop for 8×1 is consistent with the weaker transfer of P-heavy settings described above. On HoVer, every setting's test score landed above its validation score, and the batched settings ended higher on both. This is consistent with the hypothesis above, that committing to more proposals before adapting to the validation set transfers better beyond it.
+On the held-out test sets, 2×4 won 3.0pp over single mutation on LiveBench-Math and 6.0pp on HoVer. The validation scores tell a different story: on LiveBench-Math, single mutation scored higher on validation but lower on test. Its generalization gap (the drop from validation score to test score) was nine points, against only two for 2×4. On HoVer, both settings' test scores landed above their validation scores, and 2×4 ended higher on both. This is consistent with the hypothesis above, that committing to more proposals before adapting to the validation set transfers better beyond it.
 
 #### More quality per dollar
 
-By measuring the total LLM spend during optimization (sum of solver calls and reflection calls), we found that batched settings are also more cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 8×1 reaches a 0.73 validation score within about $2.5 of spend, and on HoVer it reaches its final validation score for $2.65. The total spend varies with how long each run's candidates make the solver's outputs (per-call output tokens order the totals on both tasks), but stays comparable across settings, within the $12 to $18 range.
+By measuring the total LLM spend during optimization (sum of solver calls and reflection calls), we found that the batched setting is also cost-efficient, reaching strong validation scores within the first few dollars. On LiveBench-Math, 2×4 reaches its final validation score within about $4 of spend, and on HoVer it passes single mutation's final validation score within about $2.6. The total spend stays comparable across settings, within the $12 to $16 range.
 
 <figure markdown="span">
-  ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation, 2×4, and 8×1. Left, LiveBench-Math: single mutation reaches 0.783 by about $5.5 and ends at $13.2; 2×4 ends at 0.740 for $12.4 and 8×1 at 0.760 for $18.1. Right, HoVer: 8×1 jumps to 0.727 by $2.65 and ends at $14.2; 2×4 ends at 0.716 for $15.3 and single mutation at 0.709 for $13.4. Test stars match Figure 5.](images/pareto_cost.png){ style="width: 100%;" }
-  <figcaption>Figure 6. Best validation quality against total LLM spend, solver and reflection calls combined. Batched settings reach strong validation quality within the first few dollars.</figcaption>
+  ![Two Pareto curves of best validation quality against cumulative LLM dollars for single mutation and 2×4. Left, LiveBench-Math: 2×4 reaches 0.740 within about $4 and ends at $12.4; single mutation reaches 0.783 by about $5.5 and ends at $13.2. Right, HoVer: 2×4 passes 0.709 by about $2.6 and ends at 0.716 for $15.3; single mutation ends at 0.709 for $13.4. Test stars match Figure 5.](images/pareto_cost.png){ style="width: 100%;" }
+  <figcaption>Figure 6. Best validation quality against total LLM spend, solver and reflection calls combined. The batched setting reaches strong validation quality within the first few dollars.</figcaption>
 </figure>
 
 ## Getting started
@@ -159,7 +159,7 @@ result = optimize_anything(
 )
 ```
 
-GEPA by default calls your `evaluate` function in parallel, so set `max_concurrency` high enough to match the capacity of your evaluator and inference provider. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, and more) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details.
+GEPA by default calls your `evaluate` function in parallel, so set `max_concurrency` high enough to match the capacity of your evaluator and inference provider. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, [Harbor](https://harborframework.com/), and more) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details.
 
 For system-bound evaluations, `max_concurrency` may be constrained by available CPU, GPU, or cluster capacity. For API-backed optimization, much larger worker pools may be practical, subject to provider rate limits and budget. 
 
