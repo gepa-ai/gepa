@@ -1,4 +1,4 @@
-"""External bubblewrap jail for ``claude --print`` subprocesses.
+"""External jails for agent subprocesses.
 
 Wraps the whole ``claude`` invocation in our own ``bwrap`` namespace instead
 of relying on Claude Code's built-in ``sandbox.enabled: true`` settings. The
@@ -25,9 +25,9 @@ Network namespace is shared with the host so the agent can reach
 ``localhost:<eval-server-port>`` and ``api.anthropic.com``. ``WebFetch`` /
 ``WebSearch`` are denied at the tool layer via :data:`DENY_WEB_TOOLS`.
 
-macOS fallback: bwrap is Linux-only. On macOS we use Claude Code's
-built-in Seatbelt sandbox via :func:`claude_settings_args`, which the
-caller appends to the ``claude --print`` argv.
+macOS fallback: bwrap is Linux-only. Claude keeps its existing settings-based
+Seatbelt path; Pi uses the native ``sandbox-exec`` profile returned by
+:func:`pi_sandbox_prefix` because Pi has no built-in filesystem sandbox.
 """
 
 from __future__ import annotations
@@ -102,6 +102,8 @@ def bwrap_prefix(
     work_dir: Path | str,
     *,
     extra_writable: list[Path | str] | None = None,
+    include_claude_config: bool = True,
+    include_pi_config: bool = False,
 ) -> list[str]:
     """Return the ``bwrap`` argv prefix that jails everything that follows.
 
@@ -129,12 +131,6 @@ def bwrap_prefix(
         "/tmp",
         *_system_bind_args(),
         *_etc_bind_args(),
-        "--bind",
-        str(home / ".claude"),
-        str(home / ".claude"),
-        "--bind",
-        str(home / ".claude.json"),
-        str(home / ".claude.json"),
         "--ro-bind",
         str(home / ".local"),
         str(home / ".local"),
@@ -153,10 +149,91 @@ def bwrap_prefix(
         "--chdir",
         str(work),
     ]
+    if include_claude_config:
+        # Claude's own session/auth files remain writable for the legacy
+        # Claude engine. Pi must not inherit these paths accidentally.
+        claude_args = [
+            "--bind",
+            str(home / ".claude"),
+            str(home / ".claude"),
+            "--bind",
+            str(home / ".claude.json"),
+            str(home / ".claude.json"),
+        ]
+        insert_at = args.index("--ro-bind")
+        args[insert_at:insert_at] = claude_args
+    if include_pi_config:
+        pi_dir = home / ".pi"
+        if pi_dir.exists() or pi_dir.is_symlink():
+            insert_at = args.index("--ro-bind")
+            args[insert_at:insert_at] = ["--ro-bind", str(pi_dir), str(pi_dir)]
     for p in extra_writable or ():
         resolved = str(Path(p).resolve())
         args.extend(["--bind", resolved, resolved])
     return args
+
+
+def _seatbelt_subpath(path: Path | str) -> str:
+    return str(Path(path).resolve()).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_macos_pi_profile(
+    work_dir: Path | str,
+    *,
+    extra_writable: list[Path | str] | None = None,
+) -> str:
+    """Build a restrictive Seatbelt profile for Pi.
+
+    Pi needs to execute its own runtime and tools, read provider credentials,
+    and reach both the evaluator and model provider. It may write only the
+    temporary workspace and staging directories. The profile intentionally
+    does not grant access to the checkout or arbitrary user files.
+    """
+    work_paths = [_seatbelt_subpath(work_dir), *(_seatbelt_subpath(p) for p in extra_writable or ())]
+    write_paths = [*work_paths, "/tmp", "/private/tmp"]
+    read_paths = [
+        "/bin",
+        "/sbin",
+        "/usr",
+        "/System",
+        "/Library",
+        "/private/var",
+        str(Path.home() / ".pi"),
+        str(Path.home() / ".cache"),
+        str(Path.home() / ".config"),
+        str(Path.home() / ".vite-plus"),
+    ]
+    lines = ["(version 1)", "(deny default)", "(allow process*)", "(allow sysctl-read)", "(allow network*)"]
+    lines.extend(f'(allow file-read* (subpath "{path}"))' for path in read_paths + work_paths)
+    lines.extend(f'(allow file-write* (subpath "{path}"))' for path in write_paths)
+    return "\n".join(lines)
+
+
+def pi_sandbox_prefix(
+    work_dir: Path | str,
+    *,
+    extra_writable: list[Path | str] | None = None,
+) -> list[str]:
+    """Return the mandatory OS sandbox prefix for a Pi subprocess.
+
+    The returned prefix is never empty when this function succeeds. Callers
+    should invoke :func:`preflight_pi_engine` before launching Pi so a missing
+    runtime becomes an actionable configuration error rather than an
+    accidental unsandboxed run.
+    """
+    if _IS_MACOS:
+        sandbox_exec = shutil.which("sandbox-exec") or "/usr/bin/sandbox-exec"
+        if not os.path.exists(sandbox_exec):
+            raise RuntimeError("Pi sandbox requested but macOS sandbox-exec is unavailable")
+        return ["sandbox-exec", "-p", _build_macos_pi_profile(work_dir, extra_writable=extra_writable)]
+    if not shutil.which("bwrap"):
+        raise RuntimeError("Pi sandbox requested but bwrap (bubblewrap) is unavailable on Linux")
+    return bwrap_prefix(
+        work_dir,
+        extra_writable=extra_writable,
+        include_claude_config=False,
+        include_pi_config=True,
+    )
 
 
 def _abs_glob(path: str) -> str:
@@ -298,6 +375,129 @@ def require_claude_cli(engine_name: str) -> None:
     raise RuntimeError(
         f"the {engine_name!r} engine requires the Claude Code CLI (`claude`), which was not found on PATH"
     )
+
+
+def require_pi_cli(engine_name: str, command: str = "pi") -> None:
+    """Abort with an actionable error when the Pi executable is unavailable."""
+    executable = command.split()[0] if command.strip() else command
+    if executable and shutil.which(executable):
+        return
+    print(
+        _boxed_message(
+            "PI CLI NOT FOUND",
+            [
+                f"The {engine_name!r} engine is configured with the Pi backend,",
+                f"but `{command or 'pi'}` is not available on PATH.",
+                "",
+                "Install Pi and authenticate a provider before retrying.",
+                "Set engine_config={'pi_command': '/absolute/path/to/pi'} when",
+                "the executable is not on PATH.",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    raise RuntimeError(f"the {engine_name!r} engine requires the Pi CLI ({command!r}), which was not found on PATH")
+
+
+def require_codex_cli(engine_name: str, command: str = "codex") -> None:
+    """Abort with an actionable error when the Codex executable is unavailable."""
+    executable = command.split()[0] if command.strip() else command
+    if executable and shutil.which(executable):
+        return
+    print(
+        _boxed_message(
+            "CODEX CLI NOT FOUND",
+            [
+                f"The {engine_name!r} engine is configured with the Codex backend,",
+                f"but `{command or 'codex'}` is not available on PATH.",
+                "",
+                "Install and authenticate the Codex CLI before retrying.",
+                "Set engine_config={'codex_command': '/absolute/path/to/codex'} when",
+                "the executable is not on PATH.",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    raise RuntimeError(f"the {engine_name!r} engine requires the Codex CLI ({command!r}), which was not found on PATH")
+
+
+def preflight_codex_engine(engine_name: str, *, command: str = "codex", sandbox: bool) -> None:
+    """Validate Codex and require its workspace-write sandbox posture."""
+    require_codex_cli(engine_name, command)
+    if not sandbox:
+        raise RuntimeError(
+            f"sandbox=False is unsupported for the {engine_name!r} Codex backend; "
+            "Codex requires --sandbox workspace-write"
+        )
+
+
+def require_pi_sandbox(engine_name: str) -> None:
+    """Abort when Pi's requested OS-level confinement is unavailable."""
+    if _IS_MACOS:
+        if shutil.which("sandbox-exec") or os.path.exists("/usr/bin/sandbox-exec"):
+            return
+        runtime = "sandbox-exec (macOS Seatbelt)"
+    else:
+        if shutil.which("bwrap"):
+            return
+        runtime = "bwrap (bubblewrap)"
+    print(
+        _boxed_message(
+            "PI SANDBOX UNAVAILABLE",
+            [
+                f"sandbox=True for the {engine_name!r} engine requires {runtime}.",
+                "Pi's --tools allowlist is not an OS security boundary, so the",
+                "engine will not silently fall back to an unsandboxed subprocess.",
+                "Install the runtime or explicitly choose a non-sandboxed profile",
+                "only after reviewing the host-access implications.",
+            ],
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    raise RuntimeError(f"sandbox=True on the {engine_name!r} engine but {runtime} was not found")
+
+
+def preflight_pi_engine(engine_name: str, *, command: str = "pi", sandbox: bool) -> None:
+    """Validate the Pi CLI and, when requested, its mandatory OS jail."""
+    require_pi_cli(engine_name, command)
+    if sandbox:
+        require_pi_sandbox(engine_name)
+    else:
+        print(
+            _boxed_message(
+                "PI SANDBOX DISABLED",
+                [
+                    f"sandbox=False: the {engine_name!r} Pi subprocess runs with",
+                    "full host process and file permissions; Pi's tool allowlist",
+                    "does not replace OS confinement.",
+                ],
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def preflight_agent_engine(
+    engine_name: str,
+    *,
+    backend: str,
+    command: str = "pi",
+    sandbox: bool,
+) -> None:
+    """Dispatch preflight checks without silently falling back between agents."""
+    if backend == "pi":
+        preflight_pi_engine(engine_name, command=command, sandbox=sandbox)
+        return
+    if backend == "claude":
+        preflight_claude_engine(engine_name, sandbox=sandbox)
+        return
+    if backend == "codex":
+        preflight_codex_engine(engine_name, command=command, sandbox=sandbox)
+        return
+    raise RuntimeError(f"unsupported agent backend {backend!r}; choose 'codex', 'pi', or 'claude'")
 
 
 def require_bwrap(engine_name: str) -> None:

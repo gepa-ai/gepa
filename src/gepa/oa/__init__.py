@@ -5,6 +5,7 @@ the shared engine protocol, eval server, budget tracker, and registries used by
 that public API.
 """
 
+from gepa.oa.agent_runner import AgentRunner, AgentRunResult, CodexAgentRunner, PiAgentRunner
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
@@ -23,9 +24,13 @@ from gepa.oa.task import Task
 __all__ = [
     "BudgetExhausted",
     "BudgetTracker",
+    "AgentRunResult",
+    "AgentRunner",
+    "CodexAgentRunner",
     "Engine",
     "EvalServer",
     "OptimizeAnythingConfig",
+    "PiAgentRunner",
     "Result",
     "Task",
     "get_engine_cls",

@@ -53,11 +53,10 @@ class OptimizeAnythingConfig:
             use a tempdir; in-process engines skip artifact writes. Set
             explicitly to persist them.
         stop_at_score: Score threshold for early stop. Each engine interprets.
-        sandbox: OS-jail the subprocess engines' ``claude`` sessions (bwrap on
-            Linux — requires the ``bubblewrap`` package — Claude Code's
-            Seatbelt sandbox on macOS). Default ``True``. Linux runs abort at
-            engine start when ``bwrap`` is missing; ``False`` prints a loud
-            warning and runs the agent unsandboxed with full host access.
+        sandbox: OS-jail agent subprocess engines (bwrap on Linux; Claude's
+            Seatbelt or Pi's ``sandbox-exec`` profile on macOS). Default
+            ``True``. Pi never falls back to an unsandboxed process when a
+            requested jail is unavailable.
         engine_config: Engine-specific options that don't generalize across
             engines. Each engine reads the keys it understands and warns about
             leftovers so typos surface. The keys an engine accepts are
@@ -72,17 +71,22 @@ class OptimizeAnythingConfig:
               reflection LM, wandb/mlflow tracking, reasoning knobs (via
               ``reflection.reflection_lm_kwargs``, e.g. ``reasoning_effort`` /
               ``thinking``), and (via ``reflection.custom_candidate_proposer``)
-              a Claude Code proposer here — see
+              a Codex or Pi custom proposer here — see
               :class:`~gepa.oa.engines.gepa.GepaEngine`.
-            - ``autoresearch`` — ``model``, ``ralph``, ``max_no_eval_seconds``,
-              ``handoffs``, ``effort``, ``max_thinking_tokens`` (see
+            - ``autoresearch`` — ``agent_backend``, ``pi_command``,
+              ``codex_command``, ``codex_input_cost_per_million``,
+              ``codex_output_cost_per_million``, ``model``, ``ralph``,
+              ``max_no_eval_seconds``, ``handoffs``, ``effort``,
+              ``max_thinking_tokens`` (see
               ``AutoResearchEngine`` / ``_AR_CONFIG_KEYS``).
             - ``best_of_n`` — ``model``, ``temperature``, ``max_n``,
               ``lm_kwargs``, ``effort``, ``max_thinking_tokens`` (see
               ``BestOfNEngine`` / ``_BON_CONFIG_KEYS``).
-            - ``meta_harness`` — ``model``, ``max_iterations``,
-              ``max_candidates_per_iter``, ``effort``, ``max_thinking_tokens``
-              (see ``MetaHarnessEngine`` / ``_MH_CONFIG_KEYS``).
+            - ``meta_harness`` — ``agent_backend``, ``pi_command``,
+              ``codex_command``, ``codex_input_cost_per_million``,
+              ``codex_output_cost_per_million``, ``model``, ``max_iterations``,
+              ``max_candidates_per_iter``, ``timeout_seconds``, ``effort``,
+              ``max_thinking_tokens`` (see ``MetaHarnessEngine``).
 
             ``effort`` (``claude --effort``) and ``max_thinking_tokens`` are
             Claude-CLI knobs, so they live in each agent engine's

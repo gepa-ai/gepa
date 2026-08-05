@@ -1,6 +1,6 @@
-"""Meta-Harness engine: iterative candidate proposal via Claude Code.
+"""Meta-Harness engine: iterative candidate proposal via an agent.
 
-The proposer (a Claude subprocess) reads frontier + history and writes
+The configured proposer subprocess reads frontier + history and writes
 ``pending_eval.json`` listing 1+ candidates; the engine benchmarks each one
 through the optimize_anything eval server, updates state files, and loops until the
 budget is exhausted or ``max_iterations`` is hit.
@@ -21,9 +21,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from gepa.oa.agent_runner import (
+    CodexAgentRunner,
+    PiAgentRunner,
+    validate_codex_pricing,
+)
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
+from gepa.oa.sandbox import (
+    DENY_WEB_TOOLS,
+    bwrap_prefix,
+    claude_permission_args,
+    pi_sandbox_prefix,
+    preflight_agent_engine,
+    preflight_claude_engine,
+)
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
@@ -40,22 +52,45 @@ class MetaHarnessConfig:
     Populated from ``OptimizeAnythingConfig.engine_config``.
 
     Attributes:
-        model: Proposer model id. Versioned default — pin for reproducibility;
-            pass ``"sonnet"`` / ``"opus"`` to track Anthropic's current default.
+        model: Proposer model id. The Claude default remains for backwards
+            compatibility; Pi profiles should pass an explicit provider/model.
+            Codex may use the authenticated CLI default.
+        agent_backend: ``"claude"`` (legacy), ``"pi"``, or ``"codex"``. There
+            is no implicit fallback when an agent backend is requested.
+        pi_command: Pi executable or absolute path.
+        codex_command: Codex executable or absolute path.
+        codex_input_cost_per_million: Optional input-token USD rate.
+        codex_output_cost_per_million: Optional output-token USD rate.
         max_iterations: Hard cap on proposer sessions. ``None`` = until budget.
         max_candidates_per_iter: Upper bound on candidates per iteration.
         effort: ``claude --effort`` value (CLI flag).
         max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+        timeout_seconds: Maximum wall time for one agent proposer session.
     """
 
-    model: str = "claude-sonnet-4-6"
+    model: str | None = "claude-sonnet-4-6"
+    agent_backend: str = "claude"
+    pi_command: str = "pi"
+    codex_command: str = "codex"
+    codex_input_cost_per_million: float | None = None
+    codex_output_cost_per_million: float | None = None
     max_iterations: int | None = None
     max_candidates_per_iter: int = 3
     effort: str | None = None
     max_thinking_tokens: int | None = None
+    timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         self.max_candidates_per_iter = max(1, int(self.max_candidates_per_iter))
+        self.agent_backend = str(self.agent_backend).strip().lower()
+        if self.agent_backend not in {"claude", "pi", "codex"}:
+            raise ValueError("meta_harness agent_backend must be 'claude', 'pi', or 'codex'")
+        if self.agent_backend == "pi" and self.model == "claude-sonnet-4-6":
+            raise ValueError("meta_harness with agent_backend='pi' requires an explicit provider/model")
+        if self.agent_backend == "codex" and self.model == "claude-sonnet-4-6":
+            self.model = None
+        if self.timeout_seconds is not None:
+            self.timeout_seconds = float(self.timeout_seconds)
 
 
 SKILL_MD = """\
@@ -281,7 +316,7 @@ def _run_proposer(
     *,
     work_dir: Path,
     iteration: int,
-    model: str,
+    model: str | None,
     effort: str | None,
     max_candidates: int,
     max_budget_usd: float | None,
@@ -313,12 +348,12 @@ def _run_proposer(
         prompt,
         "--output-format",
         "json",
-        "--model",
-        model,
         "--session-id",
         session_id,
         DENY_WEB_TOOLS,
     ]
+    if model:
+        cmd.extend(["--model", model])
     # Single source of the permission posture (see claude_permission_args):
     # bypassPermissions in the bwrap jail / unsandboxed, or the macOS Seatbelt
     # settings whose --permission-mode default enforces the file-tool whitelist.
@@ -364,6 +399,164 @@ def _run_proposer(
         )
     )
     return proc.returncode, cost_usd, session_id
+
+
+def _run_pi_proposer(
+    *,
+    work_dir: Path,
+    iteration: int,
+    model: str | None,
+    max_candidates: int,
+    max_budget_usd: float | None,
+    pending_path: Path,
+    log_dir: Path,
+    timeout_seconds: float | None = None,
+    sandbox: bool = True,
+    pi_command: str = "pi",
+) -> tuple[int, float, str]:
+    """Run one fresh Pi session while retaining the Meta-Harness workspace."""
+    del pending_path  # The path is included in the prompt; Pi writes it itself.
+    state = work_dir / "state"
+    prompt = (
+        f"Run iteration {iteration} of the meta-harness evolution loop. "
+        f"Produce up to {max_candidates} candidate(s).\n\n"
+        f"## Run directories (absolute paths)\n"
+        f"- task.md: `{work_dir / 'task.md'}`\n"
+        f"- state/frontier.json: `{state / 'frontier.json'}`\n"
+        f"- state/evolution_summary.jsonl: `{state / 'evolution_summary.jsonl'}`\n"
+        f"- state/eval_traces/<candidate_name>/: `{state / 'eval_traces'}`\n"
+        f"- state/reports/: `{state / 'reports'}`\n"
+        f"- agents/: `{work_dir / 'agents'}`\n"
+        f"- Write pending_eval.json to: `{state / f'pending_eval_iter{iteration}.json'}`\n\n"
+        "Follow the explicit Meta-Harness instructions below. The outer loop "
+        "benchmarks candidates; do not run the evaluator yourself.\n\n"
+        f"{SKILL_MD}"
+    )
+
+    runner = PiAgentRunner(
+        command=pi_command,
+        model=model,
+        persistent=False,
+        tools="read,grep,find,ls,bash,edit,write",
+        sandbox=sandbox,
+        sandbox_prefix=pi_sandbox_prefix,
+        env={**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)},
+    )
+    try:
+        result = runner.run(
+            prompt,
+            work_dir=work_dir,
+            timeout_seconds=timeout_seconds,
+            max_budget_usd=max_budget_usd,
+        )
+    finally:
+        runner.close()
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / f"iter{iteration}_stdout.jsonl").write_text(result.stdout or "")
+    (log_dir / f"iter{iteration}_stderr.txt").write_text(result.stderr or "")
+    exit_code = result.returncode
+    if exit_code == 0 and not result.completed:
+        exit_code = 1
+    (log_dir / f"iter{iteration}_meta.json").write_text(
+        json.dumps(
+            {
+                "iteration": iteration,
+                "agent_backend": "pi",
+                "session_id": result.session_id,
+                "exit_code": exit_code,
+                "cost_usd": result.cost_usd,
+                "usage": result.usage,
+                "timed_out": result.timed_out,
+                "completed": result.completed,
+                "cmd": list(result.command),
+                "stderr_tail": (result.stderr or "")[-2000:],
+            },
+            indent=2,
+        )
+    )
+    return exit_code, float(result.cost_usd or 0.0), result.session_id or str(uuid.uuid4())
+
+
+def _run_codex_proposer(
+    *,
+    work_dir: Path,
+    iteration: int,
+    model: str | None,
+    max_candidates: int,
+    max_budget_usd: float | None,
+    pending_path: Path,
+    log_dir: Path,
+    timeout_seconds: float | None = None,
+    sandbox: bool = True,
+    codex_command: str = "codex",
+    input_cost_per_million: float | None = None,
+    output_cost_per_million: float | None = None,
+) -> tuple[int, float | None, str | None, bool]:
+    """Run one fresh ephemeral Codex session for a Meta-Harness iteration."""
+    del pending_path  # The path is included in the prompt; Codex writes it itself.
+    state = work_dir / "state"
+    prompt = (
+        f"Run iteration {iteration} of the meta-harness evolution loop. "
+        f"Produce up to {max_candidates} candidate(s).\n\n"
+        f"## Run directories (absolute paths)\n"
+        f"- task.md: `{work_dir / 'task.md'}`\n"
+        f"- state/frontier.json: `{state / 'frontier.json'}`\n"
+        f"- state/evolution_summary.jsonl: `{state / 'evolution_summary.jsonl'}`\n"
+        f"- state/eval_traces/<candidate_name>/: `{state / 'eval_traces'}`\n"
+        f"- state/reports/: `{state / 'reports'}`\n"
+        f"- agents/: `{work_dir / 'agents'}`\n"
+        f"- Write pending_eval.json to: `{state / f'pending_eval_iter{iteration}.json'}`\n\n"
+        "Follow the explicit Meta-Harness instructions below. The outer loop "
+        "benchmarks candidates; do not run the evaluator yourself.\n\n"
+        f"{SKILL_MD}"
+    )
+
+    runner = CodexAgentRunner(
+        command=codex_command,
+        model=model,
+        persistent=False,
+        sandbox=sandbox,
+        env={**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)},
+        input_cost_per_million=input_cost_per_million,
+        output_cost_per_million=output_cost_per_million,
+    )
+    try:
+        result = runner.run(
+            prompt,
+            work_dir=work_dir,
+            timeout_seconds=timeout_seconds,
+            max_budget_usd=max_budget_usd,
+        )
+    finally:
+        runner.close()
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / f"iter{iteration}_stdout.jsonl").write_text(result.stdout or "")
+    (log_dir / f"iter{iteration}_stderr.txt").write_text(result.stderr or "")
+    exit_code = result.returncode
+    if exit_code == 0 and not result.completed:
+        exit_code = 1
+    (log_dir / f"iter{iteration}_meta.json").write_text(
+        json.dumps(
+            {
+                "iteration": iteration,
+                "agent_backend": "codex",
+                "session_id": result.session_id,
+                "exit_code": exit_code,
+                "cost_usd": result.cost_usd,
+                "cost_estimate_usd": result.cost_usd if result.cost_known else None,
+                "cost_known": result.cost_known,
+                "usage": result.usage,
+                "timed_out": result.timed_out,
+                "completed": result.completed,
+                "cmd": list(result.command),
+                "stderr_tail": (result.stderr or "")[-2000:],
+            },
+            indent=2,
+        )
+    )
+    return exit_code, result.cost_usd, result.session_id, result.cost_known
 
 
 def _parse_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
@@ -609,6 +802,10 @@ def _elapsed(seconds: float) -> str:
     return f"{m}m{s:02d}s" if m else f"{s}s"
 
 
+def _format_cost(cost: float | None) -> str:
+    return f"${cost:.3f}" if cost is not None else "unknown"
+
+
 def _colorize_score(score: float) -> str:
     s = f"{score:.4f}"
     if score > 0:
@@ -630,21 +827,48 @@ class MetaHarnessEngine:
     def __init__(self, config: OptimizeAnythingConfig) -> None:
         engine_config = MetaHarnessConfig(**config.engine_config)
         self.model = engine_config.model
+        self.agent_backend = engine_config.agent_backend
+        self.pi_command = engine_config.pi_command
+        self.codex_command = engine_config.codex_command
+        self.codex_input_cost_per_million = engine_config.codex_input_cost_per_million
+        self.codex_output_cost_per_million = engine_config.codex_output_cost_per_million
         self.max_iterations = engine_config.max_iterations
         self.max_candidates_per_iter = engine_config.max_candidates_per_iter
         self.effort = engine_config.effort
         self.max_thinking_tokens = engine_config.max_thinking_tokens
+        self.timeout_seconds = engine_config.timeout_seconds
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.sandbox = config.sandbox
-        # Proposer-cost cap: USD this engine may spend across its claude
-        # subprocess sessions. Enforced via --max-budget-usd; the eval server
-        # never sees proposer spend.
+        # Proposer-cost cap: USD this engine may spend across agent sessions.
+        # Claude receives --max-budget-usd; Pi is monitored through normalized
+        # event costs and the outer loop stops before another session starts.
         self.max_token_cost = config.max_token_cost
+        if self.agent_backend == "codex":
+            validate_codex_pricing(
+                self.max_token_cost,
+                self.codex_input_cost_per_million,
+                self.codex_output_cost_per_million,
+            )
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
+        if self.agent_backend == "pi":
+            preflight_agent_engine(
+                self.name,
+                backend="pi",
+                command=self.pi_command,
+                sandbox=bool(self.sandbox),
+            )
+        elif self.agent_backend == "codex":
+            preflight_agent_engine(
+                self.name,
+                backend="codex",
+                command=self.codex_command,
+                sandbox=bool(self.sandbox),
+            )
+        else:
+            preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
         budget = server.budget
 
         # When sandbox=True, force tempdir work_dir even if run_dir is set —
@@ -669,8 +893,10 @@ class MetaHarnessEngine:
         sessions_dir = work_dir / "sessions"
         sessions_dir.mkdir(parents=True, exist_ok=True)
 
-        session_ids: list[str] = []
-        total_proposer_cost = 0.0
+        session_ids: list[str | None] = []
+        total_proposer_cost: float | None = 0.0
+        numeric_proposer_cost = 0.0
+        total_proposer_cost_known = True
         cap = self.max_iterations if self.max_iterations is not None else 50
 
         run_start = time.time()
@@ -684,7 +910,7 @@ class MetaHarnessEngine:
 
             per_session_cap: float | None = None
             if self.max_token_cost is not None:
-                remaining = self.max_token_cost - total_proposer_cost
+                remaining = self.max_token_cost - numeric_proposer_cost
                 if remaining <= 0:
                     stop_reason = "token_budget_exhausted"
                     break
@@ -692,7 +918,7 @@ class MetaHarnessEngine:
 
             _log(
                 f"\n{_bold(f'[meta-harness] iteration {iteration}/{cap}')} "
-                f"{_dim(f'(evals used={budget.used}, cost=${total_proposer_cost:.3f})')}"
+                f"{_dim(f'(evals used={budget.used}, cost={_format_cost(total_proposer_cost)})')}"
             )
 
             pending_path = state_dir / f"pending_eval_iter{iteration}.json"
@@ -700,25 +926,62 @@ class MetaHarnessEngine:
                 pending_path.unlink()
 
             propose_start = time.time()
-            exit_code, cost, session_id = _run_proposer(
-                work_dir=work_dir,
-                iteration=iteration,
-                model=self.model,
-                effort=self.effort,
-                max_candidates=self.max_candidates_per_iter,
-                max_budget_usd=per_session_cap,
-                pending_path=pending_path,
-                log_dir=sessions_dir,
-                max_thinking_tokens=self.max_thinking_tokens,
-                sandbox=bool(self.sandbox),
-            )
+            proposer_cost_known = True
+            if self.agent_backend == "pi":
+                exit_code, cost, session_id = _run_pi_proposer(
+                    work_dir=work_dir,
+                    iteration=iteration,
+                    model=self.model,
+                    max_candidates=self.max_candidates_per_iter,
+                    max_budget_usd=per_session_cap,
+                    pending_path=pending_path,
+                    log_dir=sessions_dir,
+                    timeout_seconds=self.timeout_seconds,
+                    sandbox=bool(self.sandbox),
+                    pi_command=self.pi_command,
+                )
+            elif self.agent_backend == "codex":
+                exit_code, cost, session_id, proposer_cost_known = _run_codex_proposer(
+                    work_dir=work_dir,
+                    iteration=iteration,
+                    model=self.model,
+                    max_candidates=self.max_candidates_per_iter,
+                    max_budget_usd=per_session_cap,
+                    pending_path=pending_path,
+                    log_dir=sessions_dir,
+                    timeout_seconds=self.timeout_seconds,
+                    sandbox=bool(self.sandbox),
+                    codex_command=self.codex_command,
+                    input_cost_per_million=self.codex_input_cost_per_million,
+                    output_cost_per_million=self.codex_output_cost_per_million,
+                )
+            else:
+                exit_code, cost, session_id = _run_proposer(
+                    work_dir=work_dir,
+                    iteration=iteration,
+                    model=self.model,
+                    effort=self.effort,
+                    max_candidates=self.max_candidates_per_iter,
+                    max_budget_usd=per_session_cap,
+                    pending_path=pending_path,
+                    log_dir=sessions_dir,
+                    max_thinking_tokens=self.max_thinking_tokens,
+                    sandbox=bool(self.sandbox),
+                )
             propose_time = time.time() - propose_start
-            total_proposer_cost += cost
+            if cost is not None:
+                numeric_proposer_cost += cost
+            if cost is None or not proposer_cost_known:
+                total_proposer_cost_known = False
+                total_proposer_cost = None
+            elif total_proposer_cost_known:
+                total_proposer_cost = numeric_proposer_cost
             session_ids.append(session_id)
+            session_label = session_id[:8] if session_id else "<missing>"
 
             _log(
-                f"  {_cyan('proposer')} exit={exit_code} cost=${cost:.3f} "
-                f"time={_elapsed(propose_time)} session={session_id[:8]}"
+                f"  {_cyan('proposer')} exit={exit_code} cost={_format_cost(cost)} "
+                f"time={_elapsed(propose_time)} session={session_label}"
             )
 
             if exit_code != 0:
@@ -899,7 +1162,7 @@ class MetaHarnessEngine:
             f"\n{_bold('[meta-harness] done')} "
             f"reason={stop_reason} iters={iteration} "
             f"best={self._best_score(frontier_path)} "
-            f"evals={budget.used} proposer_cost=${total_proposer_cost:.3f}"
+            f"evals={budget.used} proposer_cost={_format_cost(total_proposer_cost)}"
         )
 
         best_candidate = cast(str, server.best_candidate)
@@ -920,10 +1183,24 @@ class MetaHarnessEngine:
             eval_log=server.eval_log,
             metadata={
                 "adapter_cost": total_proposer_cost,
+                "adapter_cost_known": (
+                    self.agent_backend != "codex" or total_proposer_cost_known
+                ),
+                "adapter_cost_estimate_usd": (
+                    total_proposer_cost
+                    if self.agent_backend != "codex" or total_proposer_cost_known
+                    else None
+                ),
+                "agent_backend": self.agent_backend,
                 "meta_harness": {
                     "iterations_run": iteration,
                     "stop_reason": stop_reason,
                     "proposer_cost": total_proposer_cost,
+                    "proposer_cost_estimate_usd": (
+                        total_proposer_cost
+                        if self.agent_backend != "codex" or total_proposer_cost_known
+                        else None
+                    ),
                     "session_ids": session_ids,
                     "work_dir": str(work_dir),
                     "frontier": self._read_frontier(frontier_path),
@@ -949,11 +1226,12 @@ class MetaHarnessEngine:
             return
         dest.mkdir(parents=True, exist_ok=True)
         work_dir = Path(result.metadata.get("work_dir", ""))
-        session_ids: list[str] = result.metadata.get("session_ids", []) or []
+        session_ids: list[str | None] = result.metadata.get("session_ids", []) or []
         transcripts_dir = dest / "sessions"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
         for sid in session_ids:
-            _copy_session_transcript(work_dir, sid, transcripts_dir)
+            if sid:
+                _copy_session_transcript(work_dir, sid, transcripts_dir)
         if work_dir.exists() and not _is_under(work_dir, dest):
             shutil.copytree(work_dir, dest / "work", dirs_exist_ok=True)
         if self._pending_tempdir is not None:

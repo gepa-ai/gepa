@@ -303,7 +303,13 @@ def optimize_adaptive_sequential(
     # max_evals cap and with only its own adapter_cost; restate both for the
     # whole run now that the scheduler has restored the shared budget.
     result.metadata["budget"] = server.budget.status()
-    result.metadata["total_cost"] = server.total_cost + float(result.metadata.get("adapter_cost", 0.0))
+    raw_adapter_cost = result.metadata.get("adapter_cost")
+    adapter_cost_known = result.metadata.get("adapter_cost_known", raw_adapter_cost is not None)
+    result.metadata["total_cost"] = (
+        server.total_cost + float(raw_adapter_cost)
+        if adapter_cost_known and raw_adapter_cost is not None
+        else None
+    )
 
     baseline_test = _score_test(server, task, task.seed_candidate)
     if result.best_candidate == task.seed_candidate:
@@ -572,7 +578,8 @@ def optimize_adaptive_sequential_with_server(
     no_improvement_slices = 0
     switches = 0
     idle_slices_in_round = 0
-    adapter_cost = 0.0
+    adapter_cost: float | None = 0.0
+    adapter_cost_known = True
 
     try:
         while not server.budget.exhausted:
@@ -606,8 +613,15 @@ def optimize_adaptive_sequential_with_server(
             eval_delta = after_evals - before_evals
             current_stage_evals += eval_delta
             stage_results.append(result)
-            result_cost = float(result.metadata.get("adapter_cost", 0.0))
-            adapter_cost += result_cost
+            raw_result_cost = result.metadata.get("adapter_cost")
+            result_cost_known = result.metadata.get("adapter_cost_known", raw_result_cost is not None)
+            if result_cost_known and raw_result_cost is not None and adapter_cost_known:
+                result_cost = float(raw_result_cost)
+                adapter_cost = (adapter_cost or 0.0) + result_cost
+            else:
+                result_cost = None
+                adapter_cost = None
+                adapter_cost_known = False
 
             improved = result.best_score > before_best + improvement_epsilon
             if best_so_far is None or result.best_score > best_so_far.best_score + improvement_epsilon:
@@ -682,6 +696,8 @@ def optimize_adaptive_sequential_with_server(
     final.metadata["adaptive_schedule"] = schedule
     final.metadata["adaptive_switches"] = switches
     final.metadata["adapter_cost"] = adapter_cost
+    final.metadata["adapter_cost_known"] = adapter_cost_known
+    final.metadata["adapter_cost_estimate_usd"] = adapter_cost if adapter_cost_known else None
     final.metadata["best_stage_score"] = best_so_far.best_score if best_so_far is not None else final.best_score
     final.metadata["best_stage_candidate"] = (
         best_so_far.best_candidate if best_so_far is not None else final.best_candidate

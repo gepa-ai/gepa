@@ -426,7 +426,7 @@ class EvalServer:
         return self.log_progress(avg_score, candidate=candidate)
 
     def log_progress(
-        self, val_score: float, candidate: str | None = None, reflection_cost: float = 0.0
+        self, val_score: float, candidate: str | None = None, reflection_cost: float | None = 0.0
     ) -> dict[str, Any]:
         """Record a progress checkpoint."""
         candidate_id: int | None = None

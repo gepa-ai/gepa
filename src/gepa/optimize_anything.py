@@ -58,6 +58,7 @@ from gepa.gepa_launcher import (
     make_litellm_lm,
     set_log_context,
 )
+from gepa.oa.agent_runner import AgentRunner, AgentRunResult, CodexAgentRunner, PiAgentRunner
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
@@ -295,8 +296,12 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
     result.eval_log = server.eval_log
     result.metadata.setdefault("wall_time", time.time() - start)
     result.metadata["budget"] = server.budget.status()
-    adapter_cost = float(result.metadata.get("adapter_cost", 0.0))
-    result.metadata["total_cost"] = server.total_cost + adapter_cost
+    raw_adapter_cost = result.metadata.get("adapter_cost", 0.0)
+    adapter_cost_known = result.metadata.get("adapter_cost_known", raw_adapter_cost is not None)
+    if adapter_cost_known and raw_adapter_cost is not None:
+        result.metadata["total_cost"] = server.total_cost + float(raw_adapter_cost)
+    else:
+        result.metadata["total_cost"] = None
     result.metadata["progress_log"] = server.progress_log
     result.metadata["engine"] = engine.name
     if server.output_dir is not None:
@@ -392,6 +397,9 @@ def _resolve_output_dir(output_dir: str | Path | None, *, task: Task, engine_nam
 
 __all__ = [
     "AutoResearchEngine",
+    "AgentRunResult",
+    "AgentRunner",
+    "CodexAgentRunner",
     "BestOfNEngine",
     "BudgetExhausted",
     "BudgetTracker",
@@ -413,6 +421,7 @@ __all__ = [
     "MetaHarnessEngine",
     "OptimizationState",
     "OptimizeAnythingConfig",
+    "PiAgentRunner",
     "RefinerConfig",
     "ReflectionConfig",
     "Result",

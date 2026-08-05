@@ -1,7 +1,7 @@
-"""AutoResearch engine: black-box optimization via a Claude Code subprocess.
+"""AutoResearch engine: black-box optimization via an agent subprocess.
 
 The api creates an :class:`EvalServer` and starts its HTTP endpoint. This
-engine launches one ``claude --print`` session inside a work_dir laid out
+engine launches one configured agent session inside a work_dir laid out
 with ``program.md``, ``candidate.txt``, ``best_candidate.txt``, and an
 ``eval.sh`` script that POSTs to the eval server. Budget enforcement happens
 server-side (HTTP 429 on exhaustion); LLM cost is bounded via
@@ -29,10 +29,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gepa.oa.agent_runner import (
+    CodexAgentRunner,
+    PiAgentRunner,
+    normalize_codex_output,
+    validate_codex_pricing,
+)
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.engines.claude_utils import copy_session_transcript
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
+from gepa.oa.sandbox import (
+    DENY_WEB_TOOLS,
+    bwrap_prefix,
+    claude_permission_args,
+    pi_sandbox_prefix,
+    preflight_agent_engine,
+    preflight_claude_engine,
+)
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
@@ -49,11 +62,18 @@ class AutoResearchConfig:
     Populated from ``OptimizeAnythingConfig.engine_config``.
 
     Attributes:
-        model: Claude model id. Versioned default — pin for reproducibility;
-            pass ``"sonnet"`` / ``"opus"`` to track Anthropic's current default.
-        ralph: Continue one Claude Code session via repeated
-            ``claude --resume`` while budget remains. Stops early on a zero-cost
-            iteration (no progress) or a claude error.
+        model: Agent model id. The Claude default remains for backwards
+            compatibility; Pi profiles should always pass an explicit
+            provider/model string. Codex may use the authenticated CLI default.
+        agent_backend: ``"claude"`` (legacy), ``"pi"``, or ``"codex"``. There
+            is no implicit fallback when an agent backend is requested.
+        pi_command: Pi executable or absolute path.
+        codex_command: Codex executable or absolute path.
+        codex_input_cost_per_million: Optional input-token USD rate.
+        codex_output_cost_per_million: Optional output-token USD rate.
+        ralph: Continue one agent session while budget remains. Claude uses
+            ``--resume``; Pi uses one persistent RPC process; Codex resumes one
+            persisted thread.
         max_no_eval_seconds: Terminate the subprocess after this many seconds
             without an eval call. ``None`` disables the guard.
         handoffs: Prior-stage artifacts for sequential compositions — each item
@@ -63,7 +83,12 @@ class AutoResearchConfig:
         max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
     """
 
-    model: str = "claude-sonnet-4-6"
+    model: str | None = "claude-sonnet-4-6"
+    agent_backend: str = "claude"
+    pi_command: str = "pi"
+    codex_command: str = "codex"
+    codex_input_cost_per_million: float | None = None
+    codex_output_cost_per_million: float | None = None
     ralph: bool = True
     max_no_eval_seconds: float | None = None
     handoffs: list[dict[str, Any]] | None = None
@@ -74,11 +99,18 @@ class AutoResearchConfig:
         # yaml/CLI may pass ralph as a string ("false") and max_no_eval_seconds
         # as a string/int; coerce to the declared types.
         self.ralph = _config_bool(self.ralph)
+        self.agent_backend = str(self.agent_backend).strip().lower()
+        if self.agent_backend not in {"claude", "pi", "codex"}:
+            raise ValueError("autoresearch agent_backend must be 'claude', 'pi', or 'codex'")
+        if self.agent_backend == "pi" and self.model == "claude-sonnet-4-6":
+            raise ValueError("autoresearch with agent_backend='pi' requires an explicit provider/model")
+        if self.agent_backend == "codex" and self.model == "claude-sonnet-4-6":
+            self.model = None
         if self.max_no_eval_seconds is not None:
             self.max_no_eval_seconds = float(self.max_no_eval_seconds)
 
 
-# Nudge fed to claude --resume on each Ralph iteration.
+# Nudge fed to the configured agent on each Ralph iteration.
 RALPH_CONTINUE_PROMPT = (
     "Continue iterating on the candidate. Re-read program.md if needed. "
     "Run ./eval.sh as appropriate. "
@@ -464,7 +496,7 @@ def _safe_name(value: str) -> str:
 
 
 class AutoResearchEngine:
-    """Black-box research optimizer backed by Claude Code.
+    """Black-box research optimizer backed by Claude Code, Pi, or Codex.
 
     Engine-specific options come from ``OptimizeAnythingConfig.engine_config``,
     parsed into :class:`AutoResearchConfig`.
@@ -475,6 +507,11 @@ class AutoResearchEngine:
     def __init__(self, config: OptimizeAnythingConfig) -> None:
         engine_config = AutoResearchConfig(**config.engine_config)
         self.model = engine_config.model
+        self.agent_backend = engine_config.agent_backend
+        self.pi_command = engine_config.pi_command
+        self.codex_command = engine_config.codex_command
+        self.codex_input_cost_per_million = engine_config.codex_input_cost_per_million
+        self.codex_output_cost_per_million = engine_config.codex_output_cost_per_million
         self.ralph = engine_config.ralph
         self.max_no_eval_seconds = engine_config.max_no_eval_seconds
         self.handoffs = engine_config.handoffs
@@ -483,13 +520,40 @@ class AutoResearchEngine:
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.sandbox = config.sandbox
-        # Proposer-cost cap: USD the claude subprocess(es) may spend. Enforced
-        # via --max-budget-usd; the eval server never sees proposer spend.
+        # Proposer-cost cap: USD the configured agent subprocess(es) may spend.
+        # Claude receives --max-budget-usd; Pi is monitored through events.
         self.max_token_cost = config.max_token_cost
+        if self.agent_backend == "codex":
+            validate_codex_pricing(
+                self.max_token_cost,
+                self.codex_input_cost_per_million,
+                self.codex_output_cost_per_million,
+            )
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
+        self._pi_runner: PiAgentRunner | None = None
+        self._pi_session_id: str | None = None
+        self._codex_runner: CodexAgentRunner | None = None
+        self._codex_session_id: str | None = None
+        self._codex_cost_known = True
+        self._codex_usage: dict[str, Any] = {}
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
+        if self.agent_backend == "pi":
+            preflight_agent_engine(
+                self.name,
+                backend="pi",
+                command=self.pi_command,
+                sandbox=bool(self.sandbox),
+            )
+        elif self.agent_backend == "codex":
+            preflight_agent_engine(
+                self.name,
+                backend="codex",
+                command=self.codex_command,
+                sandbox=bool(self.sandbox),
+            )
+        else:
+            preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
         budget = server.budget
 
         # When sandbox=True, force tempdir work_dir even if run_dir is set.
@@ -540,9 +604,9 @@ class AutoResearchEngine:
 
         adapter_cost = 0.0
         ralph_iterations = 1
-        invocations: list[dict[str, float | int | None]] = []
+        invocations: list[dict[str, Any]] = []
 
-        proc = self._run_claude(
+        proc = self._run_agent(
             work_dir=work_dir,
             session_id=session_id,
             prompt=prompt,
@@ -557,15 +621,27 @@ class AutoResearchEngine:
             and "NO_EVAL_PROGRESS" not in proc.stderr
             and not _saw_budget_exhausted(proc)
         ):
+            artifact_dir = self._persist_failure_artifacts(server, work_dir)
+            self._close_agent_runners()
+            diagnostics = f" diagnostics={artifact_dir}" if artifact_dir is not None else ""
             raise RuntimeError(
-                "Claude Code subprocess failed "
+                f"{self.agent_backend} agent subprocess failed "
                 f"(exit {proc.returncode}). "
                 f"stdout_tail={_tail_text(proc.stdout)!r} "
-                f"stderr_tail={_tail_text(proc.stderr)!r}"
+                f"stderr_tail={_tail_text(proc.stderr)!r}{diagnostics}"
             )
-        iter_cost = _extract_claude_cost(proc.stdout)
-        adapter_cost += iter_cost
-        invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
+        iter_cost = self._extract_agent_cost(proc.stdout)
+        adapter_cost += iter_cost or 0.0
+        invocation = {"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode}
+        if self.agent_backend == "codex":
+            invocation.update(
+                {
+                    "usage": dict(self._codex_usage),
+                    "cost_known": self._codex_cost_known,
+                    "cost_estimate_usd": iter_cost if self._codex_cost_known else None,
+                }
+            )
+        invocations.append(invocation)
 
         if self.ralph:
             while ralph_iterations < _RALPH_SAFETY_ITERATION_CAP:
@@ -581,7 +657,7 @@ class AutoResearchEngine:
                     break
                 if proc.returncode != 0:
                     break
-                proc = self._run_claude(
+                proc = self._run_agent(
                     work_dir=work_dir,
                     session_id=session_id,
                     prompt=RALPH_CONTINUE_PROMPT,
@@ -590,9 +666,18 @@ class AutoResearchEngine:
                     resume=True,
                     env=env,
                 )
-                iter_cost = _extract_claude_cost(proc.stdout)
-                adapter_cost += iter_cost
-                invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
+                iter_cost = self._extract_agent_cost(proc.stdout)
+                adapter_cost += iter_cost or 0.0
+                invocation = {"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode}
+                if self.agent_backend == "codex":
+                    invocation.update(
+                        {
+                            "usage": dict(self._codex_usage),
+                            "cost_known": self._codex_cost_known,
+                            "cost_estimate_usd": iter_cost if self._codex_cost_known else None,
+                        }
+                    )
+                invocations.append(invocation)
                 if _saw_budget_exhausted(proc):
                     break
                 if proc.returncode != 0:
@@ -600,8 +685,12 @@ class AutoResearchEngine:
                 ralph_iterations += 1
                 # Iteration produced no measurable cost — agent likely
                 # has no more progress to make. Stop spending.
-                if iter_cost < 0.001:
+                if iter_cost is not None and iter_cost < 0.001:
                     break
+
+        runner_session_id = self._codex_session_id if self.agent_backend == "codex" else self._pi_session_id
+        self._close_agent_runners()
+        adapter_cost_known = self.agent_backend != "codex" or self._codex_cost_known
 
         best_candidate = best_file.read_text() if best_file.exists() else seed_as_text(task.seed_candidate)
         best_score = server.best_score
@@ -618,13 +707,219 @@ class AutoResearchEngine:
             total_evals=server.budget.used,
             eval_log=server.eval_log,
             metadata={
-                "adapter_cost": adapter_cost,
+                "adapter_cost": adapter_cost if adapter_cost_known else None,
                 "session_id": session_id,
+                "agent_backend": self.agent_backend,
+                "runner_session_id": runner_session_id,
+                "adapter_cost_known": adapter_cost_known,
+                "adapter_cost_estimate_usd": (
+                    adapter_cost
+                    if adapter_cost_known
+                    else None
+                ),
                 "work_dir": str(work_dir),
                 "ralph_iterations": ralph_iterations,
                 "invocations": invocations,
             },
         )
+
+    def _run_agent(
+        self,
+        *,
+        work_dir: Path,
+        session_id: str,
+        prompt: str,
+        budget: BudgetTracker,
+        adapter_cost: float,
+        resume: bool,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        if self.agent_backend == "claude":
+            return self._run_claude(
+                work_dir=work_dir,
+                session_id=session_id,
+                prompt=prompt,
+                budget=budget,
+                adapter_cost=adapter_cost,
+                resume=resume,
+                env=env,
+            )
+        if self.agent_backend == "pi":
+            return self._run_pi(
+                work_dir=work_dir,
+                session_id=session_id,
+                prompt=prompt,
+                budget=budget,
+                adapter_cost=adapter_cost,
+                env=env,
+            )
+        return self._run_codex(
+            work_dir=work_dir,
+            prompt=prompt,
+            budget=budget,
+            adapter_cost=adapter_cost,
+            env=env,
+        )
+
+    def _run_pi(
+        self,
+        *,
+        work_dir: Path,
+        session_id: str,
+        prompt: str,
+        budget: BudgetTracker,
+        adapter_cost: float,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        del session_id
+        if self._pi_runner is None:
+            self._pi_runner = PiAgentRunner(
+                command=self.pi_command,
+                model=self.model,
+                persistent=True,
+                sandbox=bool(self.sandbox),
+                sandbox_prefix=pi_sandbox_prefix,
+                env={**env, "GEPA_OMNI_WORK_DIR": str(work_dir)},
+            )
+        last_eval_used = budget.used
+        last_eval_time = time.monotonic()
+        exhausted_since: float | None = None
+
+        def progress_check() -> str | None:
+            nonlocal last_eval_used, last_eval_time, exhausted_since
+            if budget.used != last_eval_used:
+                last_eval_used = budget.used
+                last_eval_time = time.monotonic()
+            if self.max_no_eval_seconds is not None and time.monotonic() - last_eval_time >= self.max_no_eval_seconds:
+                return f"NO_EVAL_PROGRESS: terminated Pi after {self.max_no_eval_seconds:.1f}s without eval progress."
+            if budget.exhausted:
+                if exhausted_since is None:
+                    exhausted_since = time.monotonic()
+                elif time.monotonic() - exhausted_since >= _BUDGET_EXHAUSTION_GRACE_SECONDS:
+                    return "BUDGET_EXHAUSTED: terminated Pi after eval budget was exhausted."
+            return None
+
+        try:
+            result = self._pi_runner.run(
+                prompt,
+                work_dir=work_dir,
+                progress_check=progress_check,
+                max_budget_usd=(None if self.max_token_cost is None else max(0.0, self.max_token_cost - adapter_cost)),
+            )
+        except BaseException:
+            self._close_pi_runner()
+            raise
+        self._pi_session_id = result.session_id
+        stdout = result.stdout
+        stderr = result.stderr
+        if result.returncode == 0 and not result.completed and not result.timed_out:
+            stderr += "\nPI_MALFORMED_OUTPUT: Pi exited without an agent_end event.\n"
+            returncode = 1
+        else:
+            returncode = result.returncode
+        return subprocess.CompletedProcess(result.command, returncode, stdout, stderr)
+
+    def _run_codex(
+        self,
+        *,
+        work_dir: Path,
+        prompt: str,
+        budget: BudgetTracker,
+        adapter_cost: float,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        if self._codex_runner is None:
+            self._codex_runner = CodexAgentRunner(
+                command=self.codex_command,
+                model=self.model,
+                persistent=True,
+                sandbox=bool(self.sandbox),
+                env={**env, "GEPA_OMNI_WORK_DIR": str(work_dir)},
+                input_cost_per_million=self.codex_input_cost_per_million,
+                output_cost_per_million=self.codex_output_cost_per_million,
+            )
+        last_eval_used = budget.used
+        last_eval_time = time.monotonic()
+        exhausted_since: float | None = None
+
+        def progress_check() -> str | None:
+            nonlocal last_eval_used, last_eval_time, exhausted_since
+            if budget.used != last_eval_used:
+                last_eval_used = budget.used
+                last_eval_time = time.monotonic()
+            if self.max_no_eval_seconds is not None and time.monotonic() - last_eval_time >= self.max_no_eval_seconds:
+                return f"NO_EVAL_PROGRESS: terminated Codex after {self.max_no_eval_seconds:.1f}s without eval progress."
+            if budget.exhausted:
+                if exhausted_since is None:
+                    exhausted_since = time.monotonic()
+                elif time.monotonic() - exhausted_since >= _BUDGET_EXHAUSTION_GRACE_SECONDS:
+                    return "BUDGET_EXHAUSTED: terminated Codex after eval budget was exhausted."
+            return None
+
+        try:
+            result = self._codex_runner.run(
+                prompt,
+                work_dir=work_dir,
+                progress_check=progress_check,
+                max_budget_usd=(None if self.max_token_cost is None else max(0.0, self.max_token_cost - adapter_cost)),
+            )
+        except BaseException:
+            self._close_agent_runners()
+            raise
+        self._codex_session_id = result.session_id
+        self._codex_usage = dict(result.usage)
+        self._codex_cost_known = self._codex_cost_known and result.cost_known
+        stdout = result.stdout
+        stderr = result.stderr
+        if result.returncode == 0 and not result.completed and not result.timed_out:
+            stderr += "\nCODEX_MALFORMED_OUTPUT: Codex exited without a completed turn.\n"
+            returncode = 1
+        else:
+            returncode = result.returncode
+        return subprocess.CompletedProcess(result.command, returncode, stdout, stderr)
+
+    def _extract_agent_cost(self, stdout: str) -> float | None:
+        if self.agent_backend == "pi":
+            from gepa.oa.agent_runner import normalize_pi_output
+
+            _usage, cost, _text, _completed = normalize_pi_output(stdout)
+            return float(cost or 0.0)
+        if self.agent_backend == "codex":
+            _usage, cost, _text, _session, _completed, _known = normalize_codex_output(
+                stdout,
+                input_cost_per_million=self.codex_input_cost_per_million,
+                output_cost_per_million=self.codex_output_cost_per_million,
+            )
+            return cost
+        return _extract_claude_cost(stdout)
+
+    def _persist_failure_artifacts(self, server: EvalServer, work_dir: Path) -> Path | None:
+        destination = getattr(server, "output_dir", None)
+        if destination is None and self.run_dir:
+            destination = Path(self.run_dir)
+        if destination is None:
+            return None
+        destination = Path(destination)
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            if _is_under(work_dir, destination):
+                return destination
+            persisted = destination / "work"
+            shutil.copytree(work_dir, persisted, dirs_exist_ok=True)
+            return persisted
+        except (OSError, shutil.Error):
+            return None
+
+    def _close_pi_runner(self) -> None:
+        if self._pi_runner is not None:
+            self._pi_runner.close()
+            self._pi_runner = None
+
+    def _close_agent_runners(self) -> None:
+        self._close_pi_runner()
+        if self._codex_runner is not None:
+            self._codex_runner.close()
+            self._codex_runner = None
 
     def _run_claude(
         self,
@@ -655,9 +950,9 @@ class AutoResearchEngine:
             "--print",
             "--output-format",
             "json",
-            "--model",
-            self.model,
         ]
+        if self.model:
+            cmd.extend(["--model", self.model])
         if resume:
             cmd.extend(["--resume", session_id])
         else:
@@ -759,7 +1054,11 @@ def _tail_text(text: str | None, *, max_chars: int = 2000) -> str:
 
 def _saw_budget_exhausted(proc: subprocess.CompletedProcess[str]) -> bool:
     """Return whether Claude observed the eval server's exhausted-budget marker."""
-    return _BUDGET_EXHAUSTED_MARKER in (proc.stdout or "") or _BUDGET_EXHAUSTED_MARKER in (proc.stderr or "")
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    return any(
+        marker in output
+        for marker in (_BUDGET_EXHAUSTED_MARKER, "CODEX_TOKEN_BUDGET", "CODEX_USAGE_MISSING")
+    )
 
 
 def _config_bool(value: object) -> bool:
