@@ -35,7 +35,7 @@ Running GEPA on a task can take hours because each optimization step waits for a
 
 This release adds batched parallel proposals. Instead of advancing one proposal at a time, a step can propose several candidates and dispatch their evaluations concurrently. This allows for evaluating more proposals at a time, so the same budget of metric calls finishes in less wall-clock time, and it delivers better results, by exploring more of the search tree per step. In our experiments, batching cut the wall-clock time down to about a quarter, while raising held-out test scores from 68.9% to 72.1% on LiveBench-Math and from 49.0% to 60.0% on HoVer.
 
-Faster and better optimization cycles reduce the barrier to running GEPA in the first place, and let power users test more ablations in the time one run used to take.
+Faster and better optimization makes GEPA more accessible, and lets you spend more budget in the same amount of time. Beyond the released features, we also introduce the axes of parallel scaling in reflective optimization, a potential area for future study.
 
 ## How parallel proposals work
 
@@ -104,7 +104,7 @@ We ran evaluations with up to 512 concurrent workers on LiveBench-Math and 64 on
 
 Figure 4 also shows that most batched settings match or beat single mutation on the held-out tests, and the best settings reach 72.1% against 68.9% on LiveBench-Math (2×2) and 60.0% against 49.0% on HoVer (8×1).
 
-### How to split a step between breadth (P) and depth (N)
+### How to split a step between parents (P) and mutations (N)
 
 In principle, larger P extends more members of the frontier at once, which should help when no single generally good candidate exists and the frontier holds genuinely different specialists worth advancing in parallel, and larger N draws more mutations with different mini-batches, which should help when the dataset is rich enough to expose many distinct directions to improve one candidate. LiveBench-Math is the second case, with problems spanning multiple areas, so giving each parent several mutations (larger N) transferred better to test than spreading single mutations across more parents (larger P). HoVer additionally keeps a more complementary candidate pool, where different candidates succeed on different claims, and its test scores tend to grow with both P and N. With P held at 2, test scores rise with N from 68.6 at 2×1 to 71.6-72.1 at 2×2 through 2×8 on LiveBench-Math, and from 52.5 to 55.0 on HoVer (as shown in Figure 4). Across our two tasks, N-heavy splits transferred better than P-heavy ones, but the compute-optimal split was task-dependent (2×2 on LiveBench-Math, 8×1 on HoVer). Which split is best for a given task and budget is an open question we think is worth studying.
 
@@ -172,7 +172,7 @@ For system-bound evaluations, `max_concurrency` may be constrained by available 
 
 Parallel proposals fit into the bigger picture of scaling each reflection optimization step along several dials. The worker pool $W$ is not itself an optimization dial: it is execution capacity that can constrain the observed benefits of scaling P and N when held fixed. P controls how many programs are selected for mutation at each step, and N controls how many mutations are proposed for each selected program. A third dial is the size of the reflection mini-batch per mutation: approaches like [ComBEE](https://gepa-ai.github.io/gepa/blog/2026/04/09/gepa-at-scale-with-combee/) scale this dial by reflecting on larger mini-batches of examples and rollouts through a map-reduce-style pipeline. Finally, a fourth dial is the compute spent within each reflection step. It can be turned up by using stronger reflection programs ranging from a single LM call to chain-of-thought, multi-step pipelines, or agentic workflows such as [Claude Code](https://gepa-ai.github.io/gepa/guides/claude-cli-as-proposer/). In each case, more compute is spent to produce a higher-information mutation at each step.
 
-With this, GEPA now exposes four independently tunable dials for spending more optimization compute per step: P, N, reflection mini-batch (ComBEE), and reflection compute (reflection LM, proposers). They interact through a shared optimization budget.
+With this, GEPA now exposes four independently tunable dials for spending more optimization compute per step: P, N, reflection mini-batch (ComBEE), and reflection compute (reflection LM, proposers). They interact through a shared optimization budget (metric calls, tokens, or dollars). Parallel proposals are one way to spend it. The open question is how to allocate a fixed optimization budget across these dials, and this work is a first look at that trade-off.
 
 [^batchopt]: David Ginsbourger, Rodolphe Le Riche, and Laurent Carraro, "[Kriging is well-suited to parallelize optimization](https://link.springer.com/chapter/10.1007/978-3-642-10701-6_6)," 2010.
 [^scaling]: Gene M. Amdahl, "[Validity of the single processor approach to achieving large scale computing capabilities](https://dl.acm.org/doi/10.1145/1465482.1465560)," AFIPS 1967.
