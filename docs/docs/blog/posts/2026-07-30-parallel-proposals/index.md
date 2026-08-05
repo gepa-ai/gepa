@@ -159,9 +159,7 @@ result = optimize_anything(
 )
 ```
 
-GEPA by default calls your `evaluate` function in parallel, so set `max_concurrency` high enough to match the capacity of your evaluator and inference provider. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, [Harbor](https://harborframework.com/), and more) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details.
-
-For system-bound evaluations, `max_concurrency` may be constrained by available CPU, GPU, or cluster capacity. For API-backed optimization, much larger worker pools may be practical, subject to provider rate limits and budget. 
+GEPA by default calls your `evaluate` function in parallel, so set `max_concurrency` high enough to match the capacity of your evaluator and inference provider. For system-bound evaluations, `max_concurrency` may be constrained by available CPU, GPU, or cluster capacity. For API-backed optimization, much larger worker pools may be practical, subject to provider rate limits and budget. Optionally, you may provide a custom `batch_evaluate` function via the `batch_evaluator` argument. Since the GEPA engine remains single-threaded and dependency-free, the parallelism is entirely yours to choose. You can plug in any concurrency or distributed-execution framework (Ray, Slurm, Modal, Daytona, [Harbor](https://harborframework.com/), and more) to run your evaluations, and any inference backend that supports batch completion to run reflections in parallel, with no changes to GEPA itself. You may also choose or define other sampling and selection strategies. See the [API reference](https://gepa-ai.github.io/gepa/api/) for more details.
 
 ## Appendix: Axes of parallel scaling
 
