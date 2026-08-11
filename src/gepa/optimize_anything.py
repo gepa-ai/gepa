@@ -27,6 +27,7 @@ Example:
 from __future__ import annotations
 
 import dataclasses
+import os
 import time
 import uuid
 import warnings
@@ -227,14 +228,25 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
     The whole config rides through ``engine_config`` field-for-field (so nested
     configs and callbacks survive as objects); the launcher's eval budget
     becomes ``max_evals`` — ``None`` stays unbounded, as in the launcher.
+
+    The launcher's parallelism settings size the eval server, which gates all
+    evaluation: ``parallel=False`` maps to ``max_concurrency=1``, an explicit
+    ``max_workers`` maps to itself, and ``max_workers=None`` falls back to
+    ``os.cpu_count() or 32`` (the same fallback as ``EngineConfig.max_workers``'s
+    default factory).
     """
     from gepa.gepa_launcher import GEPAConfig
 
     if not isinstance(config, GEPAConfig):
         raise TypeError(f"config must be an OptimizeAnythingConfig or GEPAConfig, got {type(config).__name__}")
+    if not config.engine.parallel:
+        max_concurrency = 1
+    else:
+        max_concurrency = config.engine.max_workers or (os.cpu_count() or 32)
     return OptimizeAnythingConfig(
         engine="gepa",
         max_evals=config.engine.max_metric_calls,
+        max_concurrency=max_concurrency,
         engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
     )
 
