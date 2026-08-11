@@ -101,6 +101,34 @@ def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
     assert result.val_aggregate_scores[result.best_idx] == max(result.val_aggregate_scores)
 
 
+def test_legacy_max_workers_sizes_the_eval_server():
+    """``EngineConfig.max_workers`` becomes the eval server's
+    ``max_concurrency``; without the mapping every legacy run is silently
+    gated at the server default regardless of the requested width."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=512)))
+    assert converted.max_concurrency == 512
+
+
+def test_legacy_parallel_false_maps_to_sequential_eval_server():
+    """``parallel=False`` meant sequential evaluation in the launcher."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(parallel=False, max_workers=512)))
+    assert converted.max_concurrency == 1
+
+
+def test_legacy_max_workers_none_falls_back_to_cpu_count():
+    """``max_workers=None`` mirrors the field's own default factory."""
+    import os
+
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=None)))
+    assert converted.max_concurrency == (os.cpu_count() or 32)
+
+
 def test_legacy_gepa_config_rejects_test_set():
     """``test_set`` is a new-API feature; combining it with a legacy
     ``GEPAConfig`` fails fast instead of silently dropping the test scores."""
