@@ -27,7 +27,7 @@ FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, 
 """Key type for frontier mappings depending on frontier_type."""
 
 CandidateHash: TypeAlias = str
-CacheKey: TypeAlias = tuple[CandidateHash, DataId] | tuple[CandidateHash, str, DataId]
+CacheKey: TypeAlias = tuple[CandidateHash, str, DataId]
 
 TRAINSET_CACHE_SPLIT = "train"
 VALSET_CACHE_SPLIT = "val"
@@ -39,6 +39,10 @@ can be answered with the rollout of an unrelated trainset example. Callers that 
 valset which is a *distinct* loader from the trainset pass ``VALSET_CACHE_SPLIT``; when the two are
 the same loader the ids mean the same thing and both sides share ``TRAINSET_CACHE_SPLIT`` so results
 are still reused across minibatch and valset evaluation.
+
+Every key carries its split, including the trainset one. Caches persisted before splits existed are
+unnamespaced and therefore already contaminated, so they are dropped on resume rather than reused
+(see :meth:`EvaluationCache.drop_unsplit_entries`).
 """
 
 
@@ -85,11 +89,20 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def _key(candidate_hash: CandidateHash, example_id: DataId, split: str) -> CacheKey:
-        # The default split keeps the two-element key that earlier versions wrote, so caches
-        # persisted before splits existed stay readable on resume.
-        if split == TRAINSET_CACHE_SPLIT:
-            return (candidate_hash, example_id)
         return (candidate_hash, split, example_id)
+
+    def drop_unsplit_entries(self) -> int:
+        """Discard entries written before splits existed. Returns the number dropped.
+
+        Those keys are ``(candidate_hash, example_id)`` with no namespace, so a valset rollout and
+        the trainset rollout at the same position were stored under the same key. They can no longer
+        be served (every lookup is namespaced now), and keeping them would grow the persisted state
+        on every resume, so ``GEPAState.load`` drops them.
+        """
+        stale = [k for k in self._cache if len(k) != 3]
+        for k in stale:
+            del self._cache[k]
+        return len(stale)
 
     def get(
         self, candidate: dict[str, str], example_id: DataId, split: str = TRAINSET_CACHE_SPLIT
@@ -733,6 +746,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             version = data.get("validation_schema_version")
         if version is None or version < GEPAState._VALIDATION_SCHEMA_VERSION:
             GEPAState._upgrade_state_dict(data)
+
+        # Pre-split caches are unnamespaced, so a valset rollout could be stored under the key a
+        # trainset lookup now uses. They are never served (all keys carry a split) — drop them so
+        # they do not ride along in every subsequent save.
+        cache = data.get("evaluation_cache")
+        if cache is not None:
+            cache.drop_unsplit_entries()
 
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(data)

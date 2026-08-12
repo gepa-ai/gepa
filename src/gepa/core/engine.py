@@ -174,11 +174,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Valset ids only mean the same thing as minibatch ids when both come from the same loader.
         # When they do not, valset results need their own cache namespace or a valset lookup can be
         # answered by the rollout of the trainset example that happens to sit at the same position.
-        self.valset_cache_split = valset_cache_split or (
-            TRAINSET_CACHE_SPLIT
-            if self.valset is not None and self.valset is getattr(reflective_proposer, "trainset", None)
-            else VALSET_CACHE_SPLIT
-        )
+        if valset_cache_split is None:
+            valset_cache_split = (
+                TRAINSET_CACHE_SPLIT
+                if self.valset is not None and self.valset is getattr(reflective_proposer, "trainset", None)
+                else VALSET_CACHE_SPLIT
+            )
+        self.valset_cache_split = valset_cache_split
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score

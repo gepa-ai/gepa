@@ -1379,7 +1379,7 @@ def optimize_anything(
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(effective_dataset)
-    val_loader = ensure_loader(valset) if valset is not None else train_loader
+    val_loader = train_loader if valset is None or valset is effective_dataset else ensure_loader(valset)
     # Both loaders number their examples from zero, so a distinct valset needs its own cache
     # namespace; when it *is* the trainset the ids agree and results are shared as before.
     valset_cache_split = TRAINSET_CACHE_SPLIT if val_loader is train_loader else VALSET_CACHE_SPLIT
