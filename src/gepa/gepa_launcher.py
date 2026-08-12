@@ -136,7 +136,7 @@ from gepa.core.callbacks import GEPACallback, ReflectiveDatasetDumpCallback
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
-from gepa.core.state import EvaluationCache, FrontierType
+from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, EvaluationCache, FrontierType
 from gepa.image import Image  # noqa: F401 — re-exported for user convenience
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
@@ -1380,6 +1380,9 @@ def optimize_anything(
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(effective_dataset)
     val_loader = ensure_loader(valset) if valset is not None else train_loader
+    # Both loaders number their examples from zero, so a distinct valset needs its own cache
+    # namespace; when it *is* the trainset the ids agree and results are shared as before.
+    valset_cache_split = TRAINSET_CACHE_SPLIT if val_loader is train_loader else VALSET_CACHE_SPLIT
 
     # --- 1. Validate and setup reflection LM ---
     if needs_seed_generation and config.reflection.reflection_lm is None:
@@ -1716,6 +1719,7 @@ def optimize_anything(
             rng=rng,
             val_overlap_floor=config.merge.merge_val_overlap_floor,
             callbacks=config.callbacks,
+            valset_cache_split=valset_cache_split,
         )
 
     # --- 13. Create evaluation cache if enabled ---
@@ -1747,6 +1751,7 @@ def optimize_anything(
         use_cloudpickle=config.engine.use_cloudpickle,
         write_agent_state=config.engine.write_agent_state,
         evaluation_cache=evaluation_cache,
+        valset_cache_split=valset_cache_split,
     )
 
     # --- 16. Run optimization ---

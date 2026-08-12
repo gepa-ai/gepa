@@ -27,7 +27,19 @@ FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, 
 """Key type for frontier mappings depending on frontier_type."""
 
 CandidateHash: TypeAlias = str
-CacheKey: TypeAlias = tuple[CandidateHash, DataId]
+CacheKey: TypeAlias = tuple[CandidateHash, DataId] | tuple[CandidateHash, str, DataId]
+
+TRAINSET_CACHE_SPLIT = "train"
+VALSET_CACHE_SPLIT = "val"
+"""Cache namespaces for the two datasets.
+
+Data loaders identify examples by position, so a trainset and a separate valset both number their
+examples from zero. Without a namespace the two collide in the evaluation cache and a valset lookup
+can be answered with the rollout of an unrelated trainset example. Callers that evaluate against a
+valset which is a *distinct* loader from the trainset pass ``VALSET_CACHE_SPLIT``; when the two are
+the same loader the ids mean the same thing and both sides share ``TRAINSET_CACHE_SPLIT`` so results
+are still reused across minibatch and valset evaluation.
+"""
 
 
 def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
@@ -71,9 +83,19 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
 
     _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
 
-    def get(self, candidate: dict[str, str], example_id: DataId) -> CachedEvaluation[RolloutOutput] | None:
+    @staticmethod
+    def _key(candidate_hash: CandidateHash, example_id: DataId, split: str) -> CacheKey:
+        # The default split keeps the two-element key that earlier versions wrote, so caches
+        # persisted before splits existed stay readable on resume.
+        if split == TRAINSET_CACHE_SPLIT:
+            return (candidate_hash, example_id)
+        return (candidate_hash, split, example_id)
+
+    def get(
+        self, candidate: dict[str, str], example_id: DataId, split: str = TRAINSET_CACHE_SPLIT
+    ) -> CachedEvaluation[RolloutOutput] | None:
         """Retrieve cached evaluation result if it exists."""
-        return self._cache.get((_candidate_hash(candidate), example_id))
+        return self._cache.get(self._key(_candidate_hash(candidate), example_id, split))
 
     def put(
         self,
@@ -82,18 +104,20 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         output: RolloutOutput,
         score: float,
         objective_scores: ObjectiveScores | None = None,
+        split: str = TRAINSET_CACHE_SPLIT,
     ) -> None:
         """Store an evaluation result in the cache."""
-        self._cache[(_candidate_hash(candidate), example_id)] = CachedEvaluation(output, score, objective_scores)
+        key = self._key(_candidate_hash(candidate), example_id, split)
+        self._cache[key] = CachedEvaluation(output, score, objective_scores)
 
     def get_batch(
-        self, candidate: dict[str, str], example_ids: list[DataId]
+        self, candidate: dict[str, str], example_ids: list[DataId], split: str = TRAINSET_CACHE_SPLIT
     ) -> tuple[dict[DataId, CachedEvaluation[RolloutOutput]], list[DataId]]:
         """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
         h = _candidate_hash(candidate)
         cached, uncached = {}, []
         for eid in example_ids:
-            if entry := self._cache.get((h, eid)):
+            if entry := self._cache.get(self._key(h, eid, split)):
                 cached[eid] = entry
             else:
                 uncached.append(eid)
@@ -106,11 +130,12 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         outputs: list[RolloutOutput],
         scores: list[float],
         objective_scores_list: Sequence[ObjectiveScores] | None = None,
+        split: str = TRAINSET_CACHE_SPLIT,
     ) -> None:
         """Store evaluation results for a batch of examples."""
         h = _candidate_hash(candidate)
         for i, eid in enumerate(example_ids):
-            self._cache[(h, eid)] = CachedEvaluation(
+            self._cache[self._key(h, eid, split)] = CachedEvaluation(
                 outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
             )
 
@@ -120,13 +145,14 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        split: str = TRAINSET_CACHE_SPLIT,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
         """
         Evaluate using cache, returning full results.
 
         Returns (outputs_by_id, scores_by_id, objective_scores_by_id, num_actual_evals).
         """
-        cached, uncached_ids = self.get_batch(candidate, example_ids)
+        cached, uncached_ids = self.get_batch(candidate, example_ids, split)
 
         outputs_by_id: dict[DataId, RolloutOutput] = {eid: c.output for eid, c in cached.items()}
         scores_by_id: dict[DataId, float] = {eid: c.score for eid, c in cached.items()}
@@ -148,7 +174,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
                 if obj_scores is not None:
                     objective_by_id = objective_by_id or {}
                     objective_by_id[eid] = obj_scores[idx]
-            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores)
+            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores, split)
 
         return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
 
@@ -995,9 +1021,12 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        split: str = TRAINSET_CACHE_SPLIT,
     ) -> tuple[list[float], int]:
         """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
-        _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(candidate, example_ids, fetcher, evaluator)
+        _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(
+            candidate, example_ids, fetcher, evaluator, split
+        )
         return [scores_by_id[eid] for eid in example_ids], num_actual_evals
 
     def cached_evaluate_full(
@@ -1006,10 +1035,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        split: str = TRAINSET_CACHE_SPLIT,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
         """Evaluate with optional caching, returning full results."""
         if self.evaluation_cache is not None:
-            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator)
+            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator, split)
         batch = fetcher(example_ids)
         outputs, scores, objective_scores = evaluator(batch, candidate)
         outputs_by_id = dict(zip(example_ids, outputs, strict=False))

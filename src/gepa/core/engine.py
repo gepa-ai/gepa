@@ -36,6 +36,8 @@ from gepa.core.callbacks import (
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import (
     SEED_ITERATION_ID,
+    TRAINSET_CACHE_SPLIT,
+    VALSET_CACHE_SPLIT,
     EvaluationCache,
     FrontierType,
     GEPAState,
@@ -144,6 +146,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        valset_cache_split: str | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -168,6 +171,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.evaluator = evaluator
 
         self.valset = ensure_loader(valset) if valset is not None else None
+        # Valset ids only mean the same thing as minibatch ids when both come from the same loader.
+        # When they do not, valset results need their own cache namespace or a valset lookup can be
+        # answered by the rollout of the trainset example that happens to sit at the same position.
+        self.valset_cache_split = valset_cache_split or (
+            TRAINSET_CACHE_SPLIT
+            if self.valset is not None and self.valset is getattr(reflective_proposer, "trainset", None)
+            else VALSET_CACHE_SPLIT
+        )
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score
@@ -303,7 +314,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         for program in programs:
             val_ids = list(self.val_evaluation_policy.get_eval_batch(valset, state))
             if cache is not None:
-                cached, uncached = cache.get_batch(program, val_ids)
+                cached, uncached = cache.get_batch(program, val_ids, self.valset_cache_split)
             else:
                 cached, uncached = {}, val_ids
             cached_per.append(cached)
@@ -339,7 +350,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         objective_by = objective_by or {}
                         objective_by[eid] = obj[j]
                 if cache is not None:
-                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj)
+                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj, self.valset_cache_split)
 
             results.append(
                 (
