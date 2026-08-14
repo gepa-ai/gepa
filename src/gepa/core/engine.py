@@ -9,11 +9,9 @@ from typing import Any, Generic
 
 from gepa.core.adapter import (
     DataInst,
-    EvaluationBatch,
     GEPAAdapter,
     RolloutOutput,
     Trajectory,
-    default_batch_evaluate,
 )
 from gepa.core.callbacks import (
     BudgetUpdatedEvent,
@@ -253,13 +251,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         programs: list[dict[str, str]],
         state: GEPAState[RolloutOutput, DataId],
     ) -> list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]]:
-        """Evaluate candidates on the valset, read-only, via ``adapter.batch_evaluate``.
+        """Evaluate candidates on the valset, read-only, without capturing traces.
 
-        Cache-miss examples across all candidates go out in one batched call, so
-        parallelism (if any) is the adapter's. Honors the eval cache and
-        ``val_evaluation_policy``. Returns each evaluation with its metric-call
-        count (cache misses); the budget is incremented later in
-        :meth:`_add_evaluated_program`, not here.
+        Honors the eval cache and ``val_evaluation_policy``. Returns each
+        evaluation with its metric-call count (cache misses); the budget is
+        incremented later in :meth:`_add_evaluated_program`, not here.
         """
         valset = self.valset
         assert valset is not None
@@ -309,10 +305,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             cached_per.append(cached)
             todo_per.append(uncached)
 
-        # 2) One adapter call over every (program, cache-miss examples) pair.
+        # 2) Evaluate each program's cache-miss examples without capturing traces.
         eval_idxs = [i for i, todo in enumerate(todo_per) if todo]
         items = [(programs[i], valset.fetch(todo_per[i])) for i in eval_idxs]
-        fresh = self._batch_evaluate(items) if items else []
+        fresh = [self.adapter.evaluate(batch, program, capture_traces=False) for program, batch in items]
         fresh_by_idx = dict(zip(eval_idxs, fresh, strict=True))
 
         # 3) Merge cached + fresh per program, repopulating the cache.
@@ -352,13 +348,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
             )
         return results
-
-    def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
-        """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
-        batch_fn = getattr(self.adapter, "batch_evaluate", None)
-        if batch_fn is not None:
-            return batch_fn(items)
-        return default_batch_evaluate(self.adapter, items)
 
     def _run_full_eval_and_add(
         self,
@@ -648,7 +637,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 trace_entry["proposal_accepted"] = False
             return False
 
-        # 3) Full-valset eval of the selected candidates (one batched, read-only call).
+        # 3) Full-valset eval of the selected candidates (read-only, without traces).
         valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
 
         # 4) Add each selected candidate to the pool, in order.

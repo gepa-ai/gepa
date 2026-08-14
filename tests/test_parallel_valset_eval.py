@@ -1,12 +1,10 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""End-to-end test for batched full-valset eval of multiple accepted candidates.
+"""End-to-end tests for evaluating multiple accepted candidates.
 
 A multi-proposal sampler (``IndependentSampling``) can accept several candidates
-in one iteration. Their full-valset evaluations are batched into a single
-``adapter.batch_evaluate`` call (where any parallelism lives), while the engine
-stays single-threaded and pool/Pareto mutation stays sequential.
+in one iteration while the engine keeps pool/Pareto mutation sequential.
 """
 
 from gepa.core.adapter import EvaluationBatch
@@ -41,11 +39,16 @@ class ImprovingAdapter:
 
 
 class BatchImprovingAdapter(ImprovingAdapter):
-    """Adds a real ``batch_evaluate`` and records the items of each call."""
+    """Records trace behavior across direct and batched evaluations."""
 
     def __init__(self):
         super().__init__()
         self.batch_calls: list[int] = []
+        self.evaluate_calls: list[tuple[str, str, bool]] = []
+
+    def evaluate(self, batch, candidate, capture_traces=False):
+        self.evaluate_calls.append((batch[0]["split"], candidate["system_prompt"], capture_traces))
+        return super().evaluate(batch, candidate, capture_traces)
 
     def batch_evaluate(self, items):
         self.batch_calls.append(len(items))
@@ -57,8 +60,8 @@ def _run(adapter, sampling_strategy, tmp_path):
 
     return gepa.optimize(
         seed_candidate={"system_prompt": "s"},
-        trainset=[{"id": i} for i in range(4)],
-        valset=[{"id": i} for i in range(4)],
+        trainset=[{"id": i, "split": "train"} for i in range(4)],
+        valset=[{"id": i, "split": "val"} for i in range(4)],
         adapter=adapter,
         max_metric_calls=300,
         reflection_lm=None,
@@ -79,14 +82,16 @@ def test_multiple_candidates_accepted_and_evaluated_in_one_iteration(tmp_path):
     assert max(result.val_aggregate_scores) >= result.val_aggregate_scores[0]
 
 
-def test_accepted_candidates_share_one_batch_evaluate_call(tmp_path):
-    """When the adapter implements batch_evaluate, the valset evals of all
-    candidates accepted in one iteration go out as a single batched call."""
+def test_val_evaluations_are_trace_free_while_reflective_evaluations_are_traced(tmp_path):
     adapter = BatchImprovingAdapter()
-    result = _run(adapter, IndependentSampling(3), tmp_path)
-    assert len(result.candidates) > 2
-    # At least one iteration batched several candidates into one batch_evaluate call.
-    assert any(n > 1 for n in adapter.batch_calls)
+    _run(adapter, SingleMutationSampling(), tmp_path)
+
+    seed_prompt = "s"
+    accepted_prompts = {candidate for split, candidate, _ in adapter.evaluate_calls if split == "val"} - {seed_prompt}
+    assert accepted_prompts
+    assert all(not capture_traces for split, _, capture_traces in adapter.evaluate_calls if split == "val")
+    assert all(capture_traces for split, _, capture_traces in adapter.evaluate_calls if split == "train")
+    assert adapter.batch_calls
 
 
 def test_single_mutation_still_works(tmp_path):
