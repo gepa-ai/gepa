@@ -13,7 +13,7 @@ from gepa.core.adapter import (
     ProposalFn,
     RolloutOutput,
     Trajectory,
-    default_batch_evaluate,
+    invoke_batch_evaluate,
 )
 from gepa.core.callbacks import (
     CandidateSelectedEvent,
@@ -277,10 +277,7 @@ class ReflectiveMutationProposer:
 
     def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
         """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
-        batch_fn = getattr(self.adapter, "batch_evaluate", None)
-        if batch_fn is not None:
-            return batch_fn(items)
-        return default_batch_evaluate(self.adapter, items)
+        return invoke_batch_evaluate(self.adapter, items, capture_traces=True)
 
     # ------------------------------------------------------------------
     # Main proposal method

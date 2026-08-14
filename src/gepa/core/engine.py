@@ -9,11 +9,10 @@ from typing import Any, Generic
 
 from gepa.core.adapter import (
     DataInst,
-    EvaluationBatch,
     GEPAAdapter,
     RolloutOutput,
     Trajectory,
-    default_batch_evaluate,
+    invoke_batch_evaluate,
 )
 from gepa.core.callbacks import (
     BudgetUpdatedEvent,
@@ -312,7 +311,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # 2) One adapter call over every (program, cache-miss examples) pair.
         eval_idxs = [i for i, todo in enumerate(todo_per) if todo]
         items = [(programs[i], valset.fetch(todo_per[i])) for i in eval_idxs]
-        fresh = self._batch_evaluate(items) if items else []
+        fresh = invoke_batch_evaluate(self.adapter, items, capture_traces=False) if items else []
         fresh_by_idx = dict(zip(eval_idxs, fresh, strict=True))
 
         # 3) Merge cached + fresh per program, repopulating the cache.
@@ -352,13 +351,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
             )
         return results
-
-    def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
-        """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
-        batch_fn = getattr(self.adapter, "batch_evaluate", None)
-        if batch_fn is not None:
-            return batch_fn(items)
-        return default_batch_evaluate(self.adapter, items)
 
     def _run_full_eval_and_add(
         self,

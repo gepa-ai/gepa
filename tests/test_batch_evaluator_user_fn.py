@@ -144,6 +144,11 @@ def test_batch_path_packaging_matches_sequential_path():
     assert batched[1].outputs[0][1] == {"bias": "100"}
 
 
+def test_batch_path_honors_capture_traces_false():
+    results = _make_adapter(batch_evaluator=_user_batch_fn).batch_evaluate(ITEMS, capture_traces=False)
+    assert all(result.trajectories is None for result in results)
+
+
 def test_batch_path_updates_best_evals_for_warm_start():
     """B1: the top-K best-eval buffer must be populated on the batch path."""
     adapter = _make_adapter(batch_evaluator=_user_batch_fn)
