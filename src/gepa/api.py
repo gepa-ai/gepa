@@ -18,7 +18,7 @@ from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, 
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
-from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, EvaluationCache, FrontierType
+from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -221,9 +221,6 @@ def optimize(
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
     val_loader = train_loader if valset is None or valset is trainset else ensure_loader(valset)
-    # Both loaders number their examples from zero, so a distinct valset needs its own cache
-    # namespace; when it *is* the trainset the ids agree and results are shared as before.
-    valset_cache_split = TRAINSET_CACHE_SPLIT if val_loader is train_loader else VALSET_CACHE_SPLIT
 
     # Validate that only one custom proposal method is provided
     adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
@@ -460,7 +457,6 @@ def optimize(
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
             callbacks=callbacks,
-            valset_cache_split=valset_cache_split,
         )
 
     engine = GEPAEngine(
@@ -486,7 +482,6 @@ def optimize(
         use_cloudpickle=use_cloudpickle,
         write_agent_state=write_agent_state,
         evaluation_cache=evaluation_cache,
-        valset_cache_split=valset_cache_split,
     )
 
     with experiment_tracker:

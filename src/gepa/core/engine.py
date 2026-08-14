@@ -146,7 +146,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
-        valset_cache_split: str | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -171,16 +170,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.evaluator = evaluator
 
         self.valset = ensure_loader(valset) if valset is not None else None
-        # Valset ids only mean the same thing as minibatch ids when both come from the same loader.
-        # When they do not, valset results need their own cache namespace or a valset lookup can be
-        # answered by the rollout of the trainset example that happens to sit at the same position.
-        if valset_cache_split is None:
-            valset_cache_split = (
-                TRAINSET_CACHE_SPLIT
-                if self.valset is not None and self.valset is getattr(reflective_proposer, "trainset", None)
-                else VALSET_CACHE_SPLIT
-            )
-        self.valset_cache_split = valset_cache_split
+        self.valset_cache_split = (
+            TRAINSET_CACHE_SPLIT
+            if self.valset is not None and self.valset is getattr(reflective_proposer, "trainset", None)
+            else VALSET_CACHE_SPLIT
+        )
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score
@@ -194,6 +188,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Merge scheduling flags (mirroring previous behavior)
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
+            self.merge_proposer.valset_cache_split = self.valset_cache_split
 
         self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
         self.selection_strategy: SelectionStrategy = selection_strategy or AllImprovements()
@@ -316,7 +311,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         for program in programs:
             val_ids = list(self.val_evaluation_policy.get_eval_batch(valset, state))
             if cache is not None:
-                cached, uncached = cache.get_batch(program, val_ids, self.valset_cache_split)
+                cached, uncached = cache.get_batch(program, val_ids, split=self.valset_cache_split)
             else:
                 cached, uncached = {}, val_ids
             cached_per.append(cached)
@@ -352,7 +347,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         objective_by = objective_by or {}
                         objective_by[eid] = obj[j]
                 if cache is not None:
-                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj, self.valset_cache_split)
+                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj, split=self.valset_cache_split)
 
             results.append(
                 (

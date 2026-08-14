@@ -138,7 +138,7 @@ def test_cache_split_isolates_identical_example_ids():
 def test_every_key_carries_its_split():
     """Including the trainset one: an unnamespaced key can never be served again."""
     cache: EvaluationCache = EvaluationCache()
-    cache.put({"text": "c"}, 7, "rollout", 1.0)
+    cache.put({"text": "c"}, 7, "rollout", 1.0, split=TRAINSET_CACHE_SPLIT)
 
     (key,) = cache._cache
     assert key[1] == TRAINSET_CACHE_SPLIT, f"trainset key is not namespaced: {key}"
@@ -148,7 +148,7 @@ def test_caches_written_before_splits_are_dropped_on_resume(tmp_path):
     """A pre-split cache is already contaminated, so resume must not carry it forward."""
     cache: EvaluationCache = EvaluationCache()
     candidate = {"text": "c"}
-    cache.put(candidate, 0, "train rollout", 1.0)
+    cache.put(candidate, 0, "train rollout", 1.0, split=TRAINSET_CACHE_SPLIT)
     # What earlier versions wrote: no namespace, so a valset rollout landed on the trainset key.
     cache._cache[(_candidate_hash(candidate), 0)] = CachedEvaluation("val rollout", 0.0, None)
 
@@ -158,7 +158,7 @@ def test_caches_written_before_splits_are_dropped_on_resume(tmp_path):
 
     assert reloaded.evaluation_cache is not None
     assert all(len(key) == 3 for key in reloaded.evaluation_cache._cache), "pre-split entries survived resume"
-    assert reloaded.evaluation_cache.get(candidate, 0).output == "train rollout"
+    assert reloaded.evaluation_cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT).output == "train rollout"
 
 
 def _seeded_state(cache: EvaluationCache) -> GEPAState:
