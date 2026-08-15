@@ -107,14 +107,12 @@ class MyAdapter:
         ...  # e.g. fan out across threads, processes, or an eval service
 ```
 
-Reflective minibatches pass `capture_traces=True`; seed and accepted-candidate
-full-val batches pass `False`. Existing batch adapters must accept this keyword;
-adapters implementing only `evaluate()` continue using the sequential fallback.
-
-With `write_agent_state=True`, full-val evaluation intentionally remains traced
-and sequential. The reflection LM side is batched analogously: the built-in
-stateless reflector batches all per-component reflection calls via
-`litellm.batch_completion`.
+Third-party adapters that only implement `evaluate()` keep working unmodified
+(`default_batch_evaluate` is the sequential fallback). Batch adapters receive
+`capture_traces=True` for reflection and `False` for seed and accepted-candidate
+full-val evaluation, so existing implementations must accept the new keyword.
+The reflection LM side is batched analogously: the built-in stateless reflector
+batches all per-component reflection calls via `litellm.batch_completion`.
 
 ### `batch_evaluator`: one external call for the whole batch
 
