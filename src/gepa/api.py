@@ -195,7 +195,8 @@ def optimize(
     # Reproducibility
     - seed: The seed to use for the random number generator.
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
-    - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
+    - raise_on_exception: Whether to propagate proposer/evaluator exceptions immediately. When False, GEPA can
+      continue after failures that consumed metric budget, but re-raises zero-progress failures to prevent infinite retries.
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
