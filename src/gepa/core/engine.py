@@ -752,11 +752,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ),
                 )
 
-            outputs, scores, objective_scores = self.evaluator(valset.fetch(val_ids), program)
-            outputs_dict = dict(zip(val_ids, outputs, strict=False))
-            scores_dict = dict(zip(val_ids, scores, strict=False))
+            (eval_result,) = invoke_batch_evaluate(
+                self.adapter,
+                [(program, valset.fetch(val_ids))],
+                capture_traces=False,
+            )
+            outputs_dict = dict(zip(val_ids, eval_result.outputs, strict=False))
+            scores_dict = dict(zip(val_ids, eval_result.scores, strict=False))
             objective_scores_dict = (
-                dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+                dict(zip(val_ids, eval_result.objective_scores, strict=False))
+                if eval_result.objective_scores is not None
+                else None
             )
             return ValsetEvaluation(
                 outputs_by_val_id=outputs_dict,
@@ -899,6 +905,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             assert state.is_consistent()
             proposal_accepted = False
             iteration_started = False
+            evals_before_iteration = state.total_num_evals
             try:
                 self._sync_adapter_state_to_state(state)
                 state.save(
@@ -1029,6 +1036,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
                 self.logger.log(traceback.format_exc())
+                made_progress = state.total_num_evals > evals_before_iteration
                 # Notify error callback
                 notify_callbacks(
                     self.callbacks,
@@ -1036,10 +1044,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ErrorEvent(
                         iteration=state.i + 1,
                         exception=e,
-                        will_continue=not self.raise_on_exception,
+                        will_continue=not self.raise_on_exception and made_progress,
                     ),
                 )
-                if self.raise_on_exception:
+                if self.raise_on_exception or not made_progress:
                     raise e
                 else:
                     continue

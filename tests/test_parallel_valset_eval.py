@@ -87,6 +87,7 @@ def test_trace_aware_adapter_batches_accepted_candidates_without_traces(tmp_path
     adapter = TraceAwareBatchImprovingAdapter()
     result = _run(adapter, IndependentSampling(3), tmp_path)
     assert len(result.candidates) > 2
+    assert adapter.batch_calls[0] == ("val", 1, False)
     assert any(split == "val" and n > 1 and capture_traces is False for split, n, capture_traces in adapter.batch_calls)
     assert any(split == "train" and capture_traces is True for split, _, capture_traces in adapter.batch_calls)
 
@@ -102,6 +103,39 @@ def test_legacy_batch_adapter_gets_clear_contract_error():
             [({"system_prompt": "s"}, [{"split": "train"}])],
             capture_traces=True,
         )
+
+
+def test_batch_error_without_budget_progress_does_not_loop_when_exceptions_are_suppressed(tmp_path):
+    class BrokenAdapter(ImprovingAdapter):
+        def __init__(self):
+            super().__init__()
+            self.batch_calls = 0
+
+        def batch_evaluate(self, items, *, capture_traces=True):
+            self.batch_calls += 1
+            if capture_traces:
+                raise TypeError("adapter bug")
+            return [
+                self.evaluate(batch, candidate, capture_traces=False)
+                for candidate, batch in items
+            ]
+
+    adapter = BrokenAdapter()
+    with pytest.raises(TypeError, match="adapter bug"):
+        import gepa
+
+        gepa.optimize(
+            seed_candidate={"system_prompt": "s"},
+            trainset=[{"id": 0, "split": "train"}],
+            valset=[{"id": 0, "split": "val"}],
+            adapter=adapter,
+            max_metric_calls=20,
+            reflection_lm=None,
+            raise_on_exception=False,
+            run_dir=str(tmp_path),
+        )
+
+    assert adapter.batch_calls == 2  # One seed evaluation, then one failed reflective evaluation.
 
 
 def test_runtime_batch_type_error_is_not_retried_sequentially():

@@ -112,6 +112,11 @@ full-val batches pass `False`. Adapters implementing the older one-argument
 `batch_evaluate(items)` contract must add the keyword argument. Adapter
 exceptions propagate without retry.
 
+The same rule applies to direct `evaluate()` calls, whose `capture_traces`
+default is `False`: scores and outputs are always returned, while trajectories
+are returned only when explicitly requested. `OptimizeAnythingAdapter` now
+follows this contract instead of always returning its `side_info` as trajectories.
+
 With `write_agent_state=True`, full-val evaluation intentionally remains traced
 and sequential. The reflection LM side is batched analogously: the built-in
 stateless reflector batches all per-component reflection calls via
