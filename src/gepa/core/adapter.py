@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
@@ -250,20 +249,8 @@ def invoke_batch_evaluate(
     *,
     capture_traces: bool = True,
 ) -> list[EvaluationBatch]:
-    """Use an adapter's optional batch evaluator without breaking legacy implementations."""
+    """Use an adapter's optional trace-aware batch evaluator."""
     batch_fn = getattr(adapter, "batch_evaluate", None)
     if batch_fn is not None:
-        try:
-            parameters = inspect.signature(batch_fn).parameters.values()
-        except (TypeError, ValueError):
-            parameters = ()
-        supports_trace_mode = any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD
-            or (parameter.name == "capture_traces" and parameter.kind != inspect.Parameter.POSITIONAL_ONLY)
-            for parameter in parameters
-        )
-        if supports_trace_mode:
-            return batch_fn(items, capture_traces=capture_traces)
-        if capture_traces:
-            return batch_fn(items)
+        return batch_fn(items, capture_traces=capture_traces)
     return default_batch_evaluate(adapter, items, capture_traces=capture_traces)

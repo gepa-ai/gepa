@@ -108,9 +108,9 @@ class MyAdapter:
 ```
 
 Reflective parent/child minibatches pass `capture_traces=True`; accepted-candidate
-full-val batches pass `False`. Legacy one-argument `batch_evaluate` adapters keep
-reflective batching but use the ordered, sequential, trace-free fallback for
-full-val evaluation. Adapter exceptions propagate without retry.
+full-val batches pass `False`. Adapters implementing the older one-argument
+`batch_evaluate(items)` contract must add the keyword argument. Adapter
+exceptions propagate without retry.
 
 With `write_agent_state=True`, full-val evaluation intentionally remains traced
 and sequential. The reflection LM side is batched analogously: the built-in

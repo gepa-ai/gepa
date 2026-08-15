@@ -44,18 +44,6 @@ class ImprovingAdapter:
         return out
 
 
-class BatchImprovingAdapter(ImprovingAdapter):
-    """Adds a real ``batch_evaluate`` and records the items of each call."""
-
-    def __init__(self):
-        super().__init__()
-        self.batch_calls: list[tuple[str, int]] = []
-
-    def batch_evaluate(self, items):
-        self.batch_calls.append((items[0][1][0]["split"], len(items)))
-        return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
-
-
 class TraceAwareBatchImprovingAdapter(ImprovingAdapter):
     def __init__(self):
         super().__init__()
@@ -103,16 +91,17 @@ def test_trace_aware_adapter_batches_accepted_candidates_without_traces(tmp_path
     assert any(split == "train" and capture_traces is True for split, _, capture_traces in adapter.batch_calls)
 
 
-def test_legacy_adapter_batches_reflection_and_falls_back_for_full_val(tmp_path):
-    adapter = BatchImprovingAdapter()
-    result = _run(adapter, IndependentSampling(3), tmp_path)
-    assert len(result.candidates) > 2
-    assert adapter.batch_calls
-    assert all(split == "train" for split, _ in adapter.batch_calls)
-    assert all(capture_traces is True for split, _, capture_traces in adapter.evaluate_calls if split == "train")
-    accepted_val_calls = [call for call in adapter.evaluate_calls if call[0] == "val" and call[1] != "s"]
-    assert accepted_val_calls
-    assert all(capture_traces is False for _, _, capture_traces in accepted_val_calls)
+def test_legacy_batch_adapter_gets_clear_contract_error():
+    class LegacyAdapter(ImprovingAdapter):
+        def batch_evaluate(self, items):
+            return []
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'capture_traces'"):
+        invoke_batch_evaluate(
+            LegacyAdapter(),
+            [({"system_prompt": "s"}, [{"split": "train"}])],
+            capture_traces=True,
+        )
 
 
 def test_runtime_batch_type_error_is_not_retried_sequentially():
