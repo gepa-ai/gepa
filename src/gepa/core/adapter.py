@@ -139,9 +139,6 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
         with the failed example, including the error message, identifying the reason for the failure.
       - Reserve exceptions for unrecoverable, systemic failures (e.g., missing model,
         misconfigured program, schema mismatch).
-      - If an exception is raised with `raise_on_exception=False`, the engine continues only
-        when that iteration consumed metric budget. Zero-progress failures are re-raised to
-        prevent an infinite retry loop.
     """
 
     def evaluate(

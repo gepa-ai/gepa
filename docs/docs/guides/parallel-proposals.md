@@ -107,15 +107,9 @@ class MyAdapter:
         ...  # e.g. fan out across threads, processes, or an eval service
 ```
 
-Reflective parent/child minibatches pass `capture_traces=True`; accepted-candidate
-full-val batches pass `False`. Adapters implementing the older one-argument
-`batch_evaluate(items)` contract must add the keyword argument. Adapter
-exceptions propagate without retry.
-
-The same rule applies to direct `evaluate()` calls, whose `capture_traces`
-default is `False`: scores and outputs are always returned, while trajectories
-are returned only when explicitly requested. `OptimizeAnythingAdapter` now
-follows this contract instead of always returning its `side_info` as trajectories.
+Reflective minibatches pass `capture_traces=True`; seed and accepted-candidate
+full-val batches pass `False`. Existing batch adapters must accept this keyword;
+adapters implementing only `evaluate()` continue using the sequential fallback.
 
 With `write_agent_state=True`, full-val evaluation intentionally remains traced
 and sequential. The reflection LM side is batched analogously: the built-in
