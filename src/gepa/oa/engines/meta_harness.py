@@ -1,6 +1,6 @@
-"""Meta-Harness engine: iterative candidate proposal via Claude Code.
+"""Meta-Harness engine: iterative candidate proposal via a coding-agent CLI.
 
-The proposer (a Claude subprocess) reads frontier + history and writes
+The proposer (Claude Code or Codex) reads frontier + history and writes
 ``pending_eval.json`` listing 1+ candidates; the engine benchmarks each one
 through the optimize_anything eval server, updates state files, and loops until the
 budget is exhausted or ``max_iterations`` is hit.
@@ -17,13 +17,20 @@ import sys
 import tempfile
 import time
 import uuid
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
+from gepa.oa.sandbox import (
+    DENY_WEB_TOOLS,
+    bwrap_prefix,
+    claude_permission_args,
+    preflight_claude_engine,
+    preflight_codex_engine,
+)
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
 
@@ -31,6 +38,9 @@ if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
     from gepa.oa.task import Task
+
+_DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
+_DEFAULT_CODEX_MODEL = "gpt-5.6-terra"
 
 
 @dataclass
@@ -40,15 +50,21 @@ class MetaHarnessConfig:
     Populated from ``OptimizeAnythingConfig.engine_config``.
 
     Attributes:
-        model: Proposer model id. Versioned default — pin for reproducibility;
-            pass ``"sonnet"`` / ``"opus"`` to track Anthropic's current default.
+        proposer: Coding-agent CLI that proposes candidates — ``"claude"``
+            (default, Claude Code) or ``"codex"`` (OpenAI Codex CLI).
+            ``"claude-code"`` is accepted as an alias of ``"claude"``.
+        model: Proposer model id. Claude default is ``claude-sonnet-4-6``;
+            when ``proposer="codex"`` and the Claude default is left in place,
+            it is rewritten to ``gpt-5.6-terra``.
         max_iterations: Hard cap on proposer sessions. ``None`` = until budget.
         max_candidates_per_iter: Upper bound on candidates per iteration.
-        effort: ``claude --effort`` value (CLI flag).
+        effort: ``claude --effort`` value (CLI flag). Ignored for Codex.
         max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+            Ignored for Codex.
     """
 
-    model: str = "claude-sonnet-4-6"
+    proposer: str = "claude"
+    model: str = _DEFAULT_CLAUDE_MODEL
     max_iterations: int | None = None
     max_candidates_per_iter: int = 3
     effort: str | None = None
@@ -56,6 +72,20 @@ class MetaHarnessConfig:
 
     def __post_init__(self) -> None:
         self.max_candidates_per_iter = max(1, int(self.max_candidates_per_iter))
+        raw = (self.proposer or "claude").strip().lower()
+        if raw in ("claude", "claude-code"):
+            self.proposer = "claude"
+        elif raw == "codex":
+            self.proposer = "codex"
+        else:
+            raise ValueError(f"MetaHarnessConfig.proposer must be 'claude' or 'codex', got {self.proposer!r}")
+        if self.proposer == "codex" and self.model == _DEFAULT_CLAUDE_MODEL:
+            self.model = _DEFAULT_CODEX_MODEL
+        if self.proposer == "codex" and (self.effort is not None or self.max_thinking_tokens is not None):
+            warnings.warn(
+                "meta_harness proposer='codex' ignores engine_config effort / max_thinking_tokens (Claude CLI knobs)",
+                stacklevel=2,
+            )
 
 
 SKILL_MD = """\
@@ -201,6 +231,145 @@ Treat `evolution_summary.jsonl`, `frontier.json`, and any prior `agents/iter*.tx
 """
 
 
+# Codex reads project instructions from AGENTS.md (tool-agnostic wording).
+AGENTS_MD = """\
+# Meta-Harness (Candidate Evolution)
+
+Run ONE iteration of candidate evolution. Do all work in the main session — do NOT delegate to subagents. Constraints get lost when you delegate, leading to parameter-only changes and skipped prototyping.
+
+**You do NOT run benchmarks.** You analyze results, prototype changes, and write new candidate files. The outer loop (the meta_harness engine) handles benchmarking separately.
+
+## CRITICAL CONSTRAINTS
+
+- You MUST implement up to `max_candidates` new candidates every iteration (cap given in the task prompt; aim for 3 unless told otherwise).
+- Do NOT write "the frontier is optimal" or "stop iterating", or abort early.
+- ALWAYS complete all steps including prototyping.
+- Design candidates as a mix of exploitation and exploration.
+
+### Anti-parameter-tuning rules
+
+The most common failure mode is creating candidates that are just parameter variants of existing ones. Check `evolution_summary.jsonl` for what's been tried — parameter sweeps (constants, thresholds, length caps, retry counts) almost always regress or tie.
+
+**Good candidates change a fundamental mechanism:**
+
+- A new algorithmic approach (e.g. a different solver structure, a different decomposition)
+- A new prompt architecture (e.g. organize by failure clusters instead of listing rules sequentially)
+- A new control-flow strategy (e.g. multi-pass refinement vs. single-shot, conditional branching on input shape)
+- A new representation (e.g. tabular vs. narrative, normalized vs. raw)
+
+**Bad candidates just tune numbers.** If the candidate text differs from a previous one only by changing constants, it's a parameter variant. Rewrite with a genuinely novel mechanism.
+
+**Combining ideas is valid.** Take one mechanism from candidate A and another from candidate B, or draw on published approaches.
+
+If the last 3 iterations explored the same axis (prompt wording, retrieval count, etc.), pick a different axis.
+
+### Anti-overfitting rules
+
+- **No example-specific hints.** Do not hardcode knowledge about specific test inputs you've seen. Candidates must be general-purpose.
+- **Never echo example identifiers** in candidate code, prompts, or comments.
+- **General patterns are OK.** Rules like "favor short outputs when ambiguous" or "validate the parse before submitting" are fine — they apply broadly.
+
+## Budget
+
+Token-cost and eval-count budgets are enforced by the engine, not by you. Don't try to ration evals or refuse to propose because "budget might run out" — if the cap is reached, the engine simply stops spawning new proposer sessions. Your only job is to produce strong candidates this iteration.
+
+## WORKFLOW
+
+**Do ALL steps yourself in the main session.**
+
+### Step 0: Post-eval reports (write if missing)
+
+Check the reports directory (path in the task prompt's "Run directories" section). For each past iteration that has results in `evolution_summary.jsonl` but NO report, write one. Each report should be **<=30 lines** covering: what changed, which candidates improved/regressed and why, and a takeaway for future iterations.
+
+### Step 1: Analyze
+
+1. **Read all state files:**
+   - `task.md` — task objective + background + evaluation model
+   - `evolution_summary.jsonl` — what's been tried (one JSON per candidate)
+   - `frontier.json` — overall best (`best_name` / `best_score` /
+     `best_candidate_file`) **plus** `per_example`: a dict mapping each
+     example id to the candidate that scored highest on it
+     (`{best_name, score, file}`). The per-example frontier is the
+     strongest signal for *combination* candidates — when different
+     candidates win different examples, read both and design a new one
+     that fuses their mechanisms.
+   - `agents/baseline.txt` — the seed candidate
+   - top-scoring `agents/iter*.txt` files (use `frontier.json["per_example"]`
+     to identify per-example winners worth reading)
+   - `state/eval_traces/<candidate_name>/*.json` — per-eval records from the
+     eval server for every previously-scored candidate. **This is the most
+     important source for failure analysis.** Each JSON contains the full
+     `info` dict (compile errors, judge messages, per-example scores for
+     dataset tasks, logs, status). Read the traces of the best-and-worst
+     candidates to understand *why* they scored as they did before designing
+     new candidates.
+
+2. Formulate hypotheses — each must be falsifiable and target a different mechanism.
+
+### Step 2: Prototype — MANDATORY
+
+**You MUST prototype your mechanism before writing the final candidate.** Do NOT skip this step. Candidates that skip prototyping tend to have bugs or produce no improvement.
+
+For each candidate:
+
+1. Write a sketch in `scratch/` (inside the run's work dir) that exercises the core idea in isolation (run code candidates manually; for prompt candidates, at least re-read and self-critique).
+2. Try 2-3 variants and compare before picking the best one.
+3. Delete sketches when done.
+
+### Step 3: Implement
+
+For each candidate:
+
+1. Copy a top-performing existing candidate (or `agents/baseline.txt`) as a starting point, then make targeted modifications. Copy-then-edit ensures correct formatting and proven structure.
+2. Implement the new mechanism according to your hypothesis.
+3. **Self-critique (mandatory):** After writing, re-read the file and check: does this candidate introduce a genuinely NEW mechanism, or is it just a parameter variant? If only constants differ from the base, REWRITE with a truly novel mechanism.
+
+The benchmark auto-discovers files in `agents/` — you don't need to register candidates anywhere else.
+
+### Step 4: Write pending_eval.json
+
+Write to the path specified in the task prompt (NOT hardcoded — it may be in a run-specific subdirectory):
+
+```json
+{
+  "iteration": <N>,
+  "candidates": [
+    {
+      "name": "<snake_case_name>",
+      "file": "agents/iter<N>_<name>.txt",
+      "hypothesis": "<falsifiable claim>",
+      "axis": "exploitation|exploration",
+      "base": "<what it builds on>",
+      "components": ["tag1", "tag2", "..."]
+    }
+  ]
+}
+```
+
+Output: `CANDIDATES: <name1>, <name2>, <name3>`
+
+## Candidate format
+
+A candidate is the **entire text content of a single file** at `agents/iter<N>_<name>.txt`. Whatever you write there — code, a prompt, JSON, whatever the task expects — is what the eval server scores. Read `task.md` to learn what shape the task expects.
+
+- Create new candidate files by writing their full contents (do not leave stubs).
+- `agents/baseline.txt` is the seed; treat it as read-only.
+- Don't write outside `agents/` or the pending_eval.json path.
+
+## evolution_summary.jsonl Format
+
+One JSON object per line, one line per evaluated candidate:
+
+```json
+{"iteration": 1, "name": "example_candidate", "score": 45.0, "axis": "exploitation", "hypothesis": "...", "delta": +2.1, "outcome": "45.00 (+2.1)", "components": ["tag1", "tag2"]}
+```
+
+## Component Analysis
+
+Treat `evolution_summary.jsonl`, `frontier.json`, and any prior `agents/iter*.txt` files as the only shipped history sources.
+"""
+
+
 def _build_task_md(task: Task) -> str:
     optional = ""
     if task.objective:
@@ -224,15 +393,25 @@ def _build_task_md(task: Task) -> str:
     return f"# Task: {task.name}\n\n{optional}## Evaluation model\n\n{eval_section}\n"
 
 
-def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget: BudgetTracker) -> None:
+def _materialize_sandbox(
+    work_dir: Path,
+    task: Task,
+    server: EvalServer,
+    budget: BudgetTracker,
+    *,
+    proposer: str = "claude",
+) -> None:
     del budget
     work_dir.mkdir(parents=True, exist_ok=True)
 
     (work_dir / "task.md").write_text(_build_task_md(task))
 
-    skill_dir = work_dir / ".claude" / "skills" / "gepa-optimize-anything-meta-harness"
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    (skill_dir / "SKILL.md").write_text(SKILL_MD)
+    if proposer == "codex":
+        (work_dir / "AGENTS.md").write_text(AGENTS_MD)
+    else:
+        skill_dir = work_dir / ".claude" / "skills" / "gepa-optimize-anything-meta-harness"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(SKILL_MD)
 
     agents_dir = work_dir / "agents"
     agents_dir.mkdir(exist_ok=True)
@@ -277,21 +456,21 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
                 (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
 
-def _run_proposer(
+def _proposer_prompt(
     *,
     work_dir: Path,
     iteration: int,
-    model: str,
-    effort: str | None,
     max_candidates: int,
-    max_budget_usd: float | None,
     pending_path: Path,
-    log_dir: Path,
-    max_thinking_tokens: int | None = None,
-    sandbox: bool = True,
-) -> tuple[int, float, str]:
+    proposer: str,
+) -> str:
     state = work_dir / "state"
-    prompt = (
+    follow = (
+        "Follow the instructions in `AGENTS.md` at the work dir root."
+        if proposer == "codex"
+        else "Follow the gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
+    )
+    return (
         f"Run iteration {iteration} of the meta-harness evolution loop. "
         f"Produce up to {max_candidates} candidate(s).\n\n"
         f"## Run directories (absolute paths)\n"
@@ -302,10 +481,20 @@ def _run_proposer(
         f"- state/reports/: `{state / 'reports'}`\n"
         f"- agents/: `{work_dir / 'agents'}`\n"
         f"- Write pending_eval.json to: `{pending_path}`\n\n"
-        f"Follow the gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
+        f"{follow}"
     )
 
-    session_id = str(uuid.uuid4())
+
+def _build_claude_proposer_cmd(
+    *,
+    work_dir: Path,
+    prompt: str,
+    model: str,
+    effort: str | None,
+    max_budget_usd: float | None,
+    session_id: str,
+    sandbox: bool,
+) -> list[str]:
     cmd: list[str] = bwrap_prefix(work_dir) if sandbox else []
     cmd += [
         "claude",
@@ -327,6 +516,118 @@ def _run_proposer(
         cmd.extend(["--effort", effort])
     if max_budget_usd is not None:
         cmd.extend(["--max-budget-usd", f"{max_budget_usd:.4f}"])
+    return cmd
+
+
+def _build_codex_proposer_cmd(
+    *,
+    work_dir: Path,
+    prompt: str,
+    model: str,
+    sandbox: bool,
+) -> list[str]:
+    """Build ``codex exec`` argv for one meta-harness proposer session.
+
+    Sandbox ownership (one layer only):
+    - Linux + sandboxed → bwrap jail (``agent="codex"`` home binds) +
+      ``--dangerously-bypass-approvals-and-sandbox`` inside (Codex's own
+      sandbox nests poorly under bwrap).
+    - macOS + sandboxed → no bwrap; ``--sandbox workspace-write``.
+    - unsandboxed → ``--sandbox danger-full-access``.
+    """
+    cmd: list[str] = bwrap_prefix(work_dir, agent="codex") if sandbox else []
+    cmd += [
+        "codex",
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "-C",
+        str(work_dir.resolve()),
+        "-m",
+        model,
+    ]
+    if sandbox and _is_macos():
+        cmd.extend(["--sandbox", "workspace-write"])
+    elif sandbox:
+        # Linux bwrap owns isolation.
+        cmd.append("--dangerously-bypass-approvals-and-sandbox")
+    else:
+        cmd.extend(["--sandbox", "danger-full-access"])
+    cmd.append(prompt)
+    return cmd
+
+
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+def _run_proposer(
+    *,
+    work_dir: Path,
+    iteration: int,
+    model: str,
+    effort: str | None,
+    max_candidates: int,
+    max_budget_usd: float | None,
+    pending_path: Path,
+    log_dir: Path,
+    max_thinking_tokens: int | None = None,
+    sandbox: bool = True,
+    proposer: str = "claude",
+) -> tuple[int, float, str]:
+    prompt = _proposer_prompt(
+        work_dir=work_dir,
+        iteration=iteration,
+        max_candidates=max_candidates,
+        pending_path=pending_path,
+        proposer=proposer,
+    )
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    if proposer == "codex":
+        return _run_codex_proposer(
+            work_dir=work_dir,
+            iteration=iteration,
+            model=model,
+            prompt=prompt,
+            log_dir=log_dir,
+            sandbox=sandbox,
+        )
+    return _run_claude_proposer(
+        work_dir=work_dir,
+        iteration=iteration,
+        model=model,
+        effort=effort,
+        max_budget_usd=max_budget_usd,
+        prompt=prompt,
+        log_dir=log_dir,
+        max_thinking_tokens=max_thinking_tokens,
+        sandbox=sandbox,
+    )
+
+
+def _run_claude_proposer(
+    *,
+    work_dir: Path,
+    iteration: int,
+    model: str,
+    effort: str | None,
+    max_budget_usd: float | None,
+    prompt: str,
+    log_dir: Path,
+    max_thinking_tokens: int | None,
+    sandbox: bool,
+) -> tuple[int, float, str]:
+    session_id = str(uuid.uuid4())
+    cmd = _build_claude_proposer_cmd(
+        work_dir=work_dir,
+        prompt=prompt,
+        model=model,
+        effort=effort,
+        max_budget_usd=max_budget_usd,
+        session_id=session_id,
+        sandbox=sandbox,
+    )
 
     env = {**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)}
     env.pop("CLAUDECODE", None)
@@ -335,23 +636,21 @@ def _run_proposer(
         env["CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"] = "1"
         env["MAX_THINKING_TOKENS"] = str(max_thinking_tokens)
 
-    log_dir.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
     (log_dir / f"iter{iteration}_stdout.json").write_text(proc.stdout or "")
     (log_dir / f"iter{iteration}_stderr.txt").write_text(proc.stderr or "")
-    cost_usd, result_payload = _parse_proposer_result(proc.stdout or "")
+    cost_usd, result_payload = _parse_claude_proposer_result(proc.stdout or "")
 
     (log_dir / f"iter{iteration}_meta.json").write_text(
         json.dumps(
             {
                 "iteration": iteration,
+                "proposer": "claude",
                 "session_id": session_id,
                 "exit_code": proc.returncode,
                 "cost_usd": cost_usd,
                 "cmd": cmd,
                 "stderr_tail": (proc.stderr or "")[-2000:],
-                # Echo a few top-level result fields so a reviewer doesn't have
-                # to jump into stdout.json.
                 "result_summary": {
                     "duration_ms": result_payload.get("duration_ms"),
                     "num_turns": result_payload.get("num_turns"),
@@ -366,7 +665,54 @@ def _run_proposer(
     return proc.returncode, cost_usd, session_id
 
 
-def _parse_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
+def _run_codex_proposer(
+    *,
+    work_dir: Path,
+    iteration: int,
+    model: str,
+    prompt: str,
+    log_dir: Path,
+    sandbox: bool,
+) -> tuple[int, float, str]:
+    cmd = _build_codex_proposer_cmd(work_dir=work_dir, prompt=prompt, model=model, sandbox=sandbox)
+    env = {**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)}
+
+    proc = subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
+    (log_dir / f"iter{iteration}_stdout.jsonl").write_text(proc.stdout or "")
+    (log_dir / f"iter{iteration}_stderr.txt").write_text(proc.stderr or "")
+
+    parsed = _parse_codex_proposer_result(proc.stdout or "")
+    session_id = parsed["thread_id"] or str(uuid.uuid4())
+    # Surface turn.failed / error events as a non-zero logical exit even when
+    # the CLI itself returned 0 (defensive; usually the CLI exits non-zero).
+    exit_code = proc.returncode
+    if exit_code == 0 and parsed["is_error"]:
+        exit_code = 1
+
+    (log_dir / f"iter{iteration}_meta.json").write_text(
+        json.dumps(
+            {
+                "iteration": iteration,
+                "proposer": "codex",
+                "session_id": session_id,
+                "exit_code": exit_code,
+                # Codex JSONL exposes token usage but not USD; report 0.
+                "cost_usd": 0.0,
+                "cmd": cmd,
+                "stderr_tail": (proc.stderr or "")[-2000:],
+                "result_summary": {
+                    "usage": parsed["usage"],
+                    "is_error": parsed["is_error"],
+                    "error": parsed["error"],
+                },
+            },
+            indent=2,
+        )
+    )
+    return exit_code, 0.0, session_id
+
+
+def _parse_claude_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
     """Extract (cost_usd, result_payload) from ``claude --output-format json``.
 
     The CLI prints exactly one JSON object to stdout once the session ends:
@@ -401,6 +747,59 @@ def _parse_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
     except (TypeError, ValueError):
         cost = 0.0
     return cost, payload
+
+
+# Back-compat alias for callers / tests that imported the old name.
+_parse_proposer_result = _parse_claude_proposer_result
+
+
+def _parse_codex_proposer_result(stdout: str) -> dict[str, Any]:
+    """Parse ``codex exec --json`` JSONL into session id and token usage.
+
+    Event types of interest (one JSON object per line)::
+
+        {"type":"thread.started","thread_id":"..."}
+        {"type":"turn.completed","usage":{"input_tokens":...,"output_tokens":...}}
+        {"type":"turn.failed",...}
+        {"type":"error",...}
+
+    Codex does not report USD in this stream; callers treat proposer cost as 0.
+    """
+    thread_id = ""
+    usage: dict[str, Any] | None = None
+    is_error = False
+    error: str | None = None
+
+    for raw_line in (stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(event, dict):
+            continue
+        etype = event.get("type")
+        if etype == "thread.started":
+            tid = event.get("thread_id")
+            if isinstance(tid, str) and tid:
+                thread_id = tid
+        elif etype == "turn.completed":
+            raw_usage = event.get("usage")
+            if isinstance(raw_usage, dict):
+                usage = raw_usage
+        elif etype in ("turn.failed", "error"):
+            is_error = True
+            if error is None:
+                error = str(event.get("error") or event.get("message") or etype)
+
+    return {
+        "thread_id": thread_id,
+        "usage": usage,
+        "is_error": is_error,
+        "error": error,
+    }
 
 
 def _read_pending(pending_path: Path) -> list[dict[str, Any]]:
@@ -629,6 +1028,7 @@ class MetaHarnessEngine:
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
         engine_config = MetaHarnessConfig(**config.engine_config)
+        self.proposer = engine_config.proposer
         self.model = engine_config.model
         self.max_iterations = engine_config.max_iterations
         self.max_candidates_per_iter = engine_config.max_candidates_per_iter
@@ -637,14 +1037,24 @@ class MetaHarnessEngine:
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.sandbox = config.sandbox
-        # Proposer-cost cap: USD this engine may spend across its claude
-        # subprocess sessions. Enforced via --max-budget-usd; the eval server
-        # never sees proposer spend.
+        # Proposer-cost cap: USD this engine may spend across its agent
+        # subprocess sessions. Claude enforces via --max-budget-usd; Codex
+        # has no USD signal, so reject max_token_cost for proposer="codex"
+        # (use max_evals / max_iterations instead). The eval server never
+        # sees proposer spend.
+        if self.proposer == "codex" and config.max_token_cost is not None:
+            raise ValueError(
+                "meta_harness proposer='codex' cannot enforce max_token_cost "
+                "(Codex reports no USD); set max_evals / max_iterations instead"
+            )
         self.max_token_cost = config.max_token_cost
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
+        if self.proposer == "codex":
+            preflight_codex_engine(self.name, sandbox=bool(self.sandbox))
+        else:
+            preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
         budget = server.budget
 
         # When sandbox=True, force tempdir work_dir even if run_dir is set —
@@ -661,7 +1071,7 @@ class MetaHarnessEngine:
             self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_mh_")
             work_dir = Path(self._pending_tempdir.name)
 
-        _materialize_sandbox(work_dir, task, server, budget)
+        _materialize_sandbox(work_dir, task, server, budget, proposer=self.proposer)
 
         state_dir = work_dir / "state"
         frontier_path = state_dir / "frontier.json"
@@ -711,6 +1121,7 @@ class MetaHarnessEngine:
                 log_dir=sessions_dir,
                 max_thinking_tokens=self.max_thinking_tokens,
                 sandbox=bool(self.sandbox),
+                proposer=self.proposer,
             )
             propose_time = time.time() - propose_start
             total_proposer_cost += cost
@@ -923,6 +1334,7 @@ class MetaHarnessEngine:
                 "meta_harness": {
                     "iterations_run": iteration,
                     "stop_reason": stop_reason,
+                    "proposer": self.proposer,
                     "proposer_cost": total_proposer_cost,
                     "session_ids": session_ids,
                     "work_dir": str(work_dir),

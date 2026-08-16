@@ -38,8 +38,9 @@ argument** — and the same code runs under any of them:
   is rich.
 - **`autoresearch`** — an agentic optimizer: one Claude Code subprocess iterates like a researcher in
   a work dir, scoring candidates through an HTTP eval server.
-- **`meta_harness`** — an agentic proposer (Claude subprocess) that reads the frontier/history each
-  iteration and writes new candidates for the engine to benchmark.
+- **`meta_harness`** — an agentic proposer (Claude Code by default, or Codex via
+  `engine_config={"proposer": "codex"}`) that reads the frontier/history each iteration and writes
+  new candidates for the engine to benchmark.
 
 (There is also a `best_of_n` engine — sample N independent candidates, keep the best. It is
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
@@ -92,11 +93,13 @@ pip install "gepa[full]"   # [full] pulls cloudpickle — needed to pickle closu
 # that provider's key (OPENAI_API_KEY), or pass your own id (e.g. "anthropic/claude-sonnet-4-6" with
 # ANTHROPIC_API_KEY, or a Bedrock ARN with AWS creds). You can also pass any callable implementing
 # GEPA's LM protocol — a self-hosted / custom inference engine — instead of a model-id string.
-# Agentic backends (autoresearch, meta_harness) additionally need the `claude` CLI on PATH (plus
-# `jq` for the generated eval.sh):
+# Agentic backends (autoresearch, meta_harness) need a coding-agent CLI on PATH (plus `jq` for
+# autoresearch's generated eval.sh). Default is Claude Code; meta_harness can use Codex instead:
 npm install -g @anthropic-ai/claude-code   # or: curl -fsSL https://claude.ai/install.sh | bash
 #   ...then run `claude` once to authenticate.
-# On Linux they also need bubblewrap: the default sandbox=True jails the claude subprocess with
+npm install -g @openai/codex               # only if using meta_harness proposer="codex"
+#   ...then run `codex login` (or set CODEX_API_KEY).
+# On Linux they also need bubblewrap: the default sandbox=True jails the agent subprocess with
 # bwrap (`sudo apt install bubblewrap` / `sudo dnf install bubblewrap`) and the run aborts at
 # launch if it's missing. sandbox=False opts out — the agent then runs unsandboxed (loud warning).
 ```
@@ -150,7 +153,7 @@ low** — raise it and rerun.
   accuracy). The backend stops the moment a candidate reaches it instead of burning the rest of the
   budget at the optimum.
 - **`max_token_cost`** — a hard USD cap on the backend's own proposer/agent LLM spend. Especially
-  important for the agentic backends (`autoresearch`, `meta_harness`), whose Claude subprocesses
+  important for the agentic backends (`autoresearch`, `meta_harness`), whose agent subprocesses
   spend tokens between eval calls.
 - **a wall-clock `timeout`** on the process you launch (e.g. `timeout 1200 python run.py`) as a
   backstop.
@@ -241,7 +244,8 @@ These silently degrade *results* — skim before launching:
 - **`engine_config` is validated strictly per backend** — an unknown key (including a leftover key
   from a different backend after swapping `engine=`) raises `TypeError` at construction. Swapping
   `engine=` means swapping the `engine_config` block. → `references/api.md`.
-- **Agentic backends (`autoresearch`, `meta_harness`) shell out to the `claude` CLI** and abort at
+- **Agentic backends (`autoresearch`, `meta_harness`) shell out to a coding-agent CLI** (`claude` by
+  default; `codex` when `meta_harness` uses `proposer="codex"`) and abort at
   launch with install instructions if it's missing — likewise for `bwrap` (bubblewrap) on Linux,
   which the default `sandbox=True` needs. `sandbox=False` runs the agent unconfined (loud warning).
   Run `scripts/preflight.py` first; details in `references/api.md`.
@@ -254,4 +258,5 @@ These silently degrade *results* — skim before launching:
   LLM-as-judge scoring, multi-objective via `info["scores"]`, N>1 averaging, feedback design.
 - `references/tracking.md` — enabling wandb / mlflow experiment tracking and what gets logged.
 - `references/gotchas.md` — reward hacking, selection bias, the three modes, backend prerequisites.
-- `scripts/preflight.py` — validate creds / proposer LM / `claude` CLI before launching.
+- `scripts/preflight.py` — validate creds / proposer LM / agent CLI before launching
+  (`--proposer codex` for Codex).
