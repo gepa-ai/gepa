@@ -506,7 +506,10 @@ class EngineConfig:
     parallel: bool = True
     max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
-    # Evaluation caching
+    # Evaluation caching. Opt-in. Keys are (candidate, split, example_id): a distinct valset
+    # never reuses trainset rollouts at the same list index. valset=None (or the same dataset
+    # object passed as both trainset and valset) shares the trainset namespace. Caches written
+    # before splits existed are dropped on resume.
     cache_evaluation: bool = False
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
 

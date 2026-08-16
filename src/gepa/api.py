@@ -190,7 +190,14 @@ def optimize(
     - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
 
     # Evaluation caching
-    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
+    - cache_evaluation: Whether to cache the (score, output, objective_scores) of
+      (candidate, split, example) triples. If True and a cache entry exists, GEPA skips the
+      fitness evaluation. Trainset minibatches and valset evaluation share the cache only when
+      they use the same DataLoader instance (valset=None, or the same dataset object passed as
+      both trainset and valset). A distinct valset is a separate namespace, so held-out scores
+      cannot be served from trainset rollouts at the same list index. Defaults to False.
+      Resuming a run_dir whose cache was written before this namespacing existed drops those
+      entries; already-recorded valset scores in the pickled state are left as they are.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.

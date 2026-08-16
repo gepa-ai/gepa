@@ -106,7 +106,9 @@ engine_config={
         "frontier_type": "hybrid",       # "instance" | "objective" | "hybrid" (default) | "cartesian"
         "candidate_selection_strategy": "pareto",      # | "current_best" | "epsilon_greedy" | "top_k_pareto"
         "acceptance_criterion": "strict_improvement",  # | "improvement_or_equal"
-        "cache_evaluation": False,       # opt-in: cache identical (candidate, example) evals
+        "cache_evaluation": False,       # opt-in: cache (candidate, split, example) evals.
+                                         # Distinct valset is isolated from trainset ids.
+                                         # valset=None still shares minibatch rollouts.
         "capture_stdio": False,          # opt-in: route evaluator print() output into feedback
         "raise_on_exception": True,      # False → evaluator exceptions become score 0 + info["error"]
         # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_dir

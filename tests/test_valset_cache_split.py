@@ -26,7 +26,7 @@ from gepa.core.state import (
     ValsetEvaluation,
     _candidate_hash,
 )
-from gepa.gepa_launcher import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+from gepa.gepa_launcher import EngineConfig, GEPAConfig, MergeConfig, ReflectionConfig, optimize_anything
 
 TRAIN = [{"content": f"train-{n}"} for n in range(12)]
 VAL = [{"content": f"val-{n}"} for n in range(6)]
@@ -135,6 +135,17 @@ def test_cache_split_isolates_identical_example_ids():
     assert cache.get(candidate, 0, split=VALSET_CACHE_SPLIT).output == "val rollout"
 
 
+def test_drop_unsplit_entries_removes_unknown_splits():
+    """A 3-tuple with an unknown split string is as unusable as a 2-tuple."""
+    cache: EvaluationCache = EvaluationCache()
+    candidate = {"text": "c"}
+    cache.put(candidate, 0, "ok", 1.0, split=TRAINSET_CACHE_SPLIT)
+    cache._cache[(_candidate_hash(candidate), "holdout", 0)] = CachedEvaluation("x", 0.0, None)
+
+    assert cache.drop_unsplit_entries() == 1
+    assert cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT).output == "ok"
+
+
 def test_every_key_carries_its_split():
     """Including the trainset one: an unnamespaced key can never be served again."""
     cache: EvaluationCache = EvaluationCache()
@@ -157,8 +168,23 @@ def test_caches_written_before_splits_are_dropped_on_resume(tmp_path):
     reloaded = GEPAState.load(str(tmp_path))
 
     assert reloaded.evaluation_cache is not None
-    assert all(len(key) == 3 for key in reloaded.evaluation_cache._cache), "pre-split entries survived resume"
+    assert all(EvaluationCache._is_split_key(key) for key in reloaded.evaluation_cache._cache)
     assert reloaded.evaluation_cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT).output == "train rollout"
+
+
+def test_pure_pre_split_cache_is_emptied_on_resume(tmp_path):
+    """A cache that is only 2-tuple keys has nothing safe to keep."""
+    cache: EvaluationCache = EvaluationCache()
+    candidate = {"text": "c"}
+    cache._cache[(_candidate_hash(candidate), 0)] = CachedEvaluation("legacy rollout", 0.5, None)
+
+    state = _seeded_state(cache)
+    state.save(str(tmp_path))
+    reloaded = GEPAState.load(str(tmp_path))
+
+    assert reloaded.evaluation_cache is not None
+    assert reloaded.evaluation_cache._cache == {}
+    assert reloaded.evaluation_cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT) is None
 
 
 def _seeded_state(cache: EvaluationCache) -> GEPAState:
@@ -210,17 +236,60 @@ class _Intercepted(Exception):
     pass
 
 
+def _splits_used_by_optimize_anything(monkeypatch, valset):
+    """Return (engine split, merge split) that ``optimize_anything`` wires up."""
+    captured = {}
+
+    def fake_run(self):
+        captured["engine"] = self.valset_cache_split
+        captured["merge"] = None if self.merge_proposer is None else self.merge_proposer.valset_cache_split
+        raise _Intercepted
+
+    monkeypatch.setattr(GEPAEngine, "run", fake_run)
+    with contextlib.suppress(_Intercepted):
+        optimize_anything(
+            seed_candidate=json.dumps({"text": "seed"}),
+            evaluator=lambda candidate, example: (0.0, {}),
+            dataset=TRAIN,
+            valset=valset,
+            objective="valset cache split wiring",
+            config=GEPAConfig(
+                engine=EngineConfig(max_metric_calls=10, display_progress_bar=False, cache_evaluation=True),
+                reflection=ReflectionConfig(reflection_lm=lambda _prompt: json.dumps({"text": "x"})),
+                merge=MergeConfig(max_merge_invocations=1),
+            ),
+        )
+    return captured["engine"], captured["merge"]
+
+
 @pytest.mark.parametrize(
     ("valset", "expected"),
     [
         (None, TRAINSET_CACHE_SPLIT),  # one loader for both: ids agree, keep sharing rollouts
         (TRAIN, TRAINSET_CACHE_SPLIT),  # same dataset passed twice: still one id space
         (VAL, VALSET_CACHE_SPLIT),  # distinct valset: must not read trainset rollouts
+        (list(TRAIN), VALSET_CACHE_SPLIT),  # equal copy: different object, isolate
     ],
 )
 def test_optimize_gives_engine_and_merge_the_same_split(monkeypatch, valset, expected):
     """A split the merge proposer disagrees with silently re-runs cached valset examples."""
     engine_split, merge_split = _splits_used_by_optimize(monkeypatch, valset)
+
+    assert engine_split == expected
+    assert merge_split == engine_split, "merge proposer and engine disagree on the valset namespace"
+
+
+@pytest.mark.parametrize(
+    ("valset", "expected"),
+    [
+        (None, TRAINSET_CACHE_SPLIT),
+        (TRAIN, TRAINSET_CACHE_SPLIT),
+        (VAL, VALSET_CACHE_SPLIT),
+        (list(TRAIN), VALSET_CACHE_SPLIT),
+    ],
+)
+def test_optimize_anything_gives_engine_and_merge_the_same_split(monkeypatch, valset, expected):
+    engine_split, merge_split = _splits_used_by_optimize_anything(monkeypatch, valset)
 
     assert engine_split == expected
     assert merge_split == engine_split, "merge proposer and engine disagree on the valset namespace"

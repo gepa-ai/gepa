@@ -112,7 +112,17 @@ class _MemoizedAcceptance:
 
 
 class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
-    """Orchestrates the optimization loop using pluggable candidate proposers."""
+    """Orchestrates the optimization loop using pluggable candidate proposers.
+
+    ``valset_cache_split`` is derived here and is the single authority for the evaluation-cache
+    namespace used on valset reads and writes. If this engine's valset loader is the same object
+    as the reflective proposer's ``trainset`` loader, minibatch and valset share
+    ``TRAINSET_CACHE_SPLIT``; otherwise valset uses ``VALSET_CACHE_SPLIT``. A ``MergeProposer``,
+    if present, is synced to the same value so it cannot silently re-run or mis-read valset
+    rollouts. Callers should pass the same loader instance they gave the proposer when the two
+    id spaces are genuinely the same; wrapping the same list twice produces two loaders and
+    isolates the cache (extra evals, never a wrongly shared one).
+    """
 
     def __init__(
         self,
@@ -804,6 +814,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
 
         # Initialize state with pre-computed seed evaluation
+        resumed = self.run_dir is not None and os.path.exists(os.path.join(self.run_dir, "gepa_state.bin"))
         state = initialize_gepa_state(
             run_dir=self.run_dir,
             logger=self.logger,
@@ -813,6 +824,24 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             frontier_type=self.frontier_type,
             evaluation_cache=self._initial_evaluation_cache,
         )
+        # Fresh runs: record the seed valset eval in the cache. On resume the seed scores already
+        # live in state; writing the re-computed seed eval would desynchronize cache from
+        # prog_candidate_val_subscores.
+        if not resumed and state.evaluation_cache is not None:
+            seed_ids = list(seed_valset_evaluation.scores_by_val_id)
+            seed_obj = (
+                [seed_valset_evaluation.objective_scores_by_val_id[eid] for eid in seed_ids]
+                if seed_valset_evaluation.objective_scores_by_val_id is not None
+                else None
+            )
+            state.evaluation_cache.put_batch(
+                self.seed_candidate,
+                seed_ids,
+                [seed_valset_evaluation.outputs_by_val_id[eid] for eid in seed_ids],
+                [seed_valset_evaluation.scores_by_val_id[eid] for eid in seed_ids],
+                seed_obj,
+                split=self.valset_cache_split,
+            )
 
         # Seed uses the reserved iteration id — outputs/trajectories go under
         # iterations/seed/ alongside subsequent loop iterations.

@@ -31,19 +31,7 @@ CacheKey: TypeAlias = tuple[CandidateHash, str, DataId]
 
 TRAINSET_CACHE_SPLIT = "train"
 VALSET_CACHE_SPLIT = "val"
-"""Cache namespaces for the two datasets.
-
-Data loaders identify examples by position, so a trainset and a separate valset both number their
-examples from zero. Without a namespace the two collide in the evaluation cache and a valset lookup
-can be answered with the rollout of an unrelated trainset example. Callers that evaluate against a
-valset which is a *distinct* loader from the trainset pass ``VALSET_CACHE_SPLIT``; when the two are
-the same loader the ids mean the same thing and both sides share ``TRAINSET_CACHE_SPLIT`` so results
-are still reused across minibatch and valset evaluation.
-
-Every key carries its split, including the trainset one. Caches persisted before splits existed are
-unnamespaced and therefore already contaminated, so they are dropped on resume rather than reused
-(see :meth:`EvaluationCache.drop_unsplit_entries`).
-"""
+CACHE_SPLITS = frozenset({TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT})
 
 
 def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
@@ -83,13 +71,32 @@ class CachedEvaluation(Generic[RolloutOutput]):
 
 @dataclass
 class EvaluationCache(Generic[RolloutOutput, DataId]):
-    """Cache for storing evaluation results of (candidate, example) pairs."""
+    """Cache for ``(candidate, split, example)`` evaluation results.
+
+    Data loaders identify examples by position, so a trainset and a separate valset both number
+    their examples from zero. Every lookup therefore takes a required keyword-only ``split`` of
+    :data:`TRAINSET_CACHE_SPLIT` or :data:`VALSET_CACHE_SPLIT`. A valset that is a distinct loader
+    from the trainset uses ``VALSET_CACHE_SPLIT``; when the two are the same loader the ids mean
+    the same thing and both sides share ``TRAINSET_CACHE_SPLIT`` so minibatch rollouts are reused
+    on valset evaluation.
+
+    Keys persisted before splits existed are ``(candidate_hash, example_id)``. Those cannot be
+    told apart from contaminated distinct-valset entries, so :meth:`GEPAState.load` drops them
+    rather than serving them. There is no default ``split``: omitting it is a ``TypeError``, not a
+    silent trainset hit.
+    """
 
     _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
 
     @staticmethod
     def _key(candidate_hash: CandidateHash, example_id: DataId, split: str) -> CacheKey:
+        if split not in CACHE_SPLITS:
+            raise ValueError(f"Unknown evaluation-cache split {split!r}; expected one of {sorted(CACHE_SPLITS)}")
         return (candidate_hash, split, example_id)
+
+    @staticmethod
+    def _is_split_key(key: object) -> bool:
+        return isinstance(key, tuple) and len(key) == 3 and key[1] in CACHE_SPLITS
 
     def drop_unsplit_entries(self) -> int:
         """Discard entries written before splits existed. Returns the number dropped.
@@ -99,7 +106,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         be served (every lookup is namespaced now), and keeping them would grow the persisted state
         on every resume, so ``GEPAState.load`` drops them.
         """
-        stale = [k for k in self._cache if len(k) != 3]
+        stale = [k for k in self._cache if not self._is_split_key(k)]
         for k in stale:
             del self._cache[k]
         return len(stale)
@@ -107,7 +114,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
     def get(
         self, candidate: dict[str, str], example_id: DataId, *, split: str
     ) -> CachedEvaluation[RolloutOutput] | None:
-        """Retrieve cached evaluation result if it exists."""
+        """Retrieve cached evaluation result if it exists. ``split`` is required."""
         return self._cache.get(self._key(_candidate_hash(candidate), example_id, split))
 
     def put(
@@ -218,7 +225,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 6
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 7
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -651,6 +658,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         never sees the internal candidate numbering; everything is anchored
         on the ``iterations/`` timeline.
         """
+
         def _iter_ids(candidate_idxs: "set[int]") -> list[str]:
             return sorted({cand_to_iter[c] for c in candidate_idxs if c in cand_to_iter})
 
@@ -689,23 +697,23 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if self.pareto_front_valset:
             sorted_examples = sorted(self.pareto_front_valset.items(), key=lambda x: x[1])
             for val_id, score in sorted_examples[:20]:
-                best_iters = sorted({
-                    cand_to_iter[c]
-                    for c in self.program_at_pareto_front_valset.get(val_id, set())
-                    if c in cand_to_iter
-                })
-                hardest.append({
-                    "val_id": str(val_id),
-                    "best_score": score,
-                    "best_iteration_ids": best_iters,
-                })
+                best_iters = sorted(
+                    {
+                        cand_to_iter[c]
+                        for c in self.program_at_pareto_front_valset.get(val_id, set())
+                        if c in cand_to_iter
+                    }
+                )
+                hardest.append(
+                    {
+                        "val_id": str(val_id),
+                        "best_score": score,
+                        "best_iteration_ids": best_iters,
+                    }
+                )
 
         full_scores = self.program_full_scores_val_set
-        best_candidate_idx = (
-            int(max(range(num_candidates), key=lambda i: full_scores[i]))
-            if num_candidates > 0
-            else 0
-        )
+        best_candidate_idx = int(max(range(num_candidates), key=lambda i: full_scores[i])) if num_candidates > 0 else 0
         best_iter_id = cand_to_iter.get(best_candidate_idx)
 
         front_candidate_idxs: set[int] = set()
@@ -750,6 +758,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if version is None or version < GEPAState._VALIDATION_SCHEMA_VERSION:
             GEPAState._upgrade_state_dict(data)
 
+        # Schema 7 (and every later load): drop unnamespaced cache keys. This runs even when
+        # upgrade was skipped, so a v7 pickle that somehow still holds 2-tuples cannot be served.
         cache = data.get("evaluation_cache")
         if cache is not None:
             cache.drop_unsplit_entries()
@@ -840,6 +850,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             if "iteration_id" not in entry:
                 trace_i = entry.get("i")
                 entry["iteration_id"] = str(trace_i + 1) if trace_i is not None else SEED_ITERATION_ID
+        # Schema 7: evaluation-cache keys are (candidate_hash, split, example_id). Unnamespaced
+        # 2-tuples from earlier versions can mix train and val rollouts under the same positional
+        # id, so they are dropped in GEPAState.load rather than promoted to a split.
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -1044,7 +1057,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         *,
         split: str,
     ) -> tuple[list[float], int]:
-        """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
+        """Evaluate with optional caching. Returns (scores, num_actual_evals). ``split`` is required."""
         _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(
             candidate, example_ids, fetcher, evaluator, split=split
         )
@@ -1059,9 +1072,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         *,
         split: str,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
-        """Evaluate with optional caching, returning full results."""
+        """Evaluate with optional caching, returning full results. ``split`` is required."""
         if self.evaluation_cache is not None:
-            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator, split=split)
+            return self.evaluation_cache.evaluate_with_cache_full(
+                candidate, example_ids, fetcher, evaluator, split=split
+            )
         batch = fetcher(example_ids)
         outputs, scores, objective_scores = evaluator(batch, candidate)
         outputs_by_id = dict(zip(example_ids, outputs, strict=False))

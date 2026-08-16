@@ -75,6 +75,19 @@ class TestEvaluationCache:
         assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).score == 0.5
         assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).objective_scores == {"acc": 0.8}
 
+    def test_split_is_required(self):
+        """Omitting split must be a TypeError, not a silent trainset lookup."""
+        cache: EvaluationCache = EvaluationCache()
+        with pytest.raises(TypeError):
+            cache.get({"prompt": "test"}, "ex1")
+        with pytest.raises(TypeError):
+            cache.put({"prompt": "test"}, "ex1", "out", 0.5)
+
+    def test_unknown_split_is_rejected(self):
+        cache: EvaluationCache = EvaluationCache()
+        with pytest.raises(ValueError, match="Unknown evaluation-cache split"):
+            cache.put({"prompt": "test"}, "ex1", "out", 0.5, split="holdout")
+
 
 class TestEvaluationCacheIntegration:
     """Integration tests for evaluation cache with optimize function."""
