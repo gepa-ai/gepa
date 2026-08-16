@@ -9,11 +9,10 @@ from typing import Any, Generic
 
 from gepa.core.adapter import (
     DataInst,
-    EvaluationBatch,
     GEPAAdapter,
     RolloutOutput,
     Trajectory,
-    default_batch_evaluate,
+    invoke_batch_evaluate,
 )
 from gepa.core.callbacks import (
     BudgetUpdatedEvent,
@@ -312,7 +311,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # 2) One adapter call over every (program, cache-miss examples) pair.
         eval_idxs = [i for i, todo in enumerate(todo_per) if todo]
         items = [(programs[i], valset.fetch(todo_per[i])) for i in eval_idxs]
-        fresh = self._batch_evaluate(items) if items else []
+        fresh = invoke_batch_evaluate(self.adapter, items, capture_traces=False) if items else []
         fresh_by_idx = dict(zip(eval_idxs, fresh, strict=True))
 
         # 3) Merge cached + fresh per program, repopulating the cache.
@@ -352,13 +351,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
             )
         return results
-
-    def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
-        """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
-        batch_fn = getattr(self.adapter, "batch_evaluate", None)
-        if batch_fn is not None:
-            return batch_fn(items)
-        return default_batch_evaluate(self.adapter, items)
 
     def _run_full_eval_and_add(
         self,
@@ -760,11 +752,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ),
                 )
 
-            outputs, scores, objective_scores = self.evaluator(valset.fetch(val_ids), program)
-            outputs_dict = dict(zip(val_ids, outputs, strict=False))
-            scores_dict = dict(zip(val_ids, scores, strict=False))
+            (eval_result,) = invoke_batch_evaluate(
+                self.adapter,
+                [(program, valset.fetch(val_ids))],
+                capture_traces=False,
+            )
+            outputs_dict = dict(zip(val_ids, eval_result.outputs, strict=False))
+            scores_dict = dict(zip(val_ids, eval_result.scores, strict=False))
             objective_scores_dict = (
-                dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+                dict(zip(val_ids, eval_result.objective_scores, strict=False))
+                if eval_result.objective_scores is not None
+                else None
             )
             return ValsetEvaluation(
                 outputs_by_val_id=outputs_dict,
@@ -907,6 +905,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             assert state.is_consistent()
             proposal_accepted = False
             iteration_started = False
+            evals_before_iteration = state.total_num_evals
             try:
                 self._sync_adapter_state_to_state(state)
                 state.save(
@@ -1037,6 +1036,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
                 self.logger.log(traceback.format_exc())
+                made_progress = state.total_num_evals > evals_before_iteration
                 # Notify error callback
                 notify_callbacks(
                     self.callbacks,
@@ -1044,10 +1044,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ErrorEvent(
                         iteration=state.i + 1,
                         exception=e,
-                        will_continue=not self.raise_on_exception,
+                        will_continue=not self.raise_on_exception and made_progress,
                     ),
                 )
-                if self.raise_on_exception:
+                if self.raise_on_exception or not made_progress:
                     raise e
                 else:
                     continue

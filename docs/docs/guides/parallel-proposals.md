@@ -103,14 +103,16 @@ class MyAdapter:
     def evaluate(self, batch, candidate, capture_traces=False): ...
 
     # Optional. When absent, GEPA calls evaluate() once per item.
-    def batch_evaluate(self, items: list[tuple[Candidate, list]]) -> list[EvaluationBatch]:
+    def batch_evaluate(self, items: list[tuple[Candidate, list]], *, capture_traces: bool = True) -> list[EvaluationBatch]:
         ...  # e.g. fan out across threads, processes, or an eval service
 ```
 
 Third-party adapters that only implement `evaluate()` keep working unmodified
-(`default_batch_evaluate` is the sequential fallback). The reflection LM side
-is batched analogously: the built-in stateless reflector batches all
-per-component reflection calls via `litellm.batch_completion`.
+(`default_batch_evaluate` is the sequential fallback). Batch adapters receive
+`capture_traces=True` for reflection and `False` for seed and accepted-candidate
+full-val evaluation, so existing implementations must accept the new keyword.
+The reflection LM side is batched analogously: the built-in stateless reflector
+batches all per-component reflection calls via `litellm.batch_completion`.
 
 ### `batch_evaluator`: one external call for the whole batch
 
