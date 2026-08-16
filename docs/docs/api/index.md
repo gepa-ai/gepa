@@ -133,3 +133,4 @@ Strategies for various aspects of the optimization process.
 - [`EvaluationPolicy`](strategies/EvaluationPolicy.md)
 - [`FullEvaluationPolicy`](strategies/FullEvaluationPolicy.md)
 - [`InstructionProposalSignature`](strategies/InstructionProposalSignature.md)
+
