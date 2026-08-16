@@ -140,7 +140,7 @@ a "best candidate" that looks fine but is barely optimized.
   themselves how to spend eval calls, so treat it as a floor.)
 
 After the run, check how many proposals actually happened (on the gepa backend,
-`result.metadata["gepa_result"]` holds every candidate; with `engine.write_agent_state=True` the
+`result.candidates` is the full pool; with `engine.write_agent_state=True` the
 `run_dir/iterations/` tree shows each one). **If it stopped after one proposal, the budget was too
 low** — raise it and rerun.
 
@@ -248,7 +248,7 @@ These silently degrade *results* — skim before launching:
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`
-  options, the three modes, the LM protocol, budget/cost semantics, `Result` shape, and the
+  options, the three modes, the LM protocol, budget/cost semantics, `GEPAResult` shape, and the
   composition/pipeline helpers.
 - `references/writing_evaluators.md` — the `(score, info)` contract, `oa.log()`/`capture_stdio`,
   LLM-as-judge scoring, multi-objective via `info["scores"]`, N>1 averaging, feedback design.

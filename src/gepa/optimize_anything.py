@@ -168,6 +168,12 @@ def optimize_anything(
         with the gepa-only fields (``per_val_instance_best_candidates``,
         ``val_aggregate_subscores``, ...) left ``None``/empty. Held-out
         ``test_set`` scores land in ``metadata`` on any engine.
+
+        ``total_evals`` is the eval-server call count (``budget.used``), not
+        ``total_metric_calls``. The candidate pool lives on the result
+        (``candidates``, ``best_idx``, ...); ``metadata`` no longer nests a
+        ``gepa_result`` object. ``to_dict()`` still serializes only the pool
+        and GEPA-core fields.
     """
     if config is None:
         config = OptimizeAnythingConfig()
@@ -248,18 +254,21 @@ def _to_gepa_result(result: Result, seed_candidate: Any) -> GEPAResult:
     ``result.metadata["gepa_result"]``; use it as the rich base. Every other
     engine reports only a best candidate, so synthesize a single-candidate
     snapshot. Either way the universal core (eval log, run metadata, held-out
-    test scores) rides out on the returned result — so a generic run returns
-    the maximum information it has, with the gepa-only pool fields left at their
-    ``None``/empty defaults.
+    test scores, eval-server call count) rides out on the returned result —
+    so a generic run returns the maximum information it has, with the gepa-only
+    pool fields left at their ``None``/empty defaults. The nested
+    ``gepa_result`` is popped from ``metadata``; the returned object *is* the
+    pool.
     """
     metadata = dict(result.metadata)
     rich = metadata.pop("gepa_result", None)
     base: GEPAResult = rich if rich is not None else _legacy_result_from(result, seed_candidate)
-    if not result.eval_log and not metadata:
-        # Nothing to attach (e.g. a pre-built GEPAResult with no engine run
-        # around it) — return the base untouched so identity is preserved.
-        return base
-    return dataclasses.replace(base, eval_log=list(result.eval_log), metadata=metadata)
+    return dataclasses.replace(
+        base,
+        eval_log=list(result.eval_log),
+        metadata=metadata,
+        eval_server_calls=result.total_evals,
+    )
 
 
 def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:

@@ -146,12 +146,96 @@ def test_legacy_gepa_config_accepts_test_set():
     assert isinstance(result, GEPAResult)
     assert "test_score" in result.metadata
     assert "baseline_test_score" in result.metadata
+    assert "gepa_result" not in result.metadata
 
 
-def test_no_config_returns_unified_gepa_result():
+def test_no_config_returns_unified_gepa_result(monkeypatch):
     """``optimize_anything(seed, evaluator=fn)`` with config omitted returns a
     GEPAResult exposing both the lean accessors and the pool surface
     (``candidates`` / ``val_aggregate_scores`` / ``to_dict()``) — issue #409."""
+    from gepa.core.result import GEPAResult
+    from gepa.oa.engine import Result
+    from gepa.optimize_anything import optimize_anything
+
+    stashed = GEPAResult(
+        candidates=[{"current_candidate": "improved"}],
+        parents=[[None]],
+        val_aggregate_scores=[0.42],
+        val_subscores=[{}],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[1],
+        total_metric_calls=1,
+        _str_candidate_key="current_candidate",
+    )
+
+    def _fake_run_engine(server, engine, *, owns_server):
+        return Result(
+            best_candidate="improved",
+            best_score=0.42,
+            total_evals=9,
+            eval_log=[{"score": 0.42}],
+            metadata={"gepa_result": stashed, "engine": "gepa"},
+        )
+
+    monkeypatch.setattr("gepa.optimize_anything._run_engine", _fake_run_engine)
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+    )
+
+    assert isinstance(result, GEPAResult)
+    assert result.best_candidate == "improved"
+    assert result.best_idx == 0
+    assert result.candidates == [{"current_candidate": "improved"}]
+    assert result.val_aggregate_scores == [0.42]
+    # Lean total_evals is the eval-server count, not GEPA core's counter.
+    assert result.total_evals == 9
+    assert result.total_metric_calls == 1
+    assert result.eval_log == [{"score": 0.42}]
+    assert result.metadata["engine"] == "gepa"
+    assert "gepa_result" not in result.metadata
+    serialized = result.to_dict()
+    assert isinstance(serialized, dict)
+    assert "eval_log" not in serialized
+    assert "metadata" not in serialized
+    assert "eval_server_calls" not in serialized
+    assert serialized["total_metric_calls"] == 1
+
+
+def test_no_config_accepts_test_set(monkeypatch):
+    """``test_set`` with config omitted is accepted; held-out scores land in
+    ``metadata`` on the unified GEPAResult."""
+    from gepa.core.result import GEPAResult
+    from gepa.oa.engine import Result
+    from gepa.optimize_anything import optimize_anything
+
+    def _fake_run_engine(server, engine, *, owns_server):
+        return Result(
+            best_candidate="improved",
+            best_score=0.5,
+            total_evals=2,
+            metadata={"test_score": 0.4, "baseline_test_score": 0.2},
+        )
+
+    monkeypatch.setattr("gepa.optimize_anything._run_engine", _fake_run_engine)
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        test_set=["held-out"],
+    )
+
+    assert isinstance(result, GEPAResult)
+    assert result.metadata["test_score"] == 0.4
+    assert result.metadata["baseline_test_score"] == 0.2
+
+
+def test_explicit_optimize_anything_config_returns_unified_gepa_result():
+    """An explicit ``OptimizeAnythingConfig`` returns the same unified
+    GEPAResult as the no-config path: lean accessors plus the pool surface."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import optimize_anything
 
@@ -167,12 +251,11 @@ def test_no_config_returns_unified_gepa_result():
     )
 
     assert isinstance(result, GEPAResult)
-    # Lean accessors from the old Result shape.
     assert result.best_candidate
     assert result.best_score > 0.0
     assert result.total_evals > 0
     assert isinstance(result.metadata, dict)
-    # Pool surface, now available on every run.
+    assert "gepa_result" not in result.metadata
     assert result.best_idx >= 0
     assert len(result.candidates) >= 1
     assert result.val_aggregate_scores
@@ -215,7 +298,12 @@ def test_non_gepa_engine_returns_single_candidate_gepa_result(monkeypatch):
     # gepa-only richness is absent on a generic run.
     assert result.per_val_instance_best_candidates == {}
     assert result.val_aggregate_subscores is None
-    assert isinstance(result.to_dict(), dict)
+    assert "gepa_result" not in result.metadata
+    serialized = result.to_dict()
+    assert isinstance(serialized, dict)
+    assert "eval_log" not in serialized
+    assert "metadata" not in serialized
+    assert "eval_server_calls" not in serialized
 
 
 def test_full_config_passthrough_and_reflective_dataset_persistence(tmp_path):
