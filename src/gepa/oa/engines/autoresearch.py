@@ -60,6 +60,11 @@ class AutoResearchConfig:
             referenced from ``program.md``).
         effort: ``claude --effort`` value (CLI flag).
         max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+        drain_quiet_seconds: After Claude exits, keep HTTP accepting this long
+            with no new admits so a curl that has not reached the server can
+            still land. Then pause.
+        drain_timeout_seconds: Give up waiting for drain after this many
+            seconds and select from work that has already completed.
     """
 
     model: str = "claude-sonnet-4-6"
@@ -68,6 +73,8 @@ class AutoResearchConfig:
     handoffs: list[dict[str, Any]] | None = None
     effort: str | None = None
     max_thinking_tokens: int | None = None
+    drain_quiet_seconds: float = 0.5
+    drain_timeout_seconds: float = 600.0
 
     def __post_init__(self) -> None:
         # yaml/CLI may pass ralph as a string ("false") and max_no_eval_seconds
@@ -75,14 +82,17 @@ class AutoResearchConfig:
         self.ralph = _config_bool(self.ralph)
         if self.max_no_eval_seconds is not None:
             self.max_no_eval_seconds = float(self.max_no_eval_seconds)
+        self.drain_quiet_seconds = max(0.0, float(self.drain_quiet_seconds))
+        self.drain_timeout_seconds = max(0.0, float(self.drain_timeout_seconds))
 
 
 # Nudge fed to claude --resume on each Ralph iteration.
 RALPH_CONTINUE_PROMPT = (
     "Continue iterating on the candidate. Re-read program.md if needed. "
     "Run ./eval.sh as appropriate. "
-    "Keep refining best_candidate.txt until you exhaust the budget "
-    "or genuinely cannot find another improvement."
+    "The engine selects the returned winner from completed eval-server scores, "
+    "not from best_candidate.txt. Keep refining the candidate until you exhaust "
+    "the budget or genuinely cannot find another improvement."
 )
 
 # Stop spawning new Ralph iterations when the LLM budget has less than this
@@ -183,6 +193,7 @@ HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
+if [ "$HTTP_CODE" = "409" ]; then echo "EVAL_SERVER_PAUSED" >&2; exit 1; fi
 """
 
 EVAL_SCRIPT_DATASET = """\
@@ -212,6 +223,7 @@ HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
+if [ "$HTTP_CODE" = "409" ]; then echo "EVAL_SERVER_PAUSED" >&2; exit 1; fi
 """
 
 
@@ -287,10 +299,21 @@ def _strategy_section(task: Task) -> str:
             "(spot-check with `./eval.sh candidate.txt --ids id1,id2` if useful), "
             "form a hypothesis, edit `candidate.txt`."
         )
+        selection = (
+            "The engine ignores `best_candidate.txt` when it picks the returned winner. "
+            "Only a completed full-pool `./eval.sh candidate.txt` (no `--ids`) counts; "
+            "a spot-check does not. Keep `best_candidate.txt` as your working copy so you "
+            "can revert."
+        )
     else:
         edit_step = (
             "2. **Hypothesize and edit.** Use the judge feedback from the prior eval, "
             "form a hypothesis, edit `candidate.txt`."
+        )
+        selection = (
+            "The engine ignores `best_candidate.txt` when it picks the returned winner. "
+            "The winner is the best completed `./eval.sh` score. Keep `best_candidate.txt` "
+            "as your working copy so you can revert."
         )
 
     return (
@@ -301,7 +324,8 @@ def _strategy_section(task: Task) -> str:
         "4. **Keep or discard.** If the score improved over the best so far, "
         "`cp candidate.txt best_candidate.txt`. "
         "Otherwise `cp best_candidate.txt candidate.txt` to revert.\n"
-        "5. Repeat from step 2"
+        "5. Repeat from step 2.\n"
+        f"{selection}"
     )
 
 
@@ -479,6 +503,8 @@ class AutoResearchEngine:
         self.handoffs = engine_config.handoffs
         self.effort = engine_config.effort
         self.max_thinking_tokens = engine_config.max_thinking_tokens
+        self.drain_quiet_seconds = engine_config.drain_quiet_seconds
+        self.drain_timeout_seconds = engine_config.drain_timeout_seconds
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.sandbox = config.sandbox
@@ -524,8 +550,9 @@ class AutoResearchEngine:
         prompt = (
             f"Read program.md for full task instructions. "
             f"The candidate to improve is in {candidate_file}. "
-            f"Write your best candidate to {work_dir / 'best_candidate.txt'}. "
-            f"Use {eval_script} to evaluate."
+            f"Keep a working copy in {work_dir / 'best_candidate.txt'}. "
+            f"Use {eval_script} to evaluate. "
+            f"The engine returns the best completed eval-server score, not the file."
         )
 
         session_id = str(uuid.uuid4())
@@ -569,6 +596,7 @@ class AutoResearchEngine:
             iter_cost = _extract_claude_cost(proc.stdout)
             adapter_cost += iter_cost
             tracked_candidate, tracked_score = _tracked_best(task, server, seed, progress_mark)
+            self._sync_workspace_best(work_dir, tracked_candidate, tracked_score)
             invocations.append({"cost": iter_cost, "score": tracked_score, "returncode": proc.returncode})
 
             if self.ralph:
@@ -595,6 +623,7 @@ class AutoResearchEngine:
                     iter_cost = _extract_claude_cost(proc.stdout)
                     adapter_cost += iter_cost
                     tracked_candidate, tracked_score = _tracked_best(task, server, seed, progress_mark)
+                    self._sync_workspace_best(work_dir, tracked_candidate, tracked_score)
                     invocations.append({"cost": iter_cost, "score": tracked_score, "returncode": proc.returncode})
                     if _saw_budget_exhausted(proc):
                         break
@@ -716,12 +745,31 @@ class AutoResearchEngine:
         return True
 
     def _drain(self, server: EvalServer) -> None:
-        """Stop new HTTP evals and wait for work that already started."""
-        server.pause_http()
-        server.wait_idle()
+        """Wait for leftover eval.sh work, then pause HTTP."""
+        drain = getattr(server, "drain_http", None)
+        if callable(drain):
+            drain(timeout=self.drain_timeout_seconds, quiet=self.drain_quiet_seconds)
+            return
+        pause = getattr(server, "pause_http", None)
+        if callable(pause):
+            pause()
+        wait = getattr(server, "wait_idle", None)
+        if callable(wait):
+            wait()
 
     def _resume_http(self, server: EvalServer) -> None:
-        server.resume_http()
+        resume = getattr(server, "resume_http", None)
+        if callable(resume):
+            resume()
+
+    def _sync_workspace_best(self, work_dir: Path, candidate: str, score: float) -> None:
+        """Write the official winner into the workspace for the next Ralph iteration.
+
+        Leave the agent's file alone when there is no completed checkpoint.
+        """
+        if score == float("-inf"):
+            return
+        (work_dir / "best_candidate.txt").write_text(candidate)
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         # Prefer ``self.run_dir`` when the caller's server has no output_dir:
@@ -737,7 +785,12 @@ class AutoResearchEngine:
                 self._pending_tempdir = None
             return
         dest.mkdir(parents=True, exist_ok=True)
-        dest.joinpath("best_candidate.txt").write_text(result.best_candidate)
+        best_path = dest / "best_candidate.txt"
+        if best_path.exists():
+            previous = best_path.read_text()
+            if previous != result.best_candidate:
+                dest.joinpath("agent_best_candidate.txt").write_text(previous)
+        best_path.write_text(result.best_candidate)
         work_dir = Path(result.metadata["work_dir"])
         session_id = result.metadata["session_id"]
         copy_session_transcript(work_dir, session_id, dest / "sessions")

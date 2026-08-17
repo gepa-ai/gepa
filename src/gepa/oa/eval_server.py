@@ -14,8 +14,9 @@ POST /evaluate
     Body: {"candidate": "<text>", "example_id": "<optional>"}
     Response: {"score": 1.23, "info": {...}, "budget": {"used": 5, ...}}
     Status 429 when budget exhausted.
-    Status 409 when HTTP evaluation has been paused (AutoResearch drains in-flight
-    work after the agent exits, then selects from completed server tracking).
+    Status 409 when HTTP evaluation has been paused (AutoResearch drains admitted
+    and in-transit work after the agent exits, then selects from completed
+    server tracking).
 
 POST /evaluate_examples
     Body: {"candidate": "<text>", "example_ids": ["a","b","c"]}
@@ -190,6 +191,7 @@ class EvalServer:
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._inflight = 0
+        self._admit_generation = 0
         self._http_accepting = True
         self._io_lock = threading.Lock()
         self.output_dir: Path | None = None
@@ -245,14 +247,67 @@ class EvalServer:
         with self._idle:
             self._http_accepting = True
 
-    def wait_idle(self) -> None:
-        """Block until every admitted evaluation has finished."""
+    def wait_idle(self, timeout: float | None = None) -> bool:
+        """Block until every admitted evaluation has finished.
+
+        Returns True if the server is idle. Returns False if ``timeout``
+        (seconds) elapsed first. ``timeout is None`` waits until idle.
+        """
         with self._idle:
-            self._idle.wait_for(lambda: self._inflight == 0)
+            if timeout is None:
+                self._idle.wait_for(lambda: self._inflight == 0)
+                return True
+            if timeout <= 0:
+                return self._inflight == 0
+            return bool(self._idle.wait_for(lambda: self._inflight == 0, timeout=timeout))
+
+    def drain_http(self, *, timeout: float, quiet: float) -> bool:
+        """Wait for admitted and in-transit HTTP evaluations, then pause.
+
+        Stays accepting until currently admitted work finishes and ``quiet``
+        seconds pass with no new admits, so a curl that left the agent process
+        but has not reached :meth:`_admit_http` can still land. Then rejects
+        new HTTP and waits once more.
+
+        Returns True if the server was idle after the pause. False if
+        ``timeout`` elapsed first. HTTP is paused either way; completed work
+        is kept. In-flight evaluations are not cancelled.
+        """
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        quiet = max(0.0, float(quiet))
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self.wait_idle(timeout=max(0.0, remaining)):
+                self.pause_http()
+                with self._idle:
+                    return self._inflight == 0
+            with self._idle:
+                generation = self._admit_generation
+            remaining_quiet = min(quiet, max(0.0, deadline - time.monotonic()))
+            if remaining_quiet > 0:
+                with self._idle:
+                    got_work = self._idle.wait_for(
+                        lambda gen=generation: self._inflight > 0 or self._admit_generation != gen,
+                        timeout=remaining_quiet,
+                    )
+                    if got_work:
+                        continue
+                    self._http_accepting = False
+            else:
+                with self._idle:
+                    if self._inflight > 0 or self._admit_generation != generation:
+                        continue
+                    self._http_accepting = False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                with self._idle:
+                    return self._inflight == 0
+            return self.wait_idle(timeout=remaining)
 
     def _begin_work(self) -> None:
         with self._idle:
             self._inflight += 1
+            self._idle.notify_all()
 
     def _finish_work(self) -> None:
         with self._idle:
@@ -265,6 +320,8 @@ class EvalServer:
             if not self._http_accepting:
                 return False
             self._inflight += 1
+            self._admit_generation += 1
+            self._idle.notify_all()
             return True
 
     def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:

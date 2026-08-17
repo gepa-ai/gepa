@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -210,6 +211,131 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             server.resume_http()
             with urllib.request.urlopen(req, timeout=5) as resp:
                 self.assertEqual(resp.status, 200)
+        finally:
+            server.stop()
+
+    def test_wait_idle_timeout_returns_false_while_eval_blocked(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return 0.9, {}
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, evaluate, BudgetTracker(max_evals=2))
+        eval_thread = threading.Thread(target=lambda: server.evaluate("slow"))
+        eval_thread.start()
+        self.assertTrue(started.wait(timeout=2))
+        try:
+            self.assertFalse(server.wait_idle(timeout=0.15))
+        finally:
+            release.set()
+            eval_thread.join(timeout=2)
+        self.assertTrue(server.wait_idle(timeout=2))
+
+    def test_drain_http_times_out_and_pauses(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
+            started.set()
+            self.assertTrue(release.wait(timeout=5))
+            return 0.9, {}
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, evaluate, BudgetTracker(max_evals=2))
+        eval_thread = threading.Thread(target=lambda: server.evaluate("slow"))
+        eval_thread.start()
+        self.assertTrue(started.wait(timeout=2))
+        try:
+            started_at = time.monotonic()
+            ok = server.drain_http(timeout=0.2, quiet=0.0)
+            self.assertFalse(ok)
+            self.assertLess(time.monotonic() - started_at, 1.0)
+            self.assertFalse(server._http_accepting)
+        finally:
+            release.set()
+            eval_thread.join(timeout=2)
+        server.resume_http()
+
+    def test_drain_http_accepts_request_blocked_before_admit(self) -> None:
+        import urllib.request
+
+        started = threading.Event()
+        release = threading.Event()
+        original_read = EvalServer._read_body
+
+        def blocked_read(handler: object) -> dict[str, object]:
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return original_read(handler)
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(
+            task,
+            lambda candidate: (0.9 if candidate == "in-transit" else 0.0, {}),
+            BudgetTracker(max_evals=4),
+        )
+        server.start()
+        outcome: dict[str, object] = {}
+        try:
+            with patch.object(EvalServer, "_read_body", staticmethod(blocked_read)):
+
+                def do_http() -> None:
+                    req = urllib.request.Request(
+                        f"{server.url}/evaluate",
+                        data=json.dumps({"candidate": "in-transit"}).encode(),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        outcome["status"] = resp.status
+                        outcome["body"] = json.loads(resp.read().decode())
+
+                http_thread = threading.Thread(target=do_http)
+                http_thread.start()
+                self.assertTrue(started.wait(timeout=2))
+                self.assertEqual(server._inflight, 0)
+
+                drain_ok: dict[str, bool] = {}
+
+                def do_drain() -> None:
+                    drain_ok["ok"] = server.drain_http(timeout=2.0, quiet=0.8)
+
+                drain_thread = threading.Thread(target=do_drain)
+                drain_thread.start()
+                time.sleep(0.1)
+                self.assertTrue(server._http_accepting)
+                release.set()
+                http_thread.join(timeout=2)
+                drain_thread.join(timeout=2)
+                self.assertTrue(drain_ok.get("ok"))
+                self.assertEqual(outcome.get("status"), 200)
+                self.assertEqual(server.best_candidate, "in-transit")
+                self.assertFalse(server._http_accepting)
+        finally:
+            release.set()
+            server.stop()
+
+    def test_drain_http_rejects_new_requests_after_quiet_period(self) -> None:
+        import urllib.error
+        import urllib.request
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=4))
+        server.start()
+        try:
+            self.assertTrue(server.drain_http(timeout=2.0, quiet=0.0))
+            self.assertFalse(server._http_accepting)
+            req = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "late"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(req, timeout=5)
+            self.assertEqual(raised.exception.code, 409)
         finally:
             server.stop()
 

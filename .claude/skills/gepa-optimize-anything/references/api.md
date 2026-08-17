@@ -134,15 +134,18 @@ e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **ca
 | `handoffs` | `None` | prior-stage artifacts for sequential compositions (materialized under `handoff/`). |
 | `effort` | `None` | `claude --effort` value. |
 | `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
+| `drain_quiet_seconds` | `0.5` | after Claude exits, keep HTTP accepting this long with no new admits so a leftover `eval.sh` can still land; then pause. |
+| `drain_timeout_seconds` | `600` | give up waiting for leftover evals after this many seconds and select from completed work. |
 
 The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
 launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the budget
 server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from
-`max_token_cost`). After the subprocess exits, AutoResearch pauses new HTTP evals, waits for
-in-flight work, and picks the winner from eval-server tracking. It ignores `best_candidate.txt`.
-For a dataset task it uses the best full-pool average. For a single-task run it uses the best
-completed single eval. Train and val are presented to the agent as one combined pool; the test set
-is unreachable over HTTP.
+`max_token_cost`). After the subprocess exits, AutoResearch waits for admitted evals, stays
+accepting briefly for in-transit `eval.sh` requests, then pauses HTTP and picks the winner from
+eval-server tracking. It ignores `best_candidate.txt` for the returned result (the agent's file is
+kept as `agent_best_candidate.txt` when it differs). For a dataset task it uses the best full-pool
+average. For a single-task run it uses the best completed single eval. Train and val are presented
+to the agent as one combined pool; the test set is unreachable over HTTP.
 
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`
 | key | default | meaning |
