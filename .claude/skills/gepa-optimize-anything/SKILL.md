@@ -157,7 +157,8 @@ low** — raise it and rerun.
 - If you **opt in** to evaluation caching (`engine_config={"engine": {"cache_evaluation": True}}` on
   the gepa backend — it is **off by default**), be aware `max_evals` then counts only cache *misses*:
   a converged search can keep proposing cache-hitting candidates without consuming eval budget, so
-  `stop_at_score`/`max_token_cost` become mandatory, not optional.
+  `stop_at_score`/`max_token_cost` become mandatory, not optional. A distinct `valset` is cached
+  separately from the trainset; `valset=None` still reuses minibatch rollouts.
 
 ## Minimal working example
 The example optimizes a system prompt for concreteness, but the **shape is identical** for any
