@@ -100,9 +100,11 @@ A fully executable notebook to run this example is in [src/gepa/examples/dspy_fu
 
 ## Reflective traces
 
-`make_reflective_dataset` builds the examples that the reflection LM sees. Each example includes the program-level inputs and outputs, plus a `Program Trace` of selected predictor calls.
+`make_reflective_dataset` builds the examples that the reflection LM sees. Each example includes the program-level inputs and outputs, plus a `Program Trace` of selected predictor calls, in execution order.
 
-- If any call produced a `FailedPrediction` (a format parse error), only that failed call is kept, so the raw completion stays visible.
-- Otherwise the last call of each distinct predictor is kept, in the order those predictors first appeared.
+- Consecutive calls to the same predictor are collapsed to the last call only when later inputs look cumulative. The usual cases are a growing `trajectory` string (DSPy ReAct) or a `History` that gained messages. Independent repeats, such as mapping one classifier over several items, are kept.
+- Interleaved calls such as generate, critique, generate-again are kept in that order. The first generation is not dropped, and the critique is not moved after the revision.
+- A `FailedPrediction` (format parse error) stays in the trace so the raw completion is visible. Calls before and after it are still selected.
 
-That collapses ReAct-style loops, where the same predictor is called many times with a growing `trajectory` string. It does not drop a later module in a pipeline (for example the reasoner and extractor in the MATH program above). A later call does not always contain the earlier module's inputs and outputs, so both stay in the trace.
+That removes the repeated ReAct prefixes that previously sent the same trajectory into reflection many times. It does not drop a later module in a pipeline (for example the reasoner and extractor in the MATH program above). A later call does not always contain the earlier module's inputs and outputs, so both stay in the trace.
+

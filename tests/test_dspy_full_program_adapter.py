@@ -5,8 +5,9 @@ Covers:
    crashing downstream zip() in cached_evaluate_full.
 2. reflection_lm was typed as dspy.LM but must conform to the LanguageModel
    protocol (callable returning str, not list[str]).
-3. make_reflective_dataset must collapse repeated calls to the same predictor
-   (issue 97) without dropping distinct predictors in a multi-module program.
+3. make_reflective_dataset must collapse consecutive cumulative ReAct traces
+   (issue 97) without dropping independent map calls, interleaved A-B-A calls,
+   or distinct predictors in a multi-module program.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ from unittest.mock import MagicMock, patch
 
 import dspy
 from dspy.primitives import Example
+from dspy.teleprompt.bootstrap_trace import FailedPrediction
+from dspy.utils.dummies import DummyLM
 
 from gepa.adapters.dspy_full_program_adapter.full_program_adapter import (
     DspyAdapter,
@@ -32,9 +35,10 @@ from gepa.proposer.reflective_mutation.base import LanguageModel
 # ---------------------------------------------------------------------------
 
 
-def _make_adapter(reflection_lm=None):
+def _make_adapter(reflection_lm=None, task_lm=None):
     """Build a DspyAdapter with mocked dependencies."""
-    task_lm = MagicMock(spec=dspy.LM)
+    if task_lm is None:
+        task_lm = MagicMock(spec=dspy.LM)
     metric_fn = MagicMock(return_value=1.0)
     if reflection_lm is None:
         reflection_lm = MagicMock(spec=LanguageModel)
@@ -50,6 +54,57 @@ def _make_adapter(reflection_lm=None):
 def _make_batch(n=3):
     """Create a minimal batch of DSPy Examples."""
     return [Example(question=f"q{i}").with_inputs("question") for i in range(n)]
+
+
+def _make_predictor():
+    """A mock predictor whose signature.equals matches only this predictor."""
+    predictor = MagicMock()
+    predictor.signature.equals.side_effect = lambda other: other is predictor.signature
+    return predictor
+
+
+def _program_trace(adapter, trace, named_predictors):
+    proposed_program = MagicMock()
+    proposed_program.named_predictors.return_value = named_predictors
+    adapter.build_program = MagicMock(return_value=(proposed_program, None))
+
+    example = Example(question="What is 2+2?").with_inputs("question")
+    eval_batch = MagicMock()
+    eval_batch.trajectories = [
+        {
+            "trace": trace,
+            "example": example,
+            "prediction": {"answer": "4"},
+            "score": 1.0,
+        }
+    ]
+    result = adapter.make_reflective_dataset(
+        candidate={"program": "dummy"},
+        eval_batch=eval_batch,
+        components_to_update=["program"],
+    )
+    return result["program"][0]["Program Trace"]
+
+
+def _reflective_trace_from_live_program(candidate_src, batch, dummy_answers):
+    """Run evaluate(capture_traces=True) then make_reflective_dataset with DummyLM."""
+    lm = DummyLM(list(dummy_answers))
+    dspy.configure(lm=lm)
+    adapter = DspyAdapter(
+        task_lm=lm,
+        metric_fn=lambda example, pred, trace=None: 1.0,
+        reflection_lm=MagicMock(spec=LanguageModel),
+        failure_score=0.0,
+        num_threads=1,
+    )
+    eval_batch = adapter.evaluate(batch, {"program": candidate_src}, capture_traces=True)
+    assert eval_batch.trajectories, "expected captured traces from DummyLM program"
+    result = adapter.make_reflective_dataset(
+        candidate={"program": candidate_src},
+        eval_batch=eval_batch,
+        components_to_update=["program"],
+    )
+    return result["program"][0]["Program Trace"], eval_batch
 
 
 # ---------------------------------------------------------------------------
@@ -169,84 +224,12 @@ class TestReflectionLmProtocol:
 
 
 # ---------------------------------------------------------------------------
-# Issue #97: avoid redundant cumulative trace context
+# Issue #97: collapse consecutive cumulative traces only
 # ---------------------------------------------------------------------------
 
 
-class TestReflectiveDatasetTraceSelection:
-    def test_keeps_only_final_trace_when_no_failure(self):
-        """Normal cumulative traces should contribute only their final entry."""
-        adapter = _make_adapter()
-
-        predictor = MagicMock()
-        predictor.signature.equals.return_value = True
-
-        proposed_program = MagicMock()
-        proposed_program.named_predictors.return_value = [("react", predictor)]
-
-        adapter.build_program = MagicMock(return_value=(proposed_program, None))
-
-        trace = [
-            (predictor, {"step": "1"}, {"thought": "first"}),
-            (predictor, {"step": "2"}, {"thought": "second"}),
-            (predictor, {"step": "3"}, {"answer": "final"}),
-        ]
-
-        example = Example(question="What is 2+2?").with_inputs("question")
-        eval_batch = MagicMock()
-        eval_batch.trajectories = [
-            {
-                "trace": trace,
-                "example": example,
-                "prediction": {"answer": "4"},
-                "score": 1.0,
-            }
-        ]
-
-        result = adapter.make_reflective_dataset(
-            candidate={"program": "dummy"},
-            eval_batch=eval_batch,
-            components_to_update=["program"],
-        )
-
-        program_trace = result["program"][0]["Program Trace"]
-
-        assert len(program_trace) == 1
-        assert program_trace[0]["Generated Outputs"] == {"answer": "final"}
-
-
-def _make_predictor():
-    """A mock predictor whose signature.equals matches only this predictor."""
-    predictor = MagicMock()
-    predictor.signature.equals.side_effect = lambda other: other is predictor.signature
-    return predictor
-
-
-def _program_trace(adapter, trace, named_predictors):
-    proposed_program = MagicMock()
-    proposed_program.named_predictors.return_value = named_predictors
-    adapter.build_program = MagicMock(return_value=(proposed_program, None))
-
-    example = Example(question="What is 2+2?").with_inputs("question")
-    eval_batch = MagicMock()
-    eval_batch.trajectories = [
-        {
-            "trace": trace,
-            "example": example,
-            "prediction": {"answer": "4"},
-            "score": 1.0,
-        }
-    ]
-    result = adapter.make_reflective_dataset(
-        candidate={"program": "dummy"},
-        eval_batch=eval_batch,
-        components_to_update=["program"],
-    )
-    return result["program"][0]["Program Trace"]
-
-
 class TestSelectTraceInstancesForReflection:
-    def test_repeated_calls_keep_last_per_predictor(self):
+    def test_react_keeps_last_react_call_and_extract(self):
         react = object()
         extract = object()
         t0 = "thought_0: add\ntool_name_0: calculator\nobservation_0: 4"
@@ -267,9 +250,7 @@ class TestSelectTraceInstancesForReflection:
 
         selected = _select_trace_instances_for_reflection(trace)
 
-        assert len(selected) == 2
-        assert selected[0] is trace[1]
-        assert selected[1] is trace[2]
+        assert selected == [trace[1], trace[2]]
         assert t0 in selected[0][1]["trajectory"]
         assert t0 in selected[1][1]["trajectory"]
         assert "thought_1: done" in selected[1][1]["trajectory"]
@@ -285,29 +266,78 @@ class TestSelectTraceInstancesForReflection:
         selected = _select_trace_instances_for_reflection(trace)
 
         assert selected == trace
-        assert selected[0][2]["answer"] == "5"
-        assert selected[1][2]["answer"] == "4"
 
-    def test_failed_prediction_keeps_the_failed_call_not_the_last_success(self):
-        from dspy.teleprompt.bootstrap_trace import FailedPrediction
-
-        predictor = object()
-        failed = FailedPrediction(completion_text="RAW")
+    def test_independent_same_predictor_calls_are_all_kept(self):
+        classify = object()
         trace = [
-            (predictor, {"step": "1"}, {"thought": "first"}),
-            (predictor, {"step": "2"}, failed),
-            (predictor, {"step": "3"}, {"answer": "final"}),
+            (classify, {"item": "apple"}, {"label": "fruit"}),
+            (classify, {"item": "carrot"}, {"label": "veg"}),
+            (classify, {"item": "salmon"}, {"label": "fish"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert [t[1]["item"] for t in selected] == ["apple", "carrot", "salmon"]
+
+    def test_prefix_lookalike_independent_items_are_not_collapsed(self):
+        classify = object()
+        trace = [
+            (classify, {"item": "cat"}, {"label": "animal"}),
+            (classify, {"item": "catalog"}, {"label": "object"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+
+    def test_interleaved_draft_critique_revise_keeps_chronology(self):
+        gen = object()
+        crit = object()
+        trace = [
+            (gen, {"task": "write", "notes": ""}, {"draft": "v1"}),
+            (crit, {"draft": "v1"}, {"feedback": "too vague"}),
+            (gen, {"task": "write", "notes": "too vague"}, {"draft": "v2"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert [t[2].get("draft") or t[2].get("feedback") for t in selected] == ["v1", "too vague", "v2"]
+
+    def test_growing_history_collapses_consecutive_turns(self):
+        talk = object()
+        h0 = dspy.History(messages=[])
+        h1 = dspy.History(messages=[{"question": "hi", "answer": "hello"}])
+        trace = [
+            (talk, {"question": "hi", "history": h0}, {"answer": "hello"}),
+            (talk, {"question": "again", "history": h1}, {"answer": "still here"}),
         ]
 
         selected = _select_trace_instances_for_reflection(trace)
 
         assert selected == [trace[1]]
-        assert selected[0][2] is failed
+        assert selected[0][2]["answer"] == "still here"
+
+    def test_failed_prediction_stays_with_surrounding_calls(self):
+        predictor = object()
+        failed = FailedPrediction(completion_text="RAW")
+        t0 = "thought_0: add\n"
+        t1 = t0 + "thought_1: retry\n"
+        trace = [
+            (predictor, {"step": "1", "trajectory": ""}, {"thought": "first"}),
+            (predictor, {"step": "2", "trajectory": t0}, failed),
+            (predictor, {"step": "3", "trajectory": t1}, {"answer": "final"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert selected[1][2] is failed
 
 
-class TestReflectiveDatasetKeepsDistinctPredictors:
+class TestReflectiveDatasetSelection:
     def test_same_predictor_cumulative_trajectory_keeps_last_entry(self):
-        """Issue 97 shape: later inputs contain earlier trajectory; keep one entry."""
         adapter = _make_adapter()
         react = _make_predictor()
         t0 = "thought_0: add\ntool_name_0: calculator\nobservation_0: 4"
@@ -327,11 +357,6 @@ class TestReflectiveDatasetKeepsDistinctPredictors:
         assert "thought_1: done" in program_trace[0]["Inputs"]["trajectory"]
 
     def test_react_keeps_last_react_call_and_extract(self):
-        """Last-entry-only would drop extract's sibling react call, or keep all three.
-
-        The correct trace is last react plus extract: two modules, with the full
-        trajectory still present on the kept extract inputs.
-        """
         adapter = _make_adapter()
         react = _make_predictor()
         extract = _make_predictor()
@@ -371,7 +396,6 @@ class TestReflectiveDatasetKeepsDistinctPredictors:
         assert "thought_1: done" in program_trace[1]["Inputs"]["trajectory"]
 
     def test_two_module_pipeline_keeps_both_predictors(self):
-        """MATH-tutorial shape: reasoner then extractor, including a disagreed answer."""
         adapter = _make_adapter()
         reasoner = _make_predictor()
         extractor = _make_predictor()
@@ -394,24 +418,6 @@ class TestReflectiveDatasetKeepsDistinctPredictors:
         assert program_trace[0]["Generated Outputs"]["answer"] == "5"
         assert program_trace[1]["Generated Outputs"]["answer"] == "4"
 
-    def test_failed_prediction_in_the_middle_is_kept(self):
-        from dspy.teleprompt.bootstrap_trace import FailedPrediction
-
-        adapter = _make_adapter()
-        predictor = _make_predictor()
-        failed = FailedPrediction(completion_text="RAW")
-        trace = [
-            (predictor, {"step": "1"}, {"thought": "first"}),
-            (predictor, {"step": "2"}, failed),
-            (predictor, {"step": "3"}, {"answer": "final"}),
-        ]
-
-        program_trace = _program_trace(adapter, trace, [("react", predictor)])
-
-        assert len(program_trace) == 1
-        assert program_trace[0]["Called Module"] == "react"
-        assert "RAW" in program_trace[0]["Generated Outputs"]
-
     def test_independent_modules_keep_a_side_call_that_is_not_in_the_last_inputs(self):
         adapter = _make_adapter()
         writer = _make_predictor()
@@ -430,3 +436,208 @@ class TestReflectiveDatasetKeepsDistinctPredictors:
         assert [entry["Called Module"] for entry in program_trace] == ["writer", "critic"]
         assert program_trace[0]["Generated Outputs"]["poem"] == "soft rain falling now"
         assert "poem" not in program_trace[1]["Inputs"]
+
+    def test_failed_prediction_in_the_middle_is_kept_with_neighbors(self):
+        adapter = _make_adapter()
+        predictor = _make_predictor()
+        failed = FailedPrediction(completion_text="RAW")
+        t0 = "thought_0: add\n"
+        t1 = t0 + "thought_1: retry\n"
+        trace = [
+            (predictor, {"step": "1", "trajectory": ""}, {"thought": "first"}),
+            (predictor, {"step": "2", "trajectory": t0}, failed),
+            (predictor, {"step": "3", "trajectory": t1}, {"answer": "final"}),
+        ]
+
+        program_trace = _program_trace(adapter, trace, [("react", predictor)])
+
+        assert len(program_trace) == 3
+        assert [entry["Called Module"] for entry in program_trace] == ["react", "react", "react"]
+        assert "RAW" in program_trace[1]["Generated Outputs"]
+        assert program_trace[2]["Generated Outputs"]["answer"] == "final"
+
+    def test_independent_map_calls_all_appear_in_program_trace(self):
+        adapter = _make_adapter()
+        classify = _make_predictor()
+        trace = [
+            (classify, {"item": "apple"}, {"label": "fruit"}),
+            (classify, {"item": "carrot"}, {"label": "veg"}),
+            (classify, {"item": "salmon"}, {"label": "fish"}),
+        ]
+
+        program_trace = _program_trace(adapter, trace, [("classify", classify)])
+
+        assert [entry["Inputs"]["item"] for entry in program_trace] == ["apple", "carrot", "salmon"]
+        assert [entry["Generated Outputs"]["label"] for entry in program_trace] == ["fruit", "veg", "fish"]
+
+    def test_interleaved_aba_keeps_draft_then_critique_then_revision(self):
+        adapter = _make_adapter()
+        gen = _make_predictor()
+        crit = _make_predictor()
+        trace = [
+            (gen, {"task": "write", "notes": ""}, {"draft": "v1"}),
+            (crit, {"draft": "v1"}, {"feedback": "too vague"}),
+            (gen, {"task": "write", "notes": "too vague"}, {"draft": "v2"}),
+        ]
+
+        program_trace = _program_trace(adapter, trace, [("gen", gen), ("crit", crit)])
+
+        assert [entry["Called Module"] for entry in program_trace] == ["gen", "crit", "gen"]
+        assert program_trace[0]["Generated Outputs"]["draft"] == "v1"
+        assert program_trace[1]["Generated Outputs"]["feedback"] == "too vague"
+        assert program_trace[2]["Generated Outputs"]["draft"] == "v2"
+
+
+# ---------------------------------------------------------------------------
+# Live DSPy programs (DummyLM, no network)
+# ---------------------------------------------------------------------------
+
+
+REACT_CANDIDATE = '''
+import dspy
+
+def calculator(x: str) -> str:
+    """Evaluate a python arithmetic expression."""
+    return str(eval(x, {"__builtins__": {}}, {}))
+
+class CumulativeProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.react = dspy.ReAct(
+            signature="question -> answer",
+            tools=[calculator],
+            max_iters=4,
+        )
+
+    def forward(self, question):
+        return self.react(question=question)
+
+program = CumulativeProgram()
+'''
+
+MAP_CANDIDATE = '''
+import dspy
+
+class MapProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.classify = dspy.Predict("item -> label")
+
+    def forward(self, items):
+        labels = [self.classify(item=item).label for item in items]
+        return dspy.Prediction(labels=labels)
+
+program = MapProgram()
+'''
+
+REVISE_CANDIDATE = '''
+import dspy
+
+class ReviseProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.gen = dspy.Predict("task, notes -> draft")
+        self.crit = dspy.Predict("draft -> feedback")
+
+    def forward(self, task):
+        first = self.gen(task=task, notes="")
+        critique = self.crit(draft=first.draft)
+        return self.gen(task=task, notes=critique.feedback)
+
+program = ReviseProgram()
+'''
+
+MATH_CANDIDATE = '''
+import dspy
+
+class MathProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.reasoner = dspy.Predict("question -> reasoning, answer")
+        self.extractor = dspy.Predict("question, reasoning -> answer")
+
+    def forward(self, question):
+        reasoned = self.reasoner(question=question)
+        extracted = self.extractor(question=question, reasoning=reasoned.reasoning)
+        return dspy.Prediction(reasoning=reasoned.reasoning, answer=extracted.answer)
+
+program = MathProgram()
+'''
+
+
+class TestLiveDspyTraceSelection:
+    def test_live_react_collapses_repeated_react_calls(self):
+        batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            REACT_CANDIDATE,
+            batch,
+            [
+                {"next_thought": "add", "next_tool_name": "calculator", "next_tool_args": {"x": "2+2"}},
+                {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
+                {"reasoning": "2+2=4", "answer": "4"},
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert raw_trace[1][1]["trajectory"].startswith(raw_trace[0][1]["trajectory"])
+        assert raw_trace[2][1]["trajectory"].startswith(raw_trace[1][1]["trajectory"])
+        assert [entry["Called Module"] for entry in program_trace] == ["react.react", "react.extract.predict"]
+        assert program_trace[0]["Generated Outputs"]["next_tool_name"] == "finish"
+        assert program_trace[1]["Generated Outputs"]["answer"] == "4"
+        assert "thought_0" in program_trace[0]["Inputs"]["trajectory"]
+        assert "thought_1" in program_trace[1]["Inputs"]["trajectory"]
+
+    def test_live_map_keeps_every_independent_classify_call(self):
+        batch = [Example(items=["apple", "carrot", "salmon"]).with_inputs("items")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            MAP_CANDIDATE,
+            batch,
+            [
+                {"label": "fruit"},
+                {"label": "veg"},
+                {"label": "fish"},
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert [entry["Called Module"] for entry in program_trace] == ["classify", "classify", "classify"]
+        assert [entry["Inputs"]["item"] for entry in program_trace] == ["apple", "carrot", "salmon"]
+        assert [entry["Generated Outputs"]["label"] for entry in program_trace] == ["fruit", "veg", "fish"]
+
+    def test_live_draft_critique_revise_keeps_aba_order(self):
+        batch = [Example(task="write a haiku").with_inputs("task")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            REVISE_CANDIDATE,
+            batch,
+            [
+                {"draft": "v1"},
+                {"feedback": "too vague"},
+                {"draft": "v2"},
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert [entry["Called Module"] for entry in program_trace] == ["gen", "crit", "gen"]
+        assert program_trace[0]["Generated Outputs"]["draft"] == "v1"
+        assert program_trace[1]["Generated Outputs"]["feedback"] == "too vague"
+        assert program_trace[2]["Generated Outputs"]["draft"] == "v2"
+
+    def test_live_two_module_pipeline_keeps_disagreed_answers(self):
+        batch = [Example(question="If x+3=7, what is x?").with_inputs("question")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            MATH_CANDIDATE,
+            batch,
+            [
+                {"reasoning": "subtract 3", "answer": "5"},
+                {"answer": "4"},
+            ],
+        )
+
+        assert len(eval_batch.trajectories[0]["trace"]) == 2
+        assert [entry["Called Module"] for entry in program_trace] == ["reasoner", "extractor"]
+        assert program_trace[0]["Generated Outputs"]["answer"] == "5"
+        assert program_trace[1]["Generated Outputs"]["answer"] == "4"
+        assert program_trace[1]["Inputs"]["reasoning"] == "subtract 3"
