@@ -78,10 +78,11 @@ class AutoResearchConfig:
             self.max_no_eval_seconds = float(self.max_no_eval_seconds)
 
 
-# Nudge fed to claude --resume on each Ralph iteration.
+# Nudge fed to claude --resume on each Ralph iteration. The live eval script
+# is named in the per-invocation prompt; ./eval.sh is retired after iteration 1.
 RALPH_CONTINUE_PROMPT = (
     "Continue iterating on the candidate. Re-read program.md if needed. "
-    "Run ./eval.sh as appropriate. "
+    "Do not run ./eval.sh; that script is bound to the previous evaluation session. "
     "Keep refining best_candidate.txt until you exhaust the budget "
     "or genuinely cannot find another improvement."
 )
@@ -219,6 +220,12 @@ if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
 if [ "$HTTP_CODE" = "409" ]; then echo "EVALUATION_SESSION_CLOSED" >&2; exit 1; fi
 """
 
+EVAL_SCRIPT_RETIRED = """\
+#!/usr/bin/env bash
+echo "eval.sh is bound to a closed evaluation session. Use {replacement} for this invocation." >&2
+exit 1
+"""
+
 
 _PROGRAM_MD = """\
 # Task: {name}
@@ -326,7 +333,11 @@ def _rules_section(task: Task, budget: BudgetTracker) -> str:
         "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
     )
     return (
-        f"- You cannot modify eval.sh or the server.\n- Focus on meaningful improvements each iteration.{exhaust_rule}"
+        f"- You cannot modify eval.sh, eval-*.sh, or the server.\n"
+        f"- Use only the eval script named in the current invocation. "
+        f"./eval.sh is valid for the first invocation; later invocations use "
+        f"eval-N.sh and ./eval.sh will reject.\n"
+        f"- Focus on meaningful improvements each iteration.{exhaust_rule}"
     )
 
 
@@ -430,6 +441,12 @@ def _materialize_eval_script(
     eval_script.write_text(eval_template.format(server_url=server.url, evaluation_session_id=evaluation_session_id))
     eval_script.chmod(0o755)
     return eval_script
+
+
+def _retire_eval_sh(work_dir: Path, replacement: str) -> None:
+    stub = work_dir / "eval.sh"
+    stub.write_text(EVAL_SCRIPT_RETIRED.format(replacement=replacement))
+    stub.chmod(0o755)
 
 
 def _materialize_handoff(work_dir: Path, handoffs: list[dict[str, Any]] | None) -> None:
@@ -538,7 +555,7 @@ class AutoResearchEngine:
                 handoffs=self.handoffs,
             )
         except BaseException:
-            server.close_evaluation_session(evaluation_session_id, timeout=self._drain_timeout())
+            self._close_session_quietly(server, evaluation_session_id)
             raise
 
         candidate_file = work_dir / "candidate.txt"
@@ -602,23 +619,21 @@ class AutoResearchEngine:
                     break
                 if not self._has_budget_headroom(server, adapter_cost):
                     break
-                if (
-                    self.stop_at_score is not None
-                    and best_score >= self.stop_at_score
-                ):
+                if self.stop_at_score is not None and best_score >= self.stop_at_score:
                     break
                 if proc.returncode != 0:
                     break
                 evaluation_session_id = server.open_evaluation_session(initial_candidate)
                 eval_script = work_dir / f"eval-{ralph_iterations + 1}.sh"
                 try:
-                    _materialize_eval_script(
-                        work_dir, task, server, evaluation_session_id, eval_script.name
-                    )
+                    _materialize_eval_script(work_dir, task, server, evaluation_session_id, eval_script.name)
+                    _retire_eval_sh(work_dir, eval_script.name)
                 except BaseException:
-                    server.close_evaluation_session(evaluation_session_id, timeout=self._drain_timeout())
+                    self._close_session_quietly(server, evaluation_session_id)
                     raise
-                iteration_prompt = f"{RALPH_CONTINUE_PROMPT} Use {eval_script} for this invocation."
+                iteration_prompt = (
+                    f"{RALPH_CONTINUE_PROMPT} Use {eval_script} for this invocation; do not run ./eval.sh."
+                )
                 proc, iteration_candidate, iteration_score = self._run_evaluation_iteration(
                     server,
                     task,
@@ -670,7 +685,7 @@ class AutoResearchEngine:
         try:
             proc = self._run_claude(**run_kwargs)
         except BaseException:
-            server.close_evaluation_session(evaluation_session_id, timeout=self._drain_timeout())
+            self._close_session_quietly(server, evaluation_session_id)
             raise
 
         try:
@@ -778,8 +793,15 @@ class AutoResearchEngine:
         return True
 
     def _drain_timeout(self) -> float:
-        return self.max_no_eval_seconds if self.max_no_eval_seconds is not None else _BUDGET_EXHAUSTION_GRACE_SECONDS
+        # Drain waits for admitted evals to finish. That is independent of
+        # ``max_no_eval_seconds``, which only kills a silent Claude subprocess.
+        return _BUDGET_EXHAUSTION_GRACE_SECONDS
 
+    def _close_session_quietly(self, server: EvalServer, session_id: str) -> None:
+        try:
+            server.close_evaluation_session(session_id, timeout=self._drain_timeout())
+        except Exception:
+            pass
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         # Prefer ``self.run_dir`` when the caller's server has no output_dir:
@@ -835,12 +857,11 @@ def _config_bool(value: object) -> bool:
 
 
 def _best_aggregate_candidate(server: EvalServer) -> tuple[str, float] | None:
-    """Return the best candidate from aggregate ``evaluate_examples`` calls.
+    """Best full-pool checkpoint from the global progress log.
 
-    Dataset ``EvalServer.best_score`` is the best per-example score, not a
-    candidate-level aggregate. The HTTP ``/evaluate_examples`` endpoint logs
-    aggregate checkpoints with candidate ids; use those for agentic engines
-    that evaluate through shell scripts.
+    AutoResearch ``run()`` no longer uses this. It selects from per-session
+    tracking after ``close_evaluation_session``. Kept for tests and for
+    inspecting a shared server's global log.
     """
     progress = list(getattr(server, "progress_log", []) or [])
     registry = getattr(server, "_candidate_registry", {}) or {}

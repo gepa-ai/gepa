@@ -467,9 +467,10 @@ def test_autoresearch_fails_closed_when_admitted_evaluation_does_not_drain(
             engine="autoresearch",
             sandbox=False,
             run_dir=str(tmp_path),
-            engine_config={"ralph": False, "max_no_eval_seconds": 0.05},
+            engine_config={"ralph": False},
         )
     )
+    monkeypatch.setattr(engine, "_drain_timeout", lambda: 0.05)
     try:
         with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
             with pytest.raises(RuntimeError, match="did not drain"):
@@ -477,6 +478,67 @@ def test_autoresearch_fails_closed_when_admitted_evaluation_does_not_drain(
     finally:
         release.set()
         server.stop()
+
+
+def test_autoresearch_drain_timeout_is_not_max_no_eval_seconds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    session_ids: list[str] = []
+
+    def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
+        started.set()
+        assert release.wait(timeout=2.0)
+        return 0.9, {}
+
+    task = Task(name="slow-eval", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
+    server.start()
+    original_open = server.open_evaluation_session
+
+    def open_evaluation_session(initial_candidate: str) -> str:
+        session_id = original_open(initial_candidate)
+        session_ids.append(session_id)
+        return session_id
+
+    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
+
+    def fake_popen(_cmd: list[str], **_kwargs: object) -> _FakePopen:
+        threading.Thread(
+            target=lambda: server.evaluate("slow", evaluation_session_id=session_ids[0]), daemon=True
+        ).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch",
+            sandbox=False,
+            run_dir=str(tmp_path),
+            engine_config={"ralph": False, "max_no_eval_seconds": 0.05},
+        )
+    )
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            outcome: dict[str, object] = {}
+
+            def run() -> None:
+                outcome["result"] = engine.run(task, server)
+
+            runner = threading.Thread(target=run)
+            runner.start()
+            assert not release.wait(timeout=0.15)
+            assert runner.is_alive()
+            release.set()
+            runner.join(timeout=2.0)
+    finally:
+        release.set()
+        server.stop()
+
+    assert not runner.is_alive()
+    result = outcome["result"]
+    assert isinstance(result, Result)
+    assert result.best_candidate == "slow"
+    assert result.best_score == 0.9
 
 
 def test_autoresearch_wait_keeps_shared_server_reusable(tmp_path: Path) -> None:
@@ -629,6 +691,12 @@ def test_autoresearch_closes_each_ralph_iteration_before_opening_the_next(
         work_dir = Path(str(kwargs["cwd"]))
         assert session_ids[1] in (work_dir / "eval-2.sh").read_text()
         assert str(work_dir / "eval-2.sh") in cmd[-1]
+        assert "do not run ./eval.sh" in cmd[-1]
+        eval_sh = (work_dir / "eval.sh").read_text()
+        assert "closed evaluation session" in eval_sh
+        assert "eval-2.sh" in eval_sh
+        assert session_ids[1] not in eval_sh
+        assert "eval-N.sh" in (work_dir / "program.md").read_text()
         with pytest.raises(EvaluationSessionClosedError) as raised:
             server.evaluate("first", evaluation_session_id=session_ids[0])
         late_errors.append(raised.value)
@@ -669,7 +737,9 @@ def test_autoresearch_closes_a_session_when_materialization_fails(
         "gepa.oa.engines.autoresearch._materialize_sandbox", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError())
     )
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
     )
 
     with pytest.raises(OSError):
@@ -695,7 +765,9 @@ def test_autoresearch_closes_a_session_when_claude_cannot_start(
 
     monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
     )
 
     try:
@@ -705,6 +777,31 @@ def test_autoresearch_closes_a_session_when_claude_cannot_start(
 
         with pytest.raises(EvaluationSessionClosedError):
             server.evaluate("late", evaluation_session_id=session_ids[0])
+    finally:
+        server.stop()
+
+
+def test_autoresearch_popen_failure_is_not_masked_by_drain_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = Task(name="popen-timeout-mask", seed_candidate="seed")
+    server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=1))
+    server.start()
+    monkeypatch.setattr(
+        server,
+        "close_evaluation_session",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("drain")),
+    )
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
+    )
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=OSError("cannot start")):
+            with pytest.raises(OSError, match="cannot start"):
+                engine.run(task, server)
     finally:
         server.stop()
 
