@@ -190,12 +190,20 @@ def optimize(
     - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
 
     # Evaluation caching
-    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
+    - cache_evaluation: Whether to cache the (score, output, objective_scores) of
+      (candidate, split, example) triples. If True and a cache entry exists, GEPA skips the
+      fitness evaluation. Trainset minibatches and valset evaluation share the cache only when
+      they use the same DataLoader instance (valset=None, or the same dataset object passed as
+      both trainset and valset). A distinct valset is a separate namespace, so held-out scores
+      cannot be served from trainset rollouts at the same list index. Defaults to False.
+      Resuming a run_dir whose cache was written before this namespacing existed drops those
+      entries; already-recorded valset scores in the pickled state are left as they are.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
-    - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
+    - raise_on_exception: Whether to propagate proposer/evaluator exceptions. False suppresses failures only after
+      an iteration consumes metric budget; zero-progress failures still propagate.
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
@@ -220,7 +228,7 @@ def optimize(
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
-    val_loader = ensure_loader(valset) if valset is not None else train_loader
+    val_loader = train_loader if valset is None or valset is trainset else ensure_loader(valset)
 
     # Validate that only one custom proposal method is provided
     adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None

@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
@@ -20,15 +20,27 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
             ``str`` when ``seed_candidate`` was a string.
         best_idx: Index of the highest-scoring candidate.
+        best_score: Aggregate validation score of the best candidate.
+        total_evals: Eval-server call count when this result came from
+            :func:`~gepa.optimize_anything.optimize_anything` (``budget.used``).
+            Falls back to ``total_metric_calls`` for launcher-only / deserialized
+            snapshots.
         val_aggregate_scores: Per-candidate average validation score (higher is better).
         candidates: All candidates explored during optimization.
         parents: Lineage — ``parents[i]`` is a list of parent indices for candidate ``i``.
         per_val_instance_best_candidates: Pareto frontier — per validation example,
             the set of candidate indices achieving the best score.
         best_refiner_prompt: The refiner prompt from the best candidate (if refiner was enabled).
+        eval_log: Per-eval records from the OA eval server (empty on launcher-only results).
+        metadata: Free-form run metadata (wall time, budget, cost, held-out test
+            scores, ...). The candidate pool lives on this object (``candidates``,
+            ``best_idx``, ...); ``metadata`` does **not** nest a ``gepa_result``.
 
     Serialization:
-        ``to_dict()`` / ``from_dict()`` for JSON-safe round-tripping.
+        ``to_dict()`` / ``from_dict()`` for JSON-safe round-tripping of the
+        candidate pool and GEPA-core fields. ``eval_log``, ``metadata``, and
+        ``eval_server_calls`` are runtime conveniences and are omitted so the
+        JSON contract stays byte-stable.
 
     Example::
 
@@ -61,6 +73,18 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     # This is the internal dict key used to wrap str seed_candidates.
     _str_candidate_key: str | None = None
 
+    # Universal-core run data, populated on every run regardless of engine.
+    # Generic (non-gepa) engines return a single-candidate snapshot but still
+    # carry their eval log and free-form metadata (wall time, budget, cost,
+    # held-out test scores, ...). These are runtime conveniences and are
+    # intentionally NOT part of ``to_dict()`` — that stays a JSON-safe pool
+    # snapshot for the frozen serialization contract.
+    eval_log: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    # OA eval-server call count (``server.budget.used``). Distinct from
+    # ``total_metric_calls``, which is GEPA core's own counter.
+    eval_server_calls: int | None = None
+
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
     # -------- Convenience properties --------
@@ -76,6 +100,33 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def best_idx(self) -> int:
         scores = self.val_aggregate_scores
         return max(range(len(scores)), key=lambda i: scores[i])
+
+    @property
+    def best_score(self) -> float:
+        """Aggregate validation score of the best candidate.
+
+        The lean-``Result`` accessor, computed from the pool so it is valid on
+        every run (generic engines carry a single-candidate pool). Returns
+        ``-inf`` only for the degenerate empty pool.
+        """
+        scores = self.val_aggregate_scores
+        return scores[self.best_idx] if scores else float("-inf")
+
+    @property
+    def total_evals(self) -> int:
+        """Eval-server call count, mirroring lean ``Result.total_evals``.
+
+        Prefers ``eval_server_calls`` (``server.budget.used`` from the OA layer)
+        when this result was produced by ``optimize_anything``. Falls back to
+        ``total_metric_calls`` (GEPA core) and then
+        ``sum(discovery_eval_counts)`` for launcher-only / deserialized
+        snapshots that never went through the eval server.
+        """
+        if self.eval_server_calls is not None:
+            return self.eval_server_calls
+        if self.total_metric_calls is not None:
+            return self.total_metric_calls
+        return sum(self.discovery_eval_counts)
 
     @property
     def best_candidate(self) -> str | dict[str, str]:

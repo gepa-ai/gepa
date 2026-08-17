@@ -144,6 +144,11 @@ def test_batch_path_packaging_matches_sequential_path():
     assert batched[1].outputs[0][1] == {"bias": "100"}
 
 
+def test_batch_path_honors_capture_traces_false():
+    results = _make_adapter(batch_evaluator=_user_batch_fn).batch_evaluate(ITEMS, capture_traces=False)
+    assert all(result.trajectories is None for result in results)
+
+
 def test_batch_path_updates_best_evals_for_warm_start():
     """B1: the top-K best-eval buffer must be populated on the batch path."""
     adapter = _make_adapter(batch_evaluator=_user_batch_fn)
@@ -189,9 +194,23 @@ def test_batch_only_adapter_evaluate_routes_whole_batch():
     adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="off", batch_evaluator=fn)
     result = adapter.evaluate([1, 2, 3], {"bias": "0"})
     assert result.scores == [1.0, 2.0, 3.0]
+    assert result.trajectories is None
     assert len(fn.calls) == 1 and len(fn.calls[0]) == 3  # one grouped call
     # Packaging parity: outputs are (score, candidate, side_info) triples.
     assert all(out[1] == {"bias": "0"} for out in result.outputs)
+
+
+def test_direct_evaluate_returns_trajectories_when_requested():
+    adapter = OptimizeAnythingAdapter(
+        evaluator=None,
+        parallel=False,
+        cache_mode="off",
+        batch_evaluator=_CountingBatchFn(),
+    )
+
+    result = adapter.evaluate([1, 2], {"bias": "0"}, capture_traces=True)
+
+    assert result.trajectories == [{"example": 1}, {"example": 2}]
 
 
 def test_batch_only_singleton_resolution_for_refiner_seam():

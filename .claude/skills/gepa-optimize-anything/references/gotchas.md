@@ -61,6 +61,9 @@ work:
   emitting cache-hitting candidates without consuming eval budget and can spin until your process
   times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or
   `max_token_cost` (plus a wall-clock `timeout` on the launched process) are mandatory.
+  A distinct `valset` is a separate cache namespace from the trainset (list-position ids would
+  otherwise collide). `valset=None` still shares cached rollouts with minibatches. Resuming a
+  `run_dir` whose cache predates that namespacing drops the old entries.
 Agentic backends also spend LLM tokens between evals — cap them with `max_token_cost`
 (enforced as `--max-budget-usd`).
 
