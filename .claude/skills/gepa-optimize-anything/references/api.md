@@ -132,12 +132,16 @@ e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **ca
 | `handoffs` | `None` | prior-stage artifacts for sequential compositions (materialized under `handoff/`). |
 | `effort` | `None` | `claude --effort` value. |
 | `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
+| `drain_timeout_seconds` | `None` | wait for admitted evals after Claude exits; `None` waits until they finish. |
 
 The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
-launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the budget
-server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from
-`max_token_cost`). Train and val are presented to the agent as one combined pool; the test set is
-unreachable over HTTP.
+launches `claude --print`. Each invocation gets an evaluation-session token baked into the live
+eval script; Ralph iterations switch to `eval-N.sh` and retire earlier scripts so a delayed
+`./eval.sh` cannot join the next session. Scripts POST to the eval server with that token (HTTP 409
+when the session is closed or draining without a token, HTTP 429 on budget exhaustion). The returned
+`best_candidate` is the completed session winner and is written back to `best_candidate.txt`. LLM
+spend is capped via `--max-budget-usd` (from `max_token_cost`). Train and val are presented to the
+agent as one combined pool; the test set is unreachable over HTTP.
 
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`
 | key | default | meaning |

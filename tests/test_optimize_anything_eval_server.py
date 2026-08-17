@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gepa.oa.budget import BudgetTracker
-from gepa.oa.eval_server import EvalServer, EvaluationSessionClosedError
+from gepa.oa.eval_server import EvalServer, EvaluationSessionClosedError, EvaluationSessionResult
 from gepa.oa.task import Task
 
 
@@ -174,7 +174,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         admitted = threading.Event()
         release = threading.Event()
         close_done = threading.Event()
-        closed: list[tuple[str, float]] = []
+        closed: list[EvaluationSessionResult] = []
         original_register = server._register_candidate
 
         def block_register(candidate: str) -> int:
@@ -212,7 +212,11 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             server.stop()
 
         self.assertTrue(close_done.is_set())
-        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(closed[0].best_candidate, "good")
+        self.assertEqual(closed[0].best_score, 1.0)
+        self.assertEqual(closed[0].aggregate_candidate, "good")
+        self.assertEqual(closed[0].aggregate_score, 1.0)
         self.assertEqual(len(server.progress_log), 1)
 
     def test_close_waits_between_http_evaluation_and_progress(self) -> None:
@@ -224,7 +228,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         evaluation_returned = threading.Event()
         release = threading.Event()
         close_done = threading.Event()
-        closed: list[tuple[str, float]] = []
+        closed: list[EvaluationSessionResult] = []
         original_evaluate_examples = server.evaluate_examples
 
         def pause_before_progress(*args: object, **kwargs: object) -> tuple[float, dict[str, object]]:
@@ -263,7 +267,11 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             server.stop()
 
         self.assertTrue(close_done.is_set())
-        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(closed[0].best_candidate, "good")
+        self.assertEqual(closed[0].best_score, 1.0)
+        self.assertEqual(closed[0].aggregate_candidate, "good")
+        self.assertEqual(closed[0].aggregate_score, 1.0)
         self.assertEqual(len(server.progress_log), 1)
 
     def test_close_waits_between_http_validation_and_progress(self) -> None:
@@ -275,7 +283,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         evaluation_returned = threading.Event()
         release = threading.Event()
         close_done = threading.Event()
-        closed: list[tuple[str, float]] = []
+        closed: list[EvaluationSessionResult] = []
         original_evaluate_examples = server.evaluate_examples
 
         def pause_before_progress(*args: object, **kwargs: object) -> tuple[float, dict[str, object]]:
@@ -314,14 +322,18 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             server.stop()
 
         self.assertTrue(close_done.is_set())
-        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(closed[0].best_candidate, "good")
+        self.assertEqual(closed[0].best_score, 1.0)
+        self.assertEqual(closed[0].aggregate_candidate, "good")
+        self.assertEqual(closed[0].aggregate_score, 1.0)
         self.assertEqual(len(server.progress_log), 1)
 
     def test_close_does_not_zero_queued_nested_evaluate_examples(self) -> None:
         started = threading.Event()
         release = threading.Event()
         close_done = threading.Event()
-        closed: list[tuple[str, float]] = []
+        closed: list[EvaluationSessionResult] = []
         seen: list[str] = []
 
         def evaluate(_candidate: str, example: object) -> tuple[float, dict[str, object]]:
@@ -374,7 +386,9 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         self.assertEqual(sorted(scores.values()), [1.0, 1.0, 1.0])
         self.assertNotIn("errors", info)
         self.assertEqual(sorted(seen), ["a", "b", "c"])
-        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(closed[0].best_candidate, "good")
+        self.assertEqual(closed[0].best_score, 1.0)
+        self.assertIsNone(closed[0].aggregate_candidate)
 
     def test_http_close_does_not_zero_queued_evaluate_examples(self) -> None:
         import urllib.request
@@ -382,7 +396,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         started = threading.Event()
         release = threading.Event()
         close_done = threading.Event()
-        closed: list[tuple[str, float]] = []
+        closed: list[EvaluationSessionResult] = []
 
         def evaluate(_candidate: str, example: object) -> tuple[float, dict[str, object]]:
             if str(example) == "a":
@@ -433,7 +447,10 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         self.assertTrue(close_done.is_set())
         self.assertEqual(payload[0]["average_score"], 1.0)
         self.assertEqual(payload[0]["errors"], {})
-        self.assertEqual(closed, [("good", 1.0)])
+        self.assertEqual(closed[0].best_candidate, "good")
+        self.assertEqual(closed[0].best_score, 1.0)
+        self.assertEqual(closed[0].aggregate_candidate, "good")
+        self.assertEqual(closed[0].aggregate_score, 1.0)
         self.assertEqual(server.evaluation_session_aggregate(session_id), ("good", 1.0))
 
     def test_http_rejects_an_unknown_token_while_an_external_engine_is_active(self) -> None:
@@ -466,6 +483,123 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         server.close_evaluation_session(session_id, timeout=0.1)
         with self.assertRaises(EvaluationSessionClosedError):
             server.evaluate("late", evaluation_session_id=session_id)
+
+    def test_http_requires_a_token_while_a_session_is_draining(self) -> None:
+        import urllib.error
+        import urllib.request
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return 1.0, {}
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, evaluate, BudgetTracker(max_evals=4), max_concurrency=1)
+        session_id = server.open_evaluation_session("seed")
+        server.start()
+        tokenless_status: list[int] = []
+
+        def run_eval() -> None:
+            server.evaluate("good", evaluation_session_id=session_id)
+
+        try:
+            eval_thread = threading.Thread(target=run_eval)
+            eval_thread.start()
+            self.assertTrue(started.wait(timeout=2))
+
+            close_thread = threading.Thread(target=lambda: server.close_evaluation_session(session_id, timeout=2))
+            close_thread.start()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                with server._idle:
+                    session = server._evaluation_sessions.get(session_id)
+                    if session is not None and session.closed:
+                        break
+                time.sleep(0.01)
+            else:
+                self.fail("session did not close while evaluation was blocked")
+
+            req = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "tokenless"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            try:
+                urllib.request.urlopen(req, timeout=5)
+                tokenless_status.append(200)
+            except urllib.error.HTTPError as e:
+                tokenless_status.append(e.code)
+
+            release.set()
+            eval_thread.join(timeout=2)
+            close_thread.join(timeout=2)
+
+            after = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "after-drain"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(after, timeout=5) as resp:
+                tokenless_status.append(resp.status)
+        finally:
+            release.set()
+            server.stop()
+
+        self.assertEqual(tokenless_status, [409, 200])
+        self.assertEqual(server.best_candidate, "good")
+
+    def test_concurrent_close_of_the_same_session_is_safe(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
+            started.set()
+            self.assertTrue(release.wait(timeout=2))
+            return 0.5, {}
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
+        session_id = server.open_evaluation_session("seed")
+        results: list[EvaluationSessionResult] = []
+        errors: list[BaseException] = []
+
+        def run_eval() -> None:
+            server.evaluate("winner", evaluation_session_id=session_id)
+
+        def closer() -> None:
+            try:
+                results.append(server.close_evaluation_session(session_id, timeout=2))
+            except BaseException as e:
+                errors.append(e)
+
+        eval_thread = threading.Thread(target=run_eval)
+        eval_thread.start()
+        self.assertTrue(started.wait(timeout=2))
+        close_threads = [threading.Thread(target=closer) for _ in range(2)]
+        for thread in close_threads:
+            thread.start()
+        release.set()
+        eval_thread.join(timeout=2)
+        for thread in close_threads:
+            thread.join(timeout=2)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertEqual({(item.best_candidate, item.best_score) for item in results}, {("winner", 0.5)})
+
+    def test_completed_sessions_are_bounded(self) -> None:
+        from gepa.oa.eval_server import _MAX_COMPLETED_EVALUATION_SESSIONS
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=100))
+        for i in range(_MAX_COMPLETED_EVALUATION_SESSIONS + 5):
+            session_id = server.open_evaluation_session("seed")
+            server.evaluate(f"c{i}", evaluation_session_id=session_id)
+            server.close_evaluation_session(session_id, timeout=0.1)
+        self.assertLessEqual(len(server._completed_sessions), _MAX_COMPLETED_EVALUATION_SESSIONS)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,9 @@
 The api creates an :class:`EvalServer` and starts its HTTP endpoint. This
 engine launches one ``claude --print`` session inside a work_dir laid out
 with ``program.md``, ``candidate.txt``, ``best_candidate.txt``, and an
-``eval.sh`` script that POSTs to the eval server. Budget enforcement happens
+eval script that POSTs to the eval server. The first invocation uses
+``eval.sh``; later Ralph invocations bind a fresh evaluation session to
+``eval-N.sh`` and retire earlier scripts. Budget enforcement happens
 server-side (HTTP 429 on exhaustion); LLM cost is bounded via
 ``--max-budget-usd``.
 
@@ -61,6 +63,9 @@ class AutoResearchConfig:
             referenced from ``program.md``).
         effort: ``claude --effort`` value (CLI flag).
         max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+        drain_timeout_seconds: How long to wait for admitted evaluations after
+            the Claude subprocess exits. ``None`` waits until they finish.
+            A positive value fail-closes the run if they do not drain in time.
     """
 
     model: str = "claude-sonnet-4-6"
@@ -69,6 +74,7 @@ class AutoResearchConfig:
     handoffs: list[dict[str, Any]] | None = None
     effort: str | None = None
     max_thinking_tokens: int | None = None
+    drain_timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         # yaml/CLI may pass ralph as a string ("false") and max_no_eval_seconds
@@ -76,13 +82,17 @@ class AutoResearchConfig:
         self.ralph = _config_bool(self.ralph)
         if self.max_no_eval_seconds is not None:
             self.max_no_eval_seconds = float(self.max_no_eval_seconds)
+        if self.drain_timeout_seconds is not None:
+            self.drain_timeout_seconds = float(self.drain_timeout_seconds)
 
 
 # Nudge fed to claude --resume on each Ralph iteration. The live eval script
-# is named in the per-invocation prompt; ./eval.sh is retired after iteration 1.
+# is named in the per-invocation prompt and program.md; retired eval*.sh
+# scripts reject so a delayed start cannot join the next session.
 RALPH_CONTINUE_PROMPT = (
     "Continue iterating on the candidate. Re-read program.md if needed. "
-    "Do not run ./eval.sh; that script is bound to the previous evaluation session. "
+    "Use only the eval script named in this invocation. Retired eval*.sh "
+    "scripts are bound to closed evaluation sessions and will reject. "
     "Keep refining best_candidate.txt until you exhaust the budget "
     "or genuinely cannot find another improvement."
 )
@@ -222,7 +232,7 @@ if [ "$HTTP_CODE" = "409" ]; then echo "EVALUATION_SESSION_CLOSED" >&2; exit 1; 
 
 EVAL_SCRIPT_RETIRED = """\
 #!/usr/bin/env bash
-echo "eval.sh is bound to a closed evaluation session. Use {replacement} for this invocation." >&2
+echo "{retired} is bound to a closed evaluation session. Use {replacement} for this invocation." >&2
 exit 1
 """
 
@@ -256,17 +266,17 @@ Training examples are in `train/` as individual JSON files.
 ### Train evaluation
 ```bash
 # Evaluate on all training examples
-./eval.sh candidate.txt
+./{eval_script} candidate.txt
 
 # Evaluate on specific examples
-./eval.sh candidate.txt --ids example_0,example_1,example_2
+./{eval_script} candidate.txt --ids example_0,example_1,example_2
 ```{cost_line}"""
 
 _EVAL_SINGLE = """\
 ## Evaluation
 This is a **single-task** optimization.
 ```bash
-./eval.sh candidate.txt
+./{eval_script} candidate.txt
 ```{cost_line}"""
 
 
@@ -284,19 +294,19 @@ def _budget_section(budget: BudgetTracker, max_token_cost: float | None) -> str:
     return "\n".join(lines)
 
 
-def _strategy_section(task: Task) -> str:
+def _strategy_section(task: Task, eval_script: str) -> str:
     """Explicit experiment loop, in the spirit of karpathy/autoresearch.
 
     Two modes:
-      - dataset task  → ``./eval.sh`` on the full training pool is the signal.
-      - single task   → ``./eval.sh`` runs the single-task ``eval_fn``.
+      - dataset task  → the current eval script on the full training pool is the signal.
+      - single task   → the current eval script runs the single-task ``eval_fn``.
     """
     has_train_dir = task.has_dataset and bool(task.train_set)
 
     if has_train_dir:
         edit_step = (
             "2. **Hypothesize and edit.** Read failures in `train/` "
-            "(spot-check with `./eval.sh candidate.txt --ids id1,id2` if useful), "
+            f"(spot-check with `./{eval_script} candidate.txt --ids id1,id2` if useful), "
             "form a hypothesis, edit `candidate.txt`."
         )
     else:
@@ -307,9 +317,9 @@ def _strategy_section(task: Task) -> str:
 
     return (
         "Run this as an explicit experiment loop forever, until you hit the max score (if there is one).\n"
-        "1. **Baseline.** Run `./eval.sh candidate.txt` on the seed; note the score and any judge feedback.\n"
+        f"1. **Baseline.** Run `./{eval_script} candidate.txt` on the seed; note the score and any judge feedback.\n"
         f"{edit_step}\n"
-        "3. **Score.** Run `./eval.sh candidate.txt`.\n"
+        f"3. **Score.** Run `./{eval_script} candidate.txt`.\n"
         "4. **Keep or discard.** If the score improved over the best so far, "
         "`cp candidate.txt best_candidate.txt`. "
         "Otherwise `cp best_candidate.txt candidate.txt` to revert.\n"
@@ -327,16 +337,15 @@ def _perfect_score_section(perfect_score: float | None) -> str:
     )
 
 
-def _rules_section(task: Task, budget: BudgetTracker) -> str:
+def _rules_section(task: Task, budget: BudgetTracker, eval_script: str) -> str:
     del task
     exhaust_rule = (
         "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
     )
     return (
         f"- You cannot modify eval.sh, eval-*.sh, or the server.\n"
-        f"- Use only the eval script named in the current invocation. "
-        f"./eval.sh is valid for the first invocation; later invocations use "
-        f"eval-N.sh and ./eval.sh will reject.\n"
+        f"- Use only `./{eval_script}` for this invocation. Other eval*.sh scripts "
+        f"are bound to closed sessions and will reject.\n"
         f"- Focus on meaningful improvements each iteration.{exhaust_rule}"
     )
 
@@ -359,6 +368,7 @@ def _build_program_md(
     max_token_cost: float | None,
     perfect_score: float | None,
     handoffs: list[dict[str, Any]] | None,
+    eval_script: str = "eval.sh",
 ) -> str:
     optional = ""
     if task.objective:
@@ -379,10 +389,11 @@ def _build_program_md(
         eval_section = _EVAL_GENERALIZATION.format(
             train_size=train_size,
             cost_line=cost_line,
+            eval_script=eval_script,
         )
     else:
         cost_line = "\nEach eval costs 1 budget unit." if has_eval_budget else ""
-        eval_section = _EVAL_SINGLE.format(cost_line=cost_line)
+        eval_section = _EVAL_SINGLE.format(cost_line=cost_line, eval_script=eval_script)
 
     return _PROGRAM_MD.format(
         name=task.name,
@@ -391,8 +402,8 @@ def _build_program_md(
         handoff_section=_handoff_section(handoffs),
         eval_section=eval_section,
         budget_section=_budget_section(budget, max_token_cost) + _perfect_score_section(perfect_score),
-        strategy_section=_strategy_section(task),
-        rules_section=_rules_section(task, budget),
+        strategy_section=_strategy_section(task, eval_script),
+        rules_section=_rules_section(task, budget, eval_script),
     )
 
 
@@ -409,7 +420,14 @@ def _materialize_sandbox(
 ) -> None:
     work_dir.mkdir(parents=True, exist_ok=True)
     (work_dir / "program.md").write_text(
-        _build_program_md(task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs)
+        _build_program_md(
+            task,
+            budget,
+            max_token_cost=max_token_cost,
+            perfect_score=perfect_score,
+            handoffs=handoffs,
+            eval_script="eval.sh",
+        )
     )
     (work_dir / "candidate.txt").write_text(seed_as_text(task.seed_candidate))
     (work_dir / "best_candidate.txt").write_text(seed_as_text(task.seed_candidate))
@@ -443,10 +461,12 @@ def _materialize_eval_script(
     return eval_script
 
 
-def _retire_eval_sh(work_dir: Path, replacement: str) -> None:
-    stub = work_dir / "eval.sh"
-    stub.write_text(EVAL_SCRIPT_RETIRED.format(replacement=replacement))
-    stub.chmod(0o755)
+def _retire_stale_eval_scripts(work_dir: Path, replacement: str) -> None:
+    for path in sorted(work_dir.glob("eval*.sh")):
+        if path.name == replacement:
+            continue
+        path.write_text(EVAL_SCRIPT_RETIRED.format(retired=path.name, replacement=replacement))
+        path.chmod(0o755)
 
 
 def _materialize_handoff(work_dir: Path, handoffs: list[dict[str, Any]] | None) -> None:
@@ -512,6 +532,7 @@ class AutoResearchEngine:
         self.handoffs = engine_config.handoffs
         self.effort = engine_config.effort
         self.max_thinking_tokens = engine_config.max_thinking_tokens
+        self.drain_timeout_seconds = engine_config.drain_timeout_seconds
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.sandbox = config.sandbox
@@ -597,6 +618,7 @@ class AutoResearchEngine:
         )
         if iteration_score > best_score:
             best_candidate, best_score = iteration_candidate, iteration_score
+        best_file.write_text(best_candidate)
         if (
             proc.returncode != 0
             and not budget.exhausted
@@ -627,12 +649,23 @@ class AutoResearchEngine:
                 eval_script = work_dir / f"eval-{ralph_iterations + 1}.sh"
                 try:
                     _materialize_eval_script(work_dir, task, server, evaluation_session_id, eval_script.name)
-                    _retire_eval_sh(work_dir, eval_script.name)
+                    _retire_stale_eval_scripts(work_dir, eval_script.name)
+                    (work_dir / "program.md").write_text(
+                        _build_program_md(
+                            task,
+                            budget,
+                            max_token_cost=self.max_token_cost,
+                            perfect_score=self.stop_at_score,
+                            handoffs=self.handoffs,
+                            eval_script=eval_script.name,
+                        )
+                    )
                 except BaseException:
                     self._close_session_quietly(server, evaluation_session_id)
                     raise
                 iteration_prompt = (
-                    f"{RALPH_CONTINUE_PROMPT} Use {eval_script} for this invocation; do not run ./eval.sh."
+                    f"{RALPH_CONTINUE_PROMPT} Use {eval_script} for this invocation; "
+                    "do not run retired eval*.sh scripts."
                 )
                 proc, iteration_candidate, iteration_score = self._run_evaluation_iteration(
                     server,
@@ -648,6 +681,7 @@ class AutoResearchEngine:
                 )
                 if iteration_score > best_score:
                     best_candidate, best_score = iteration_candidate, iteration_score
+                best_file.write_text(best_candidate)
                 iter_cost = _extract_claude_cost(proc.stdout)
                 adapter_cost += iter_cost
                 invocations.append({"cost": iter_cost, "score": iteration_score, "returncode": proc.returncode})
@@ -689,15 +723,16 @@ class AutoResearchEngine:
             raise
 
         try:
-            candidate, score = server.close_evaluation_session(evaluation_session_id, timeout=self._drain_timeout())
+            session_result = server.close_evaluation_session(evaluation_session_id, timeout=self._drain_timeout())
         except TimeoutError as e:
-            raise RuntimeError(f"AutoResearch evaluations did not drain within {self._drain_timeout():.1f}s") from e
+            limit = self._drain_timeout()
+            detail = "did not drain" if limit is None else f"did not drain within {limit:.1f}s"
+            raise RuntimeError(f"AutoResearch evaluations {detail}") from e
         if not task.has_dataset:
-            return proc, candidate, score
-        aggregate = server.evaluation_session_aggregate(evaluation_session_id)
-        if aggregate is None:
-            return proc, candidate, float("-inf")
-        return proc, *aggregate
+            return proc, session_result.best_candidate, session_result.best_score
+        if session_result.aggregate_candidate is None or session_result.aggregate_score is None:
+            return proc, seed_as_text(task.seed_candidate), float("-inf")
+        return proc, session_result.aggregate_candidate, session_result.aggregate_score
 
     def _run_claude(
         self,
@@ -792,10 +827,13 @@ class AutoResearchEngine:
                 return False
         return True
 
-    def _drain_timeout(self) -> float:
+    def _drain_timeout(self) -> float | None:
         # Drain waits for admitted evals to finish. That is independent of
-        # ``max_no_eval_seconds``, which only kills a silent Claude subprocess.
-        return _BUDGET_EXHAUSTION_GRACE_SECONDS
+        # ``max_no_eval_seconds``, which only kills a silent Claude subprocess,
+        # and of ``_BUDGET_EXHAUSTION_GRACE_SECONDS``, which only SIGTERMs
+        # Claude after the eval-count budget is exhausted. ``None`` waits
+        # until admitted work completes.
+        return self.drain_timeout_seconds
 
     def _close_session_quietly(self, server: EvalServer, session_id: str) -> None:
         try:
@@ -817,6 +855,7 @@ class AutoResearchEngine:
                 self._pending_tempdir = None
             return
         dest.mkdir(parents=True, exist_ok=True)
+        dest.joinpath("best_candidate.txt").write_text(result.best_candidate)
         work_dir = Path(result.metadata["work_dir"])
         session_id = result.metadata["session_id"]
         copy_session_transcript(work_dir, session_id, dest / "sessions")
