@@ -93,7 +93,7 @@ pip install "gepa[full]"   # [full] pulls cloudpickle — needed to pickle closu
 # ANTHROPIC_API_KEY, or a Bedrock ARN with AWS creds). You can also pass any callable implementing
 # GEPA's LM protocol — a self-hosted / custom inference engine — instead of a model-id string.
 # Agentic backends (autoresearch, meta_harness) additionally need the `claude` CLI on PATH (plus
-# `jq` for the generated eval.sh / eval-N.sh):
+# `jq` for the generated eval.sh):
 npm install -g @anthropic-ai/claude-code   # or: curl -fsSL https://claude.ai/install.sh | bash
 #   ...then run `claude` once to authenticate.
 # On Linux they also need bubblewrap: the default sandbox=True jails the claude subprocess with

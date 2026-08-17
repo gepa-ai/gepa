@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -14,9 +15,8 @@ import pytest
 
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
-from gepa.oa.engine import Result
 from gepa.oa.engines.autoresearch import AutoResearchEngine
-from gepa.oa.eval_server import EvalServer, EvaluationSessionClosedError, EvaluationSessionResult
+from gepa.oa.eval_server import EvalServer
 from gepa.oa.task import Task
 
 
@@ -33,13 +33,17 @@ class _FakeServer:
         self.best_score = 0.0
         self.best_candidate = "seed"
         self.eval_log = []
+        self.progress_log: list[dict[str, object]] = []
+        self._candidate_registry: dict[str, int] = {}
 
-    def open_evaluation_session(self, _initial_candidate: str) -> str:
-        return "test-session"
+    def pause_http(self) -> None:
+        return None
 
-    def close_evaluation_session(self, _session_id: str, *, timeout: float | None) -> EvaluationSessionResult:
-        del timeout
-        return EvaluationSessionResult(best_candidate=self.best_candidate, best_score=self.best_score)
+    def resume_http(self) -> None:
+        return None
+
+    def wait_idle(self) -> None:
+        return None
 
 
 class _FakePopen:
@@ -233,9 +237,7 @@ def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path)
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         calls.append(cmd)
-        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
-        server.best_candidate = "candidate"
-        server.best_score = 0.4
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         cost = 0.2 if len(calls) == 1 else 0.0005
         return _FakePopen(0, json.dumps({"total_cost_usd": cost}))
 
@@ -253,9 +255,7 @@ def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path)
     assert "--resume" not in calls[0]
     assert "--resume" in calls[1]
     assert calls[1][calls[1].index("--max-budget-usd") + 1] == "0.800000"
-    assert result.best_candidate == "candidate"
-    assert result.best_score == 0.4
-    assert (tmp_path / "best_candidate.txt").read_text() == "candidate"
+    assert result.best_candidate == "seed"
     assert result.metadata["adapter_cost"] == 0.2005
     assert result.metadata["ralph_iterations"] == 2
 
@@ -305,625 +305,6 @@ def test_autoresearch_engine_string_false_disables_ralph(tmp_path: Path) -> None
 
     assert len(calls) == 1
     assert result.metadata["ralph_iterations"] == 1
-
-
-def test_autoresearch_waits_for_active_evaluation_and_ignores_tampered_best_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    started = threading.Event()
-    release = threading.Event()
-    returned = threading.Event()
-
-    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
-        assert candidate == "server-winner"
-        started.set()
-        assert release.wait(timeout=2.0)
-        return 0.9, {}
-
-    task = Task(name="race", seed_candidate="seed")
-    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
-    server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-
-    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
-        work_dir = Path(str(kwargs["cwd"]))
-        (work_dir / "best_candidate.txt").write_text("tampered-workspace-file")
-        threading.Thread(
-            target=lambda: server.evaluate("server-winner", evaluation_session_id=session_ids[0]), daemon=True
-        ).start()
-        assert started.wait(timeout=2.0)
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-    outcome: dict[str, object] = {}
-
-    def run() -> None:
-        outcome["result"] = engine.run(task, server)
-        returned.set()
-
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            runner = threading.Thread(target=run)
-            runner.start()
-            returned_before_completion = returned.wait(timeout=0.1)
-            release.set()
-            runner.join(timeout=2.0)
-    finally:
-        release.set()
-        server.stop()
-
-    assert not returned_before_completion
-    assert returned.is_set()
-    result = outcome["result"]
-    assert isinstance(result, Result)
-    assert result.best_candidate == "server-winner"
-    assert result.best_score == 0.9
-    assert (tmp_path / "best_candidate.txt").read_text() == "server-winner"
-
-
-def test_autoresearch_rejects_delayed_evaluation_after_session_closes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    admit_late_request = threading.Event()
-    late_request_done = threading.Event()
-    session_ids: list[str] = []
-    late_errors: list[BaseException] = []
-
-    task = Task(name="late", seed_candidate="seed")
-    server = EvalServer(task, lambda candidate: (0.9, {"candidate": candidate}), BudgetTracker(max_evals=2))
-    server.start()
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-
-    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
-        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("tampered-workspace-file")
-
-        def submit_late_request() -> None:
-            assert admit_late_request.wait(timeout=2.0)
-            try:
-                server.evaluate("late-winner", evaluation_session_id=session_ids[0])
-            except BaseException as e:
-                late_errors.append(e)
-            finally:
-                late_request_done.set()
-
-        threading.Thread(target=submit_late_request, daemon=True).start()
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            result = engine.run(task, server)
-        admit_late_request.set()
-        assert late_request_done.wait(timeout=2.0)
-    finally:
-        admit_late_request.set()
-        server.stop()
-
-    assert result.best_candidate == "seed"
-    assert result.best_score == float("-inf")
-    assert (tmp_path / "best_candidate.txt").read_text() == "seed"
-    assert session_ids[0] in (tmp_path / "eval.sh").read_text()
-    assert len(late_errors) == 1
-    assert isinstance(late_errors[0], EvaluationSessionClosedError)
-    assert server.best_candidate == "seed"
-
-
-def test_autoresearch_fails_closed_when_admitted_evaluation_does_not_drain(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    started = threading.Event()
-    release = threading.Event()
-    session_ids: list[str] = []
-
-    def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
-        started.set()
-        assert release.wait(timeout=2.0)
-        return 0.9, {}
-
-    task = Task(name="hung", seed_candidate="seed")
-    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
-    server.start()
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-
-    def fake_popen(_cmd: list[str], **_kwargs: object) -> _FakePopen:
-        threading.Thread(
-            target=lambda: server.evaluate("hung", evaluation_session_id=session_ids[0]), daemon=True
-        ).start()
-        assert started.wait(timeout=2.0)
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch",
-            sandbox=False,
-            run_dir=str(tmp_path),
-            engine_config={"ralph": False},
-        )
-    )
-    monkeypatch.setattr(engine, "_drain_timeout", lambda: 0.05)
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            with pytest.raises(RuntimeError, match="did not drain"):
-                engine.run(task, server)
-        assert session_ids[0] not in server._evaluation_sessions
-    finally:
-        release.set()
-        server.stop()
-
-
-def test_autoresearch_drain_timeout_keeps_shared_server_reusable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import urllib.request
-
-    started = threading.Event()
-    release = threading.Event()
-    session_ids: list[str] = []
-
-    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
-        if candidate == "hung":
-            started.set()
-            assert release.wait(timeout=2.0)
-            return 0.1, {}
-        return {"second": 0.5}[candidate], {}
-
-    task = Task(name="reuse-after-timeout", seed_candidate="seed")
-    server = EvalServer(task, evaluate, BudgetTracker(max_evals=6), max_concurrency=2)
-    server.start()
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-    invocations = 0
-
-    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
-        nonlocal invocations
-        invocations += 1
-        if invocations == 1:
-            threading.Thread(
-                target=lambda: server.evaluate("hung", evaluation_session_id=session_ids[0]), daemon=True
-            ).start()
-            assert started.wait(timeout=2.0)
-            return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
-        server.evaluate("second", evaluation_session_id=session_ids[-1])
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    first = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch",
-            sandbox=False,
-            run_dir=str(tmp_path / "first"),
-            engine_config={"ralph": False},
-        )
-    )
-    monkeypatch.setattr(first, "_drain_timeout", lambda: 0.05)
-    second = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch",
-            sandbox=False,
-            run_dir=str(tmp_path / "second"),
-            engine_config={"ralph": False},
-        )
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            with pytest.raises(RuntimeError, match="did not drain"):
-                first.run(task, server)
-            req = urllib.request.Request(
-                f"{server.url}/evaluate",
-                data=json.dumps({"candidate": "second"}).encode(),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                assert resp.status == 200
-            result = second.run(task, server)
-    finally:
-        release.set()
-        server.stop()
-
-    assert result.best_candidate == "second"
-    assert result.best_score == 0.5
-
-
-def test_autoresearch_quiet_close_does_not_wait_for_hung_eval(tmp_path: Path) -> None:
-    started = threading.Event()
-    release = threading.Event()
-
-    def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
-        started.set()
-        assert release.wait(timeout=2.0)
-        return 0.9, {}
-
-    task = Task(name="quiet-close", seed_candidate="seed")
-    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-    session_id = server.open_evaluation_session("seed")
-    eval_thread = threading.Thread(target=lambda: server.evaluate("hung", evaluation_session_id=session_id))
-    try:
-        eval_thread.start()
-        assert started.wait(timeout=2.0)
-        started_at = time.monotonic()
-        engine._close_session_quietly(server, session_id)
-        assert time.monotonic() - started_at < 0.2
-        assert session_id not in server._evaluation_sessions
-        with pytest.raises(EvaluationSessionClosedError):
-            server.evaluate("late", evaluation_session_id=session_id)
-    finally:
-        release.set()
-        eval_thread.join(timeout=2)
-
-
-def test_autoresearch_drain_timeout_is_not_max_no_eval_seconds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    started = threading.Event()
-    release = threading.Event()
-    session_ids: list[str] = []
-
-    def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
-        started.set()
-        assert release.wait(timeout=2.0)
-        return 0.9, {}
-
-    task = Task(name="slow-eval", seed_candidate="seed")
-    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
-    server.start()
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-
-    def fake_popen(_cmd: list[str], **_kwargs: object) -> _FakePopen:
-        threading.Thread(
-            target=lambda: server.evaluate("slow", evaluation_session_id=session_ids[0]), daemon=True
-        ).start()
-        assert started.wait(timeout=2.0)
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch",
-            sandbox=False,
-            run_dir=str(tmp_path),
-            engine_config={"ralph": False, "max_no_eval_seconds": 0.05},
-        )
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            outcome: dict[str, object] = {}
-
-            def run() -> None:
-                outcome["result"] = engine.run(task, server)
-
-            runner = threading.Thread(target=run)
-            runner.start()
-            assert not release.wait(timeout=0.15)
-            assert runner.is_alive()
-            release.set()
-            runner.join(timeout=2.0)
-    finally:
-        release.set()
-        server.stop()
-
-    assert not runner.is_alive()
-    result = outcome["result"]
-    assert isinstance(result, Result)
-    assert result.best_candidate == "slow"
-    assert result.best_score == 0.9
-
-
-def test_autoresearch_wait_keeps_shared_server_reusable(tmp_path: Path) -> None:
-    task = Task(name="reuse", seed_candidate="seed")
-    scores = {"first": 0.9, "second": 0.5}
-    server = EvalServer(task, lambda candidate: (scores[candidate], {}), BudgetTracker(max_evals=3))
-    server.start()
-    invocations = 0
-
-    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
-        nonlocal invocations
-        invocations += 1
-        candidate = "first" if invocations == 1 else "second"
-        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
-        session_id = next(reversed(server._evaluation_sessions))
-        server.evaluate(candidate, evaluation_session_id=session_id)
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    first = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path / "first"), engine_config={"ralph": False}
-        )
-    )
-    second = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path / "second"), engine_config={"ralph": False}
-        )
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            first_result = first.run(task, server)
-            second_result = second.run(task, server)
-    finally:
-        server.stop()
-
-    assert first_result.best_candidate == "first"
-    assert second_result.best_candidate == "second"
-    assert second_result.best_score == 0.5
-
-
-def test_autoresearch_single_task_tie_keeps_first_completed_candidate(tmp_path: Path) -> None:
-    task = Task(name="tie", seed_candidate="seed")
-    server = EvalServer(task, lambda _candidate: (0.5, {}), BudgetTracker(max_evals=3))
-    server.start()
-
-    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
-        session_id = next(reversed(server._evaluation_sessions))
-        server.evaluate("first", evaluation_session_id=session_id)
-        server.evaluate("second", evaluation_session_id=session_id)
-        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            result = engine.run(task, server)
-    finally:
-        server.stop()
-
-    assert result.best_candidate == "first"
-    assert result.best_score == 0.5
-
-
-def test_autoresearch_does_not_resume_until_prior_evaluation_completes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    started = threading.Event()
-    release = threading.Event()
-    calls: list[list[str]] = []
-
-    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
-        assert candidate == "first"
-        started.set()
-        assert release.wait(timeout=2.0)
-        return 0.8, {}
-
-    task = Task(name="resume", seed_candidate="seed")
-    server = EvalServer(task, evaluate, BudgetTracker(max_evals=3), max_concurrency=1)
-    server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-
-    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
-        calls.append(cmd)
-        if len(calls) == 1:
-            threading.Thread(
-                target=lambda: server.evaluate("first", evaluation_session_id=session_ids[0]), daemon=True
-            ).start()
-            assert started.wait(timeout=2.0)
-            return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.0005}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={})
-    )
-    runner = threading.Thread(target=lambda: engine.run(task, server))
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            runner.start()
-            assert not release.wait(timeout=0.1)
-            assert len(calls) == 1
-            release.set()
-            runner.join(timeout=2.0)
-    finally:
-        release.set()
-        server.stop()
-
-    assert not runner.is_alive()
-    assert len(calls) == 2
-    assert "--resume" in calls[1]
-
-
-def test_autoresearch_closes_each_ralph_iteration_before_opening_the_next(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    task = Task(name="iteration-boundary", seed_candidate="seed")
-    scores = {"first": 0.4, "second": 0.8}
-    server = EvalServer(task, lambda candidate: (scores[candidate], {}), BudgetTracker(max_evals=3))
-    server.start()
-    session_ids: list[str] = []
-    opened_with: list[str] = []
-    late_errors: list[BaseException] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        opened_with.append(initial_candidate)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-    calls: list[list[str]] = []
-
-    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
-        calls.append(cmd)
-        if len(calls) == 1:
-            server.evaluate("first", evaluation_session_id=session_ids[0])
-            return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-        assert len(session_ids) == 2
-        work_dir = Path(str(kwargs["cwd"]))
-        assert (work_dir / "candidate.txt").read_text() == "first"
-        assert (work_dir / "best_candidate.txt").read_text() == "first"
-        assert session_ids[1] in (work_dir / "eval-2.sh").read_text()
-        assert str(work_dir / "eval-2.sh") in cmd[-1]
-        assert "do not run retired eval*.sh scripts" in cmd[-1]
-        eval_sh = (work_dir / "eval.sh").read_text()
-        assert "closed evaluation session" in eval_sh
-        assert "eval-2.sh" in eval_sh
-        assert session_ids[1] not in eval_sh
-        program = (work_dir / "program.md").read_text()
-        assert "./eval-2.sh" in program
-        assert "Use only `./eval-2.sh`" in program
-        with pytest.raises(EvaluationSessionClosedError) as raised:
-            server.evaluate("first", evaluation_session_id=session_ids[0])
-        late_errors.append(raised.value)
-        server.evaluate("second", evaluation_session_id=session_ids[1])
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.0005}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={})
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            result = engine.run(task, server)
-    finally:
-        server.stop()
-
-    assert len(calls) == 2
-    assert len(session_ids) == 2
-    assert opened_with == ["seed", "first"]
-    assert len(late_errors) == 1
-    assert result.best_candidate == "second"
-    assert result.best_score == 0.8
-    assert (tmp_path / "best_candidate.txt").read_text() == "second"
-
-
-def test_autoresearch_closes_a_session_when_materialization_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    task = Task(name="materialize-failure", seed_candidate="seed")
-    server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=1))
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-    monkeypatch.setattr(
-        "gepa.oa.engines.autoresearch._materialize_sandbox", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError())
-    )
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-
-    with pytest.raises(OSError):
-        engine.run(task, server)
-
-    with pytest.raises(EvaluationSessionClosedError):
-        server.evaluate("late", evaluation_session_id=session_ids[0])
-
-
-def test_autoresearch_closes_a_session_when_claude_cannot_start(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    task = Task(name="popen-failure", seed_candidate="seed")
-    server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=1))
-    server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=OSError("cannot start")):
-            with pytest.raises(OSError, match="cannot start"):
-                engine.run(task, server)
-
-        with pytest.raises(EvaluationSessionClosedError):
-            server.evaluate("late", evaluation_session_id=session_ids[0])
-    finally:
-        server.stop()
-
-
-def test_autoresearch_popen_failure_is_not_masked_by_drain_timeout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    task = Task(name="popen-timeout-mask", seed_candidate="seed")
-    server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=1))
-    server.start()
-    monkeypatch.setattr(
-        server,
-        "close_evaluation_session",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("drain")),
-    )
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
-        )
-    )
-
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=OSError("cannot start")):
-            with pytest.raises(OSError, match="cannot start"):
-                engine.run(task, server)
-    finally:
-        server.stop()
 
 
 def test_autoresearch_engine_ralph_respects_stop_at_score(tmp_path: Path) -> None:
@@ -1021,13 +402,10 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
         result = engine.run(task, server)
 
     assert result.best_candidate == "seed"
-    assert (tmp_path / "run" / "best_candidate.txt").read_text() == "seed"
 
 
-def _http_evaluate_examples(
-    server: EvalServer, candidate: str, session_id: str, example_ids: list[str] | None = None
-) -> dict[str, object]:
-    body: dict[str, object] = {"candidate": candidate, "evaluation_session_id": session_id}
+def _http_evaluate_examples(server: EvalServer, candidate: str, example_ids: list[str] | None = None) -> None:
+    body: dict[str, object] = {"candidate": candidate}
     if example_ids is not None:
         body["example_ids"] = example_ids
     req = urllib.request.Request(
@@ -1035,25 +413,115 @@ def _http_evaluate_examples(
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return json.loads(resp.read().decode())
+    urllib.request.urlopen(req, timeout=5)
 
 
-def test_autoresearch_default_drain_timeout_waits_for_admitted_work() -> None:
-    engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", engine_config={"ralph": False}))
-    assert engine._drain_timeout() is None
+def test_autoresearch_waits_for_inflight_eval_and_ignores_the_workspace_file(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    returned = threading.Event()
 
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        assert candidate == "server-winner"
+        started.set()
+        assert release.wait(timeout=2.0)
+        return 0.9, {}
 
-def test_autoresearch_drain_timeout_seconds_is_configurable() -> None:
+    task = Task(name="race", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("tampered-workspace-file")
+        threading.Thread(target=lambda: server.evaluate("server-winner"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", engine_config={"ralph": False, "drain_timeout_seconds": 12})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
     )
-    assert engine._drain_timeout() == 12.0
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        outcome["result"] = engine.run(task, server)
+        returned.set()
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            runner = threading.Thread(target=run)
+            runner.start()
+            returned_before_completion = returned.wait(timeout=0.1)
+            release.set()
+            runner.join(timeout=2.0)
+    finally:
+        release.set()
+        server.stop()
+
+    assert not returned_before_completion
+    assert returned.is_set()
+    result = outcome["result"]
+    assert result.best_candidate == "server-winner"
+    assert result.best_score == 0.9
 
 
-def test_autoresearch_dataset_selects_full_pool_winner_not_per_example_spike(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_autoresearch_rejects_delayed_http_until_drain_finishes(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    outcome: dict[str, object] = {}
+
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        if candidate == "inflight":
+            started.set()
+            assert release.wait(timeout=2.0)
+            return 0.9, {}
+        return 1.0, {}
+
+    task = Task(name="late", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=4), max_concurrency=2)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("tampered-workspace-file")
+        threading.Thread(target=lambda: server.evaluate("inflight"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
+    )
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            runner = threading.Thread(target=lambda: outcome.update(result=engine.run(task, server)))
+            runner.start()
+            assert started.wait(timeout=2.0)
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and server._http_accepting:
+                time.sleep(0.01)
+            assert not server._http_accepting
+            req = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "late-winner"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with pytest.raises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(req, timeout=5)
+            assert raised.value.code == 409
+            release.set()
+            runner.join(timeout=2.0)
+    finally:
+        release.set()
+        server.stop()
+
+    result = outcome["result"]
+    assert result.best_candidate == "inflight"
+    assert result.best_score == 0.9
+
+
+def test_autoresearch_dataset_selects_full_pool_winner_not_per_example_spike(tmp_path: Path) -> None:
     def evaluate(candidate: str, example: object) -> tuple[float, dict[str, object]]:
         if candidate == "spiky":
             return (1.0 if str(example) == "a" else 0.0), {}
@@ -1064,20 +532,11 @@ def test_autoresearch_dataset_selects_full_pool_winner_not_per_example_spike(
     task = Task(name="dataset-select", seed_candidate="seed", train_set=["a", "b"])
     server = EvalServer(task, evaluate, BudgetTracker(max_evals=10), max_concurrency=2)
     server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
 
     def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
-        _http_evaluate_examples(server, "spiky", session_ids[0])
-        _http_evaluate_examples(server, "steady", session_ids[0])
+        _http_evaluate_examples(server, "spiky")
+        _http_evaluate_examples(server, "steady")
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
@@ -1093,30 +552,20 @@ def test_autoresearch_dataset_selects_full_pool_winner_not_per_example_spike(
 
     assert result.best_candidate == "steady"
     assert result.best_score == pytest.approx(0.6)
-    assert (tmp_path / "best_candidate.txt").read_text() == "steady"
 
 
-def test_autoresearch_dataset_subset_eval_returns_seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_autoresearch_dataset_subset_eval_returns_seed(tmp_path: Path) -> None:
     def evaluate(_candidate: str, example: object) -> tuple[float, dict[str, object]]:
         return (1.0 if str(example) == "a" else 0.0), {}
 
     task = Task(name="subset-only", seed_candidate="seed", train_set=["a", "b"])
     server = EvalServer(task, evaluate, BudgetTracker(max_evals=10), max_concurrency=2)
     server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
 
     def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
         subset_id = next(iter(server._split_ids["train"]))
-        _http_evaluate_examples(server, "spiky", session_ids[0], example_ids=[subset_id])
+        _http_evaluate_examples(server, "spiky", example_ids=[subset_id])
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
@@ -1132,73 +581,19 @@ def test_autoresearch_dataset_subset_eval_returns_seed(tmp_path: Path, monkeypat
 
     assert result.best_candidate == "seed"
     assert result.best_score == float("-inf")
-    assert (tmp_path / "best_candidate.txt").read_text() == "seed"
 
 
-def test_autoresearch_dataset_stop_at_score_uses_full_pool_aggregate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    task = Task(name="stop-aggregate", seed_candidate="seed", train_set=["a", "b"])
-    server = EvalServer(task, lambda _candidate, _example: (1.0, {}), BudgetTracker(max_evals=10))
-    server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-    calls: list[list[str]] = []
-
-    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
-        calls.append(cmd)
-        _http_evaluate_examples(server, "perfect", session_ids[0])
-        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
-        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
-
-    engine = AutoResearchEngine(
-        OptimizeAnythingConfig(
-            engine="autoresearch",
-            sandbox=False,
-            run_dir=str(tmp_path),
-            stop_at_score=1.0,
-            engine_config={},
-        )
-    )
-    try:
-        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
-            result = engine.run(task, server)
-    finally:
-        server.stop()
-
-    assert len(calls) == 1
-    assert result.best_candidate == "perfect"
-    assert result.best_score == 1.0
-
-
-def test_autoresearch_dataset_per_example_spike_does_not_stop_ralph(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_autoresearch_dataset_per_example_spike_does_not_stop_ralph(tmp_path: Path) -> None:
     task = Task(name="spike-continue", seed_candidate="seed", train_set=["a", "b"])
     server = EvalServer(task, lambda _candidate, _example: (1.0, {}), BudgetTracker(max_evals=10))
     server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
-
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
     calls: list[list[str]] = []
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
+        del kwargs
         calls.append(cmd)
         if len(calls) == 1:
-            server.evaluate("spiky", "a", evaluation_session_id=session_ids[0])
+            server.evaluate("spiky", "a")
             return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.0005}))
 
@@ -1222,43 +617,24 @@ def test_autoresearch_dataset_per_example_spike_does_not_stop_ralph(
     assert result.best_score == float("-inf")
 
 
-def test_autoresearch_retires_previous_ralph_eval_scripts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    task = Task(name="retire-scripts", seed_candidate="seed")
-    server = EvalServer(task, lambda candidate: (0.5, {}), BudgetTracker(max_evals=5))
+def test_autoresearch_test_set_only_uses_single_task_tracking(tmp_path: Path) -> None:
+    def evaluate(candidate: str, example: object | None = None) -> tuple[float, dict[str, object]]:
+        del example
+        return (0.8 if candidate == "winner" else 0.0), {}
+
+    task = Task(name="test-only", seed_candidate="seed", test_set=["held-out"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=4))
     server.start()
-    session_ids: list[str] = []
-    original_open = server.open_evaluation_session
 
-    def open_evaluation_session(initial_candidate: str) -> str:
-        session_id = original_open(initial_candidate)
-        session_ids.append(session_id)
-        return session_id
-
-    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
-    calls: list[list[str]] = []
-
-    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
-        calls.append(cmd)
-        work_dir = Path(str(kwargs["cwd"]))
-        session_id = session_ids[len(calls) - 1]
-        server.evaluate(f"c{len(calls)}", evaluation_session_id=session_id)
-        if len(calls) == 3:
-            assert session_ids[2] in (work_dir / "eval-3.sh").read_text()
-            eval_two = (work_dir / "eval-2.sh").read_text()
-            assert "closed evaluation session" in eval_two
-            assert "eval-3.sh" in eval_two
-            assert session_ids[2] not in eval_two
-            eval_sh = (work_dir / "eval.sh").read_text()
-            assert "closed evaluation session" in eval_sh
-            assert "eval-3.sh" in eval_sh
-            program = (work_dir / "program.md").read_text()
-            assert "./eval-3.sh" in program
-            assert "Use only `./eval-3.sh`" in program
-        cost = 0.0005 if len(calls) == 3 else 0.2
-        return _FakePopen(0, json.dumps({"total_cost_usd": cost}))
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        _http_evaluate_examples(server, "winner")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={})
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
     )
     try:
         with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
@@ -1266,6 +642,5 @@ def test_autoresearch_retires_previous_ralph_eval_scripts(tmp_path: Path, monkey
     finally:
         server.stop()
 
-    assert len(calls) == 3
-    assert result.best_candidate == "c1"
-    assert result.best_score == 0.5
+    assert result.best_candidate == "winner"
+    assert result.best_score == 0.8

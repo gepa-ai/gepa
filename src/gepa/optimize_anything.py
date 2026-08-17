@@ -77,7 +77,7 @@ from gepa.oa.ensemble import (
     optimize_vote,
     optimize_vote_with_server,
 )
-from gepa.oa.eval_server import EvalServer, EvaluationSessionClosedError, EvaluationSessionResult, _resolve_id
+from gepa.oa.eval_server import EvalServer, _resolve_id
 from gepa.oa.proposers import ClaudeCodeAgentProposer
 from gepa.oa.registry import (
     get_engine_cls,
@@ -465,8 +465,6 @@ __all__ = [
     "Engine",
     "EngineConfig",
     "EvalServer",
-    "EvaluationSessionClosedError",
-    "EvaluationSessionResult",
     "Evaluator",
     "EvaluatorWrapper",
     "GEPAConfig",

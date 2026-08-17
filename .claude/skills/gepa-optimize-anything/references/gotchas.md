@@ -47,7 +47,7 @@ block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, 
 Linux, a missing `bwrap` (bubblewrap) while the default `sandbox=True` is in effect — aborts the run
 at launch with a boxed message and install instructions (`npm install -g @anthropic-ai/claude-code`;
 `sudo apt/dnf install bubblewrap`). An *unauthenticated* CLI or a missing `jq` (used by
-autoresearch's generated `eval.sh` / `eval-N.sh`) still surfaces only mid-run, and `sandbox=False` runs the agent
+autoresearch's generated `eval.sh`) still surfaces only mid-run, and `sandbox=False` runs the agent
 unconfined (loud warning) — so run `scripts/preflight.py` first either way.
 
 ## 7. Give runs a real stop condition (`stop_at_score` / `max_token_cost`)
