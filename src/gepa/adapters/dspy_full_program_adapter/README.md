@@ -97,3 +97,12 @@ program = MathQAModule()
 ```
 
 A fully executable notebook to run this example is in [src/gepa/examples/dspy_full_program_evolution/example.ipynb](../../examples/dspy_full_program_evolution/example.ipynb)
+
+## Reflective traces
+
+`make_reflective_dataset` builds the examples that the reflection LM sees. Each example includes the program-level inputs and outputs, plus a `Program Trace` of selected predictor calls.
+
+- If any call produced a `FailedPrediction` (a format parse error), only that failed call is kept, so the raw completion stays visible.
+- Otherwise the last call of each distinct predictor is kept, in the order those predictors first appeared.
+
+That collapses ReAct-style loops, where the same predictor is called many times with a growing `trajectory` string. It does not drop a later module in a pipeline (for example the reasoner and extractor in the MATH program above). A later call does not always contain the earlier module's inputs and outputs, so both stay in the trace.

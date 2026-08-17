@@ -5,10 +5,37 @@ import dspy
 from dspy.adapters.types import History
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
-from dspy.teleprompt.bootstrap_trace import TraceData
+from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
+
+# One DSPy trace entry: (predictor, inputs, outputs). outputs may be a FailedPrediction.
+_TraceInstance = tuple[Any, dict[str, Any], Any]
+
+
+def _select_trace_instances_for_reflection(trace_instances: list[_TraceInstance]) -> list[_TraceInstance]:
+    """Choose which predictor calls to send to the reflection LM.
+
+    A FailedPrediction is kept on its own so format errors stay visible. Otherwise the last
+    call of each distinct predictor is kept, in first-seen order.
+
+    ReAct calls the same predictor many times with a growing ``trajectory`` string, so keeping
+    every call repeats that prefix. Distinct predictors (e.g. a reasoner then an extractor) are
+    all kept, because a later call does not always contain the earlier module's inputs and outputs.
+    """
+    for t in trace_instances:
+        if isinstance(t[2], FailedPrediction):
+            return [t]
+
+    last_by_predictor: dict[int, _TraceInstance] = {}
+    order: list[int] = []
+    for t in trace_instances:
+        key = id(t[0])
+        if key not in last_by_predictor:
+            order.append(key)
+        last_by_predictor[key] = t
+    return [last_by_predictor[k] for k in order]
 
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
@@ -131,10 +158,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+        """Build reflection examples from captured DSPy traces.
+
+        Each example includes program-level inputs and outputs plus a ``Program Trace``.
+        A FailedPrediction is kept on its own. Otherwise the last call of each distinct
+        predictor is kept, so ReAct-style repeated calls are collapsed and multi-module
+        pipelines still show every module.
+        """
         proposed_program, _ = self.build_program(candidate)
 
         assert set(components_to_update) == {"program"}, f"set(components_to_update) = {set(components_to_update)}"
-        from dspy.teleprompt.bootstrap_trace import FailedPrediction
 
         ret_d: dict[str, list[dict[str, Any]]] = {}
 
@@ -166,16 +199,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             if len(trace_instances) == 0:
                 continue
 
-            selected = None
-            for t in trace_instances:
-                if isinstance(t[2], FailedPrediction):
-                    selected = t
-                    break
-
-            if selected is not None:
-                trace_instances = [selected]
-            else:
-                trace_instances = trace_instances[-1:]
+            trace_instances = _select_trace_instances_for_reflection(trace_instances)
 
             trace_d = []
             example_data["Program Trace"] = trace_d
