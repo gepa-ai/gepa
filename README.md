@@ -494,7 +494,7 @@ We welcome adapters, bug fixes, and new use cases. See [src/gepa/adapters/](src/
 ```
 
 <p align="center">
-  <a href="https://www.star-history.com/#gepa-ai/gepa&Date">
-    <img src="https://api.star-history.com/svg?repos=gepa-ai/gepa&type=Date" alt="Star History Chart" width="600">
+  <a href="https://star-history.dera.page/#gepa-ai/gepa&type=Date">
+    <img src="https://star-history.dera.page/svg?repos=gepa-ai/gepa&type=Date" alt="Star History Chart" width="600">
   </a>
 </p>
