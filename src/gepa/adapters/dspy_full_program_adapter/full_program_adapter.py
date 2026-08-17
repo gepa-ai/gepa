@@ -19,20 +19,16 @@ def _history_field_grew(prev: Any, curr: Any) -> bool:
 
 
 def _text_field_grew(key: str, prev: Any, curr: Any) -> bool:
-    """True when curr is a strict prefix extension that looks like accumulated trace text.
+    """True when ReAct's ``trajectory`` input grew as a strict prefix extension.
 
-    ReAct's ``trajectory`` field counts even without newlines. Other string fields count
-    only when the added suffix contains a newline, so independent calls with prefix-related
-    values such as context ``abc`` then ``abcdef`` are kept.
+    Other string fields are not treated as cumulative. Independent calls that append a
+    newline section to ``context`` or ``document`` must stay in the trace.
     """
+    if key.lower() != "trajectory":
+        return False
     if not isinstance(prev, str) or not isinstance(curr, str):
         return False
-    if prev == curr or not curr.startswith(prev):
-        return False
-    added = curr[len(prev) :]
-    if key.lower() == "trajectory":
-        return True
-    return "\n" in added
+    return prev != curr and curr.startswith(prev)
 
 
 def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:
@@ -55,10 +51,10 @@ def _select_trace_instances_for_reflection(trace_instances: list[_TraceInstance]
     """Choose which predictor calls to send to the reflection LM.
 
     Walk the trace in execution order. Consecutive calls to the same predictor are collapsed
-    to the last call only when later inputs look cumulative: a growing ``trajectory``-style
-    string prefix, or a ``History`` that gained messages. That removes ReAct's O(n^2) prefix
-    repeats without dropping independent map calls or interleaved draft-critique-revise
-    (A, B, A) calls.
+    to the last call only when later inputs look cumulative: a growing ReAct ``trajectory``
+    string, or a ``History`` that gained messages. Independent map calls, interleaved
+    draft-critique-revise (A, B, A) calls, and prefix-related ``context``/``document``
+    strings are kept.
 
     A FailedPrediction is never collapsed into a neighbor, so the raw completion stays in
     the trace together with the surrounding calls.

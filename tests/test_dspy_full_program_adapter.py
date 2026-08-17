@@ -304,19 +304,22 @@ class TestSelectTraceInstancesForReflection:
         assert selected == trace
         assert [t[2]["answer"] for t in selected] == ["a1", "a2"]
 
-    def test_newline_growing_context_is_collapsed(self):
+    def test_multiline_context_append_is_not_collapsed(self):
+        """Greptile: appending a newline section to context/document is not ReAct."""
         reader = object()
         first = "doc A"
         second = first + "\ndoc B"
         trace = [
             (reader, {"context": first}, {"answer": "a1"}),
             (reader, {"context": second}, {"answer": "a2"}),
+            (reader, {"document": first + "\nintro"}, {"answer": "a3"}),
+            (reader, {"document": first + "\nintro\nbody"}, {"answer": "a4"}),
         ]
 
         selected = _select_trace_instances_for_reflection(trace)
 
-        assert selected == [trace[1]]
-        assert selected[0][2]["answer"] == "a2"
+        assert selected == trace
+        assert [t[2]["answer"] for t in selected] == ["a1", "a2", "a3", "a4"]
 
     def test_interleaved_draft_critique_revise_keeps_chronology(self):
         gen = object()
