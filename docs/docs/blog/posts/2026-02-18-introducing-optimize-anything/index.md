@@ -435,7 +435,7 @@ The seedless mode is particularly useful for tasks where the solution space is l
 
 The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns blind mutation into targeted, diagnostic-driven engineering; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
-By design, `optimize_anything` is a general frontend for text optimization. It is currently powered by GEPA as the optimization backend, but the API is backend-agnostic: as new optimization strategies emerge with increasingly powerful models, they can be plugged in without changing any user code. Our goal is for `optimize_anything` to always dispatch to the best available optimizer for your problem. We welcome community contributions of new optimization backends, evaluators, and case studies.
+By design, `optimize_anything` is a general frontend for text optimization. It is currently powered by GEPA as the default optimization engine, but the API is engine-agnostic: as new optimization strategies emerge with increasingly powerful models, they can be plugged in without changing any user code. Our goal is for `optimize_anything` to always dispatch to the best available optimizer for your problem. We welcome community contributions of new optimization engines, evaluators, and case studies.
 
 Get started:
 

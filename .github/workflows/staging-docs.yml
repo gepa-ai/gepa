@@ -8,6 +8,8 @@ on:
       - blogpost-rl-gepa
       - fst-followup
       - omni-blog
+      - jialin-blog
+      - workbench
 
 jobs:
   build-and-deploy:

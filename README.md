@@ -130,6 +130,17 @@ result = optimize_anything(
 )
 ```
 
+### Use GEPA as an Agent Skill
+
+GEPA also ships as an **[Agent Skill](https://agentskills.io/)** so coding agents can drive `optimize_anything` for you. In a clone of this repo, Claude Code — and other agents that read `.claude/skills/` (Cursor, VS Code/Copilot, Codex, Gemini CLI) — auto-discover it at [`.claude/skills/gepa-optimize-anything/`](.claude/skills/gepa-optimize-anything/). To use it in any other project, install the plugin from this repo's marketplace:
+
+```bash
+/plugin marketplace add gepa-ai/gepa
+/plugin install gepa-optimize-anything@gepa
+```
+
+See the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/) for details.
+
 ---
 
 ## How It Works
@@ -403,6 +414,7 @@ Finally:
     - [LangChain Adapter](src/gepa/adapters/langchain_adapter/) - Optimize prompts for any LangChain pipeline: single-turn chat models, tool-using agents built with `create_agent`, custom LangGraph graphs, RAG, and more. Provider-agnostic via LangChain's `init_chat_model`. Install with `pip install "gepa[langchain]"` plus a provider package (e.g. `langchain-openai`).
 - **GEPA uses**
     - [Microsoft AI: MAI-Thinking-1](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf) — GEPA / DSPy optimizes the Qwen3-30B LLM-judge prompt used to filter Code pages in the pre-training pipeline (~233B tokens curated from ~2,000 human labels).
+    - [Nubank: Building Customer Support AI Agents at 100M-User Scale](https://arxiv.org/abs/2606.08867) — GEPA inside DSPy optimizes LLM-as-a-Judge prompts; lifts E2 eval accuracy 68.88% → 88.89%, drives Cohen's κ (GPT-4.1 vs GPT-4.1-mini) from 0.00 → 0.745; downstream production wins include +37pp AI transactional NPS and +29pp self-service rate across 5 deployed domains.
     - [Google: Gemini Enterprise Agent Platform — `adk optimize` powered by GEPA](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent)
     - [Nous Research Hermes Agent: evolutionary self-improvement with DSPy + GEPA](https://github.com/NousResearch/hermes-agent-self-evolution)
     - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
@@ -415,11 +427,13 @@ Finally:
     - [Attack Selection Reduces Safety in Concentrated AI Control Settings (Pivotal Research + Redwood) — GEPA-optimized red-team prompts outperform handwritten rubric prompts at evading trusted monitoring](https://arxiv.org/abs/2602.04930)
     - [Going recursive: RLM-GEPA on AppWorld (Gabriel Lespérance) — PredictRLM(GPT-5.5 low) hits 0.917 TGC / 0.839 SGC unoptimized (beats leaderboard 0.804 SGC); RLM-GEPA lifts to 0.940 TGC / 0.911 SGC](https://x.com/GabLesperance/status/2060754345247863075)
     - [DivSkill-SQL: Residual Skill Optimization for Text-to-SQL Ensembles (UC San Diego + Microsoft) — adopts GEPA as inner-loop skill optimizer; +11.1pp on Spider2-Lite Snowflake, +8.3pp on BigQuery, +2.6pp on BIRD-Critic over CHASE-SQL](https://arxiv.org/abs/2605.21792)
+    - [DD-GEPA: Dialogue Disentanglement Prompt Optimization (Yokohama National University) — three-component prompt (task instruction / utterance representation / output instruction) optimized with GEPA; Qwen3-30B F1 39.40 → 42.52 on the Kummerfeld benchmark](https://arxiv.org/abs/2606.07894)
     - [Teaching LLMs to Diagnose Production Incidents with ATLAS+GEPA](https://www.arc.computer/blog/atlas-sre-diagnosis)
     - [DataBricks: Building State-of-the-Art Enterprise Agents 90x Cheaper with GEPA](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
     - [comet-ml/opik adds support for GEPA](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
     - [Tuning small models (Gemma3-1B) for writing fiction](https://meandnotes.substack.com/p/i-taught-a-small-llm-to-write-fiction?triedRedirect=true)
     - [Cut OCR Error Rates by upto 38% across model classes (Gemini 2.5 Pro, 2.5 Flash, 2.0 Flash)](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf)
+    - [LanceDB: Handwritten Medical-Notes OCR Pipeline with DSPy + GEPA — normalized OCR match 54.1% → 59.4%, avg edit distance 1.01 → 0.87 on Gemini 3.1 Flash Lite, ~15 min run on a laptop](https://www.lancedb.com/blog/make-handwritten-notes-searchable-optimizing-an-ocr-pipeline-with-lancedb)
     - [Optimizing a Data Analysis coding agent with GEPA, using execution-guided feedback on real-world workloads](https://medium.com/firebird-technologies/context-engineering-improving-ai-coding-agents-using-dspy-gepa-df669c632766)
     - [Generating Naruto (Anime) style dialogues with GPT-4o-mini using GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c)
     - [Augmenting RL-tuned models with GEPA: Achieving +142% student performance improvement by augmenting a RL-tuned teacher with GEPA](https://www.arc.computer/blog/supercharging-rl-with-online-optimization)

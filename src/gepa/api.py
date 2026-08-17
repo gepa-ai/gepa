@@ -23,6 +23,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
@@ -37,6 +38,8 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_sampling import SamplingStrategy
+from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
 
 
@@ -85,6 +88,7 @@ def optimize(
     track_best_outputs: bool = True,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
+    write_agent_state: bool = False,
     # Evaluation caching
     cache_evaluation: bool = False,
     # Reproducibility
@@ -93,6 +97,10 @@ def optimize(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     acceptance_criterion: AcceptanceCriterion
     | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    # Proposal strategies (default: 1 parent, 1 mutation per iteration)
+    sampling_strategy: SamplingStrategy | None = None,
+    selection_strategy: SelectionStrategy | None = None,
+    reflection_strategy: ReflectionLM | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -139,6 +147,9 @@ def optimize(
 
     # Reflection-based configuration
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
+    - sampling_strategy: Controls how many (parent, minibatch) proposal tasks are sampled per iteration. One of `SingleMutationSampling` (default; 1 parent, 1 mutation — identical to classic GEPA), `SameParentSampling(n)`, `IndependentSampling(n)`, or `PxNSampling(p, n)`, or any custom `SamplingStrategy`.
+    - selection_strategy: Controls which of an iteration's improving proposals enter the candidate pool. One of `AllImprovements` (default), `BestImprovement`, or `TopKImprovements(k)`, or any custom `SelectionStrategy`.
+    - reflection_strategy: Advanced: a `ReflectionLM` implementation that owns how reflective mutation calls the reflection model (e.g. stateful sessions or aggregating reflectors). Defaults to the stateless single-call reflector built from `reflection_lm`. Implementations may provide `reflect_many` for batched reflection; otherwise `reflect` is called once per task.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
@@ -146,7 +157,7 @@ def optimize(
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
     - reflection_prompt_template: The prompt template to use for reflection. Can be either a string (applied to all components) or a dict mapping component names to their specific templates. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). Each prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions/component to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). When using a dict, components without a specified template will use the default template. This will be ignored if the adapter provides its own `propose_new_texts` method.
-    - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`.
+    - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`. The proposer may optionally accept a keyword argument `metadata` (an open context dict from the reflective proposer, e.g. iteration info); it is passed only if the signature accepts it, and the plain 3-arg form remains fully supported.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -176,14 +187,23 @@ def optimize(
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
     - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
+    - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
 
     # Evaluation caching
-    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
+    - cache_evaluation: Whether to cache the (score, output, objective_scores) of
+      (candidate, split, example) triples. If True and a cache entry exists, GEPA skips the
+      fitness evaluation. Trainset minibatches and valset evaluation share the cache only when
+      they use the same DataLoader instance (valset=None, or the same dataset object passed as
+      both trainset and valset). A distinct valset is a separate namespace, so held-out scores
+      cannot be served from trainset rollouts at the same list index. Defaults to False.
+      Resuming a run_dir whose cache was written before this namespacing existed drops those
+      entries; already-recorded valset scores in the pickled state are left as they are.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
-    - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
+    - raise_on_exception: Whether to propagate proposer/evaluator exceptions. False suppresses failures only after
+      an iteration consumes metric budget; zero-progress failures still propagate.
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
@@ -208,7 +228,7 @@ def optimize(
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
-    val_loader = ensure_loader(valset) if valset is not None else train_loader
+    val_loader = train_loader if valset is None or valset is trainset else ensure_loader(valset)
 
     # Validate that only one custom proposal method is provided
     adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
@@ -219,10 +239,11 @@ def optimize(
         )
 
     if not adapter_has_propose and custom_candidate_proposer is None:
-        assert reflection_lm is not None, (
+        assert reflection_lm is not None or reflection_strategy is not None, (
             f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
             + "and custom_candidate_proposer was not provided. "
-            + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
+            + "GEPA will use the default proposer, which requires a reflection_lm (or a "
+            + "reflection_strategy) to be specified."
         )
 
     # Resolve reflection LM before building stoppers so cost stopper can reference it
@@ -234,7 +255,9 @@ def optimize(
     elif reflection_lm is not None:
         from gepa.lm import TrackingLM
 
-        reflection_lm_callable = TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        reflection_lm_callable = (
+            TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        )
     else:
         reflection_lm_callable = None
 
@@ -257,7 +280,25 @@ def optimize(
     if max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 
-        stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable))
+        if reflection_strategy is not None:
+            if not hasattr(reflection_strategy, "total_cost"):
+                raise ValueError(
+                    "max_reflection_cost is set but reflection_strategy does not expose total_cost — "
+                    "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
+                    "total_cost property on the strategy, or remove max_reflection_cost."
+                )
+            _supports_cost_tracking = getattr(reflection_strategy, "supports_cost_tracking", None)
+            if callable(_supports_cost_tracking) and not _supports_cost_tracking():
+                raise ValueError(
+                    "max_reflection_cost requires a reflection strategy backed by a cost-tracking LM. "
+                    "ComBEE plain callables use TrackingLM token estimates and cannot report provider spend; "
+                    "pass gepa.lm.LM (or another callable with real total_cost), or remove max_reflection_cost."
+                )
+            stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_strategy))
+        else:
+            stop_callbacks_list.append(
+                MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable)
+            )
 
     if not stop_callbacks_list:
         raise ValueError(
@@ -375,6 +416,20 @@ def optimize(
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
+    if reflection_strategy is not None:
+        _bind_rng = getattr(reflection_strategy, "bind_rng", None)
+        if callable(_bind_rng):
+            # Preserve #307's shared-stream semantics for ComBEE and any other
+            # strategy that opts into SeedableReflectionLM. An explicit
+            # strategy RNG remains the opt-in isolation mechanism.
+            _bind_rng(rng)
+        _bind_logger = getattr(reflection_strategy, "bind_logger", None)
+        if callable(_bind_logger):
+            _bind_logger(logger)
+        _bind_lm_kwargs = getattr(reflection_strategy, "bind_lm_kwargs", None)
+        if callable(_bind_lm_kwargs):
+            _bind_lm_kwargs(reflection_lm_kwargs)
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
         trainset=train_loader,
@@ -389,6 +444,8 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        sampling_strategy=sampling_strategy,
+        reflection_strategy=reflection_strategy,
     )
 
     def evaluator_fn(
@@ -429,7 +486,9 @@ def optimize(
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
+        selection_strategy=selection_strategy,
         use_cloudpickle=use_cloudpickle,
+        write_agent_state=write_agent_state,
         evaluation_cache=evaluation_cache,
     )
 

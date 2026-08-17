@@ -63,7 +63,7 @@ hide:
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
       <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
-      <span>NuBank</span>
+      <a href="https://arxiv.org/abs/2606.08867" target="_blank">Nubank</a>
       <span>Infosys</span>
       <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
@@ -90,7 +90,7 @@ hide:
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
       <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
-      <span>NuBank</span>
+      <a href="https://arxiv.org/abs/2606.08867" target="_blank">Nubank</a>
       <span>Infosys</span>
       <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>

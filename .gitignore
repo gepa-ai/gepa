@@ -216,3 +216,8 @@ __marimo__/
 runs/
 outputs/
 gepa_terminus/
+archive/
+
+# Local MLflow tracking artifacts (TrackingConfig(use_mlflow=True))
+mlflow.db
+mlruns/

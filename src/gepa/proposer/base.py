@@ -48,6 +48,8 @@ class ProposeNewCandidate(Protocol[DataId]):
     Strategy that receives the current optimizer state and proposes a new candidate or returns None.
     It may compute subsample evaluations, set trace fields in state, etc.
     The engine will handle acceptance and full eval unless the strategy already did those and encoded in metadata.
+    A proposer may expose the loader its minibatch ids come from as a ``trainset`` attribute; the engine
+    compares it against its valset loader to decide whether the two id spaces share a cache namespace.
     """
 
     def propose(self, state: GEPAState[Any, DataId]) -> CandidateProposal | None: ...

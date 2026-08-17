@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +234,28 @@ class TrackingLM:
             self._total_tokens_out += self._estimate_tokens(result)
 
         return result
+
+    def __getattr__(self, name: str):
+        # Conditionally expose batch_complete: hasattr(tracking_lm,
+        # "batch_complete") must be True exactly when the wrapped callable
+        # provides it, so batched reflection (StatelessReflectionLM) is not
+        # silently downgraded to the per-task path by this wrapper.
+        if name == "batch_complete":
+            inner = getattr(self._fn, "batch_complete", None)
+            if not callable(inner):
+                raise AttributeError(name)
+
+            def tracked_batch_complete(messages_list):
+                for messages in messages_list:
+                    self._total_tokens_in += self._estimate_tokens(str(messages))
+                results = list(cast(Any, inner)(messages_list))
+                for result in results:
+                    if isinstance(result, str):
+                        self._total_tokens_out += self._estimate_tokens(result)
+                return results
+
+            return tracked_batch_complete
+        raise AttributeError(name)
 
     def __repr__(self) -> str:
         return f"TrackingLM({self._fn!r})"

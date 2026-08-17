@@ -23,7 +23,7 @@ authors:
     name: Donghyun Lee
     description: PhD Student, UC Berkeley
     avatar: https://pbs.twimg.com/profile_images/1908160333199380480/2fX9J_BK_400x400.jpg
-    url: https://x.com/luke_lee_ai
+    url: https://x.com/lukedhlee
   wenjie:
     name: Wenjie Ma
     description: PhD Student, UC Berkeley
@@ -164,3 +164,18 @@ authors:
     description: PhD Student
     avatar: https://github.com/devvrit.png
     url: https://github.com/devvrit
+  lutfi:
+    name: Lutfi Eren Erdogan
+    description: Master Student, UC Berkeley
+    avatar: https://github.com/xTRam1.png
+    url: https://scholar.google.com/citations?user=BiprbFAAAAAJ&hl=en
+  gepa-team:
+    name: GEPA Team
+    description: GEPA Team
+    avatar: https://github.com/gepa-ai.png
+    url: https://gepa-ai.github.io
+  ben:
+    name: Jialin Zhang
+    description: Undergraduate Researcher, UC Berkeley
+    avatar: https://github.com/benzhang04.png
+    url: https://x.com/benzhang04

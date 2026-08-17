@@ -14,6 +14,23 @@ def json_default(x):
         return repr(x)
 
 
+def try_json_serialize(obj: Any) -> Any:
+    """Best-effort JSON-safe conversion. Returns *obj* if serializable, else ``str(obj)``."""
+    if obj is None or isinstance(obj, str | int | float | bool):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): try_json_serialize(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [try_json_serialize(v) for v in obj]
+    try:
+        import json
+
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError, OverflowError):
+        return str(obj)
+
+
 def idxmax(lst: list[float]) -> int:
     """Return the index of the maximum value in a list."""
     max_val = max(lst)
