@@ -15,7 +15,18 @@ _TraceInstance = tuple[Any, dict[str, Any], Any]
 
 
 def _history_field_grew(prev: Any, curr: Any) -> bool:
-    return isinstance(prev, History) and isinstance(curr, History) and len(curr.messages) > len(prev.messages)
+    """True when curr continues prev's conversation by appending messages.
+
+    Length alone is not enough. Independent sessions can have unrelated Histories of
+    different lengths, and those calls must both stay in the reflective trace.
+    """
+    if not isinstance(prev, History) or not isinstance(curr, History):
+        return False
+    prev_messages = prev.messages
+    curr_messages = curr.messages
+    if len(curr_messages) <= len(prev_messages):
+        return False
+    return curr_messages[: len(prev_messages)] == prev_messages
 
 
 def _text_field_grew(key: str, prev: Any, curr: Any) -> bool:
@@ -52,9 +63,10 @@ def _select_trace_instances_for_reflection(trace_instances: list[_TraceInstance]
 
     Walk the trace in execution order. Consecutive calls to the same predictor are collapsed
     to the last call only when later inputs look cumulative: a growing ReAct ``trajectory``
-    string, or a ``History`` that gained messages. Independent map calls, interleaved
-    draft-critique-revise (A, B, A) calls, and prefix-related ``context``/``document``
-    strings are kept.
+    string, or a ``History`` whose later messages start with the earlier messages.
+    Independent map calls, interleaved draft-critique-revise (A, B, A) calls, unrelated
+    Histories of different lengths, and prefix-related ``context``/``document`` strings
+    are kept.
 
     A FailedPrediction is never collapsed into a neighbor, so the raw completion stays in
     the trace together with the surrounding calls.
@@ -191,10 +203,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         """Build reflection examples from captured DSPy traces.
 
         Each example includes program-level inputs and outputs plus a ``Program Trace``.
-        Consecutive cumulative calls to the same predictor (ReAct ``trajectory``, growing
-        ``History``) are collapsed to the last call of that run. Independent repeats and
-        interleaved calls are kept in execution order. A FailedPrediction stays in the
-        trace and is not merged into a neighboring call.
+        Consecutive cumulative calls to the same predictor (ReAct ``trajectory``, a
+        ``History`` that grew as a prefix) are collapsed to the last call of that run.
+        Independent repeats and interleaved calls are kept in execution order. A
+        FailedPrediction stays in the trace and is not merged into a neighboring call.
         """
         proposed_program, _ = self.build_program(candidate)
 

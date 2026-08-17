@@ -349,6 +349,42 @@ class TestSelectTraceInstancesForReflection:
         assert selected == [trace[1]]
         assert selected[0][2]["answer"] == "still here"
 
+    def test_growing_history_collapses_when_later_messages_start_with_earlier(self):
+        talk = object()
+        first_turn = [{"question": "hi", "answer": "hello"}]
+        h1 = dspy.History(messages=first_turn)
+        h2 = dspy.History(messages=first_turn + [{"question": "again", "answer": "still here"}])
+        trace = [
+            (talk, {"question": "hi", "history": h1}, {"answer": "hello"}),
+            (talk, {"question": "again", "history": h2}, {"answer": "still here"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == [trace[1]]
+        assert selected[0][2]["answer"] == "still here"
+
+    def test_independent_histories_of_different_lengths_are_not_collapsed(self):
+        """Greptile: unrelated History inputs must not collapse just because one is longer."""
+        talk = object()
+        h_short = dspy.History(messages=[{"question": "a", "answer": "1"}])
+        h_long = dspy.History(
+            messages=[
+                {"question": "x", "answer": "9"},
+                {"question": "y", "answer": "8"},
+                {"question": "z", "answer": "7"},
+            ]
+        )
+        trace = [
+            (talk, {"question": "q1", "history": h_short}, {"answer": "keep-me"}),
+            (talk, {"question": "q2", "history": h_long}, {"answer": "other-session"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert [t[2]["answer"] for t in selected] == ["keep-me", "other-session"]
+
     def test_failed_prediction_stays_with_surrounding_calls(self):
         predictor = object()
         failed = FailedPrediction(completion_text="RAW")
@@ -545,7 +581,7 @@ class CumulativeProgram(dspy.Module):
 program = CumulativeProgram()
 '''
 
-MAP_CANDIDATE = '''
+MAP_CANDIDATE = """
 import dspy
 
 class MapProgram(dspy.Module):
@@ -558,9 +594,9 @@ class MapProgram(dspy.Module):
         return dspy.Prediction(labels=labels)
 
 program = MapProgram()
-'''
+"""
 
-REVISE_CANDIDATE = '''
+REVISE_CANDIDATE = """
 import dspy
 
 class ReviseProgram(dspy.Module):
@@ -575,9 +611,9 @@ class ReviseProgram(dspy.Module):
         return self.gen(task=task, notes=critique.feedback)
 
 program = ReviseProgram()
-'''
+"""
 
-MATH_CANDIDATE = '''
+MATH_CANDIDATE = """
 import dspy
 
 class MathProgram(dspy.Module):
@@ -592,7 +628,7 @@ class MathProgram(dspy.Module):
         return dspy.Prediction(reasoning=reasoned.reasoning, answer=extracted.answer)
 
 program = MathProgram()
-'''
+"""
 
 
 class TestLiveDspyTraceSelection:
