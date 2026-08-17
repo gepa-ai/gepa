@@ -13,23 +13,26 @@ from gepa.proposer.reflective_mutation.base import LanguageModel
 # One DSPy trace entry: (predictor, inputs, outputs). outputs may be a FailedPrediction.
 _TraceInstance = tuple[Any, dict[str, Any], Any]
 
-# Input keys that store a growing prefix even when the added text has no newlines.
-_CUMULATIVE_TEXT_KEYS = frozenset({"trajectory", "scratchpad", "history", "context"})
-
 
 def _history_field_grew(prev: Any, curr: Any) -> bool:
     return isinstance(prev, History) and isinstance(curr, History) and len(curr.messages) > len(prev.messages)
 
 
 def _text_field_grew(key: str, prev: Any, curr: Any) -> bool:
+    """True when curr is a strict prefix extension that looks like accumulated trace text.
+
+    ReAct's ``trajectory`` field counts even without newlines. Other string fields count
+    only when the added suffix contains a newline, so independent calls with prefix-related
+    values such as context ``abc`` then ``abcdef`` are kept.
+    """
     if not isinstance(prev, str) or not isinstance(curr, str):
         return False
     if prev == curr or not curr.startswith(prev):
         return False
-    if key.lower() in _CUMULATIVE_TEXT_KEYS:
-        return True
     added = curr[len(prev) :]
-    return "\n" in added or "\n" in curr
+    if key.lower() == "trajectory":
+        return True
+    return "\n" in added
 
 
 def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:

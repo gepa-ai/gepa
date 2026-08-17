@@ -291,6 +291,33 @@ class TestSelectTraceInstancesForReflection:
 
         assert selected == trace
 
+    def test_prefix_lookalike_context_strings_are_not_collapsed(self):
+        """Greptile: context abc then abcdef is independent, not a ReAct trajectory."""
+        reader = object()
+        trace = [
+            (reader, {"context": "abc", "question": "q1"}, {"answer": "a1"}),
+            (reader, {"context": "abcdef", "question": "q2"}, {"answer": "a2"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert [t[2]["answer"] for t in selected] == ["a1", "a2"]
+
+    def test_newline_growing_context_is_collapsed(self):
+        reader = object()
+        first = "doc A"
+        second = first + "\ndoc B"
+        trace = [
+            (reader, {"context": first}, {"answer": "a1"}),
+            (reader, {"context": second}, {"answer": "a2"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == [trace[1]]
+        assert selected[0][2]["answer"] == "a2"
+
     def test_interleaved_draft_critique_revise_keeps_chronology(self):
         gen = object()
         crit = object()
