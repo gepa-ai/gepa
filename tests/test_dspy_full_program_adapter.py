@@ -7,7 +7,7 @@ Covers:
    protocol (callable returning str, not list[str]).
 3. make_reflective_dataset must collapse consecutive cumulative ReAct traces
    (issue 97) without dropping independent map calls, interleaved A-B-A calls,
-   or distinct predictors in a multi-module program.
+   History inputs, or distinct predictors in a multi-module program.
 """
 
 from __future__ import annotations
@@ -335,34 +335,72 @@ class TestSelectTraceInstancesForReflection:
         assert selected == trace
         assert [t[2].get("draft") or t[2].get("feedback") for t in selected] == ["v1", "too vague", "v2"]
 
-    def test_growing_history_collapses_consecutive_turns(self):
+    def test_empty_history_then_unrelated_history_is_not_collapsed(self):
+        """Empty History is a prefix of every message list, but those calls are independent."""
         talk = object()
-        h0 = dspy.History(messages=[])
-        h1 = dspy.History(messages=[{"question": "hi", "answer": "hello"}])
+        h_empty = dspy.History(messages=[])
+        h_other = dspy.History(messages=[{"question": "unrelated session", "answer": "x"}])
         trace = [
-            (talk, {"question": "hi", "history": h0}, {"answer": "hello"}),
-            (talk, {"question": "again", "history": h1}, {"answer": "still here"}),
+            (talk, {"question": "hi", "history": h_empty}, {"answer": "new-user"}),
+            (talk, {"question": "yo", "history": h_other}, {"answer": "old-user"}),
         ]
 
         selected = _select_trace_instances_for_reflection(trace)
 
-        assert selected == [trace[1]]
-        assert selected[0][2]["answer"] == "still here"
+        assert selected == trace
+        assert [t[2]["answer"] for t in selected] == ["new-user", "old-user"]
 
-    def test_growing_history_collapses_when_later_messages_start_with_earlier(self):
+    def test_shared_prefix_histories_are_not_collapsed(self):
+        """Greptile: independent Histories that share a prefix must both stay."""
         talk = object()
+        shared = [{"role": "system", "content": "You are helpful"}]
+        h1 = dspy.History(messages=shared)
+        h2 = dspy.History(messages=shared + [{"role": "user", "content": "hello"}])
+        trace = [
+            (talk, {"question": "q1", "history": h1}, {"answer": "keep-first"}),
+            (talk, {"question": "q2", "history": h2}, {"answer": "keep-second"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert [t[2]["answer"] for t in selected] == ["keep-first", "keep-second"]
+
+    def test_conversation_prefix_scoring_is_not_collapsed(self):
+        talk = object()
+        msgs = [
+            {"question": "a", "answer": "1"},
+            {"question": "b", "answer": "2"},
+            {"question": "c", "answer": "3"},
+        ]
+        trace = [
+            (talk, {"history": dspy.History(messages=msgs[:1])}, {"score": "s1"}),
+            (talk, {"history": dspy.History(messages=msgs[:2])}, {"score": "s2"}),
+            (talk, {"history": dspy.History(messages=msgs[:3])}, {"score": "s3"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+        assert [t[2]["score"] for t in selected] == ["s1", "s2", "s3"]
+
+    def test_growing_chat_history_is_not_collapsed(self):
+        """A real chat loop grows History as a prefix. That is not ReAct, so every turn stays."""
+        talk = object()
+        h0 = dspy.History(messages=[])
         first_turn = [{"question": "hi", "answer": "hello"}]
         h1 = dspy.History(messages=first_turn)
         h2 = dspy.History(messages=first_turn + [{"question": "again", "answer": "still here"}])
         trace = [
-            (talk, {"question": "hi", "history": h1}, {"answer": "hello"}),
-            (talk, {"question": "again", "history": h2}, {"answer": "still here"}),
+            (talk, {"question": "hi", "history": h0}, {"answer": "hello"}),
+            (talk, {"question": "again", "history": h1}, {"answer": "still here"}),
+            (talk, {"question": "more", "history": h2}, {"answer": "final"}),
         ]
 
         selected = _select_trace_instances_for_reflection(trace)
 
-        assert selected == [trace[1]]
-        assert selected[0][2]["answer"] == "still here"
+        assert selected == trace
+        assert [t[2]["answer"] for t in selected] == ["hello", "still here", "final"]
 
     def test_independent_histories_of_different_lengths_are_not_collapsed(self):
         """Greptile: unrelated History inputs must not collapse just because one is longer."""
@@ -384,6 +422,20 @@ class TestSelectTraceInstancesForReflection:
 
         assert selected == trace
         assert [t[2]["answer"] for t in selected] == ["keep-me", "other-session"]
+
+    def test_two_independent_react_runs_keep_each_final_step(self):
+        react = object()
+        trace = [
+            (react, {"item": "a", "trajectory": ""}, {"next": "a1"}),
+            (react, {"item": "a", "trajectory": "t0-a\n"}, {"next": "a2"}),
+            (react, {"item": "b", "trajectory": ""}, {"next": "b1"}),
+            (react, {"item": "b", "trajectory": "t0-b\n"}, {"next": "b2"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == [trace[1], trace[3]]
+        assert [t[2]["next"] for t in selected] == ["a2", "b2"]
 
     def test_failed_prediction_stays_with_surrounding_calls(self):
         predictor = object()
@@ -553,6 +605,21 @@ class TestReflectiveDatasetSelection:
         assert program_trace[1]["Generated Outputs"]["feedback"] == "too vague"
         assert program_trace[2]["Generated Outputs"]["draft"] == "v2"
 
+    def test_empty_then_unrelated_history_appears_in_program_trace(self):
+        adapter = _make_adapter()
+        talk = _make_predictor()
+        h_empty = dspy.History(messages=[])
+        h_other = dspy.History(messages=[{"question": "old", "answer": "session"}])
+        trace = [
+            (talk, {"question": "hi", "history": h_empty}, {"answer": "new-user"}),
+            (talk, {"question": "yo", "history": h_other}, {"answer": "old-user"}),
+        ]
+
+        program_trace = _program_trace(adapter, trace, [("talk", talk)])
+
+        assert [entry["Called Module"] for entry in program_trace] == ["talk", "talk"]
+        assert [entry["Generated Outputs"]["answer"] for entry in program_trace] == ["new-user", "old-user"]
+
 
 # ---------------------------------------------------------------------------
 # Live DSPy programs (DummyLM, no network)
@@ -630,6 +697,44 @@ class MathProgram(dspy.Module):
 program = MathProgram()
 """
 
+HISTORY_MAP_CANDIDATE = """
+import dspy
+
+class HistoryMapProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.talk = dspy.Predict("question, history -> answer")
+
+    def forward(self, question_a, history_a, question_b, history_b):
+        first = self.talk(question=question_a, history=history_a)
+        second = self.talk(question=question_b, history=history_b)
+        return dspy.Prediction(answer_a=first.answer, answer_b=second.answer)
+
+program = HistoryMapProgram()
+"""
+
+HISTORY_CHAT_CANDIDATE = """
+import dspy
+
+class HistoryChatProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.talk = dspy.Predict("question, history -> answer")
+
+    def forward(self, questions):
+        history = dspy.History(messages=[])
+        answers = []
+        for question in questions:
+            pred = self.talk(question=question, history=history)
+            answers.append(pred.answer)
+            history = dspy.History(
+                messages=list(history.messages) + [{"question": question, "answer": pred.answer}]
+            )
+        return dspy.Prediction(answers=answers)
+
+program = HistoryChatProgram()
+"""
+
 
 class TestLiveDspyTraceSelection:
     def test_live_react_collapses_repeated_react_calls(self):
@@ -653,6 +758,32 @@ class TestLiveDspyTraceSelection:
         assert program_trace[1]["Generated Outputs"]["answer"] == "4"
         assert "thought_0" in program_trace[0]["Inputs"]["trajectory"]
         assert "thought_1" in program_trace[1]["Inputs"]["trajectory"]
+        react_entries = [entry for entry in program_trace if entry["Called Module"] == "react.react"]
+        assert len(react_entries) == 1
+
+    def test_live_react_collapses_three_tool_steps_to_the_final_react_call(self):
+        batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            REACT_CANDIDATE,
+            batch,
+            [
+                {"next_thought": "add", "next_tool_name": "calculator", "next_tool_args": {"x": "2+2"}},
+                {"next_thought": "check", "next_tool_name": "calculator", "next_tool_args": {"x": "4"}},
+                {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
+                {"reasoning": "2+2=4", "answer": "4"},
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 4
+        for earlier, later in zip(raw_trace, raw_trace[1:], strict=False):
+            assert later[1]["trajectory"].startswith(earlier[1]["trajectory"])
+        assert [entry["Called Module"] for entry in program_trace] == ["react.react", "react.extract.predict"]
+        assert program_trace[0]["Generated Outputs"]["next_tool_name"] == "finish"
+        assert "thought_0" in program_trace[0]["Inputs"]["trajectory"]
+        assert "thought_1" in program_trace[0]["Inputs"]["trajectory"]
+        assert "thought_2" in program_trace[1]["Inputs"]["trajectory"]
+        assert program_trace[1]["Generated Outputs"]["answer"] == "4"
 
     def test_live_map_keeps_every_independent_classify_call(self):
         batch = [Example(items=["apple", "carrot", "salmon"]).with_inputs("items")]
@@ -707,3 +838,70 @@ class TestLiveDspyTraceSelection:
         assert program_trace[0]["Generated Outputs"]["answer"] == "5"
         assert program_trace[1]["Generated Outputs"]["answer"] == "4"
         assert program_trace[1]["Inputs"]["reasoning"] == "subtract 3"
+
+    def test_live_history_map_keeps_empty_then_unrelated_session(self):
+        h_empty = dspy.History(messages=[])
+        h_other = dspy.History(messages=[{"question": "old", "answer": "session"}])
+        batch = [
+            Example(
+                question_a="hi",
+                history_a=h_empty,
+                question_b="yo",
+                history_b=h_other,
+            ).with_inputs("question_a", "history_a", "question_b", "history_b")
+        ]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            HISTORY_MAP_CANDIDATE,
+            batch,
+            [{"answer": "new-user"}, {"answer": "old-user"}],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 2
+        assert len(raw_trace[0][1]["history"].messages) == 0
+        assert len(raw_trace[1][1]["history"].messages) == 1
+        assert [entry["Called Module"] for entry in program_trace] == ["talk", "talk"]
+        assert [entry["Generated Outputs"]["answer"] for entry in program_trace] == ["new-user", "old-user"]
+
+    def test_live_history_map_keeps_shared_prefix_sessions(self):
+        shared = [{"role": "system", "content": "You are helpful"}]
+        h1 = dspy.History(messages=shared)
+        h2 = dspy.History(messages=shared + [{"role": "user", "content": "hello"}])
+        batch = [
+            Example(
+                question_a="q1",
+                history_a=h1,
+                question_b="q2",
+                history_b=h2,
+            ).with_inputs("question_a", "history_a", "question_b", "history_b")
+        ]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            HISTORY_MAP_CANDIDATE,
+            batch,
+            [{"answer": "keep-first"}, {"answer": "keep-second"}],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 2
+        assert (
+            raw_trace[1][1]["history"].messages[: len(raw_trace[0][1]["history"].messages)]
+            == raw_trace[0][1]["history"].messages
+        )
+        assert [entry["Generated Outputs"]["answer"] for entry in program_trace] == ["keep-first", "keep-second"]
+
+    def test_live_chat_loop_keeps_every_growing_history_turn(self):
+        batch = [Example(questions=["hi", "again", "more"]).with_inputs("questions")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            HISTORY_CHAT_CANDIDATE,
+            batch,
+            [{"answer": "hello"}, {"answer": "still"}, {"answer": "final"}],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        lengths = [len(t[1]["history"].messages) for t in raw_trace]
+        assert lengths == [0, 1, 2]
+        assert raw_trace[1][1]["history"].messages[: lengths[0]] == raw_trace[0][1]["history"].messages
+        assert raw_trace[2][1]["history"].messages[: lengths[1]] == raw_trace[1][1]["history"].messages
+        assert [entry["Called Module"] for entry in program_trace] == ["talk", "talk", "talk"]
+        assert [entry["Generated Outputs"]["answer"] for entry in program_trace] == ["hello", "still", "final"]

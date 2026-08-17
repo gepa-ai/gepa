@@ -102,7 +102,7 @@ A fully executable notebook to run this example is in [src/gepa/examples/dspy_fu
 
 `make_reflective_dataset` builds the examples that the reflection LM sees. Each example includes the program-level inputs and outputs, plus a `Program Trace` of selected predictor calls, in execution order.
 
-- Consecutive calls to the same predictor are collapsed to the last call only when later inputs look cumulative. That means a growing ReAct `trajectory` string, or a `History` whose later messages start with the earlier messages. Independent repeats are kept, including unrelated Histories of different lengths and prefix-related or newline-appended strings on other fields such as `context` or `document`.
+- Consecutive calls to the same predictor are collapsed to the last call only when ReAct's `trajectory` string grew as a prefix. Independent repeats are kept, including History inputs (empty, shared-prefix, growing conversations, and unrelated sessions of different lengths) and prefix-related or newline-appended strings on other fields such as `context` or `document`.
 - Interleaved calls such as generate, critique, generate-again are kept in that order. The first generation is not dropped, and the critique is not moved after the revision.
 - A `FailedPrediction` (format parse error) stays in the trace so the raw completion is visible. Calls before and after it are still selected.
 
