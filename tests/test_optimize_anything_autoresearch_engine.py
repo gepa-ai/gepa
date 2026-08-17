@@ -475,9 +475,121 @@ def test_autoresearch_fails_closed_when_admitted_evaluation_does_not_drain(
         with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
             with pytest.raises(RuntimeError, match="did not drain"):
                 engine.run(task, server)
+        assert session_ids[0] not in server._evaluation_sessions
     finally:
         release.set()
         server.stop()
+
+
+def test_autoresearch_drain_timeout_keeps_shared_server_reusable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import urllib.request
+
+    started = threading.Event()
+    release = threading.Event()
+    session_ids: list[str] = []
+
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        if candidate == "hung":
+            started.set()
+            assert release.wait(timeout=2.0)
+            return 0.1, {}
+        return {"second": 0.5}[candidate], {}
+
+    task = Task(name="reuse-after-timeout", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=6), max_concurrency=2)
+    server.start()
+    original_open = server.open_evaluation_session
+
+    def open_evaluation_session(initial_candidate: str) -> str:
+        session_id = original_open(initial_candidate)
+        session_ids.append(session_id)
+        return session_id
+
+    monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
+    invocations = 0
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        nonlocal invocations
+        invocations += 1
+        if invocations == 1:
+            threading.Thread(
+                target=lambda: server.evaluate("hung", evaluation_session_id=session_ids[0]), daemon=True
+            ).start()
+            assert started.wait(timeout=2.0)
+            return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        server.evaluate("second", evaluation_session_id=session_ids[-1])
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    first = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch",
+            sandbox=False,
+            run_dir=str(tmp_path / "first"),
+            engine_config={"ralph": False},
+        )
+    )
+    monkeypatch.setattr(first, "_drain_timeout", lambda: 0.05)
+    second = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch",
+            sandbox=False,
+            run_dir=str(tmp_path / "second"),
+            engine_config={"ralph": False},
+        )
+    )
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            with pytest.raises(RuntimeError, match="did not drain"):
+                first.run(task, server)
+            req = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "second"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                assert resp.status == 200
+            result = second.run(task, server)
+    finally:
+        release.set()
+        server.stop()
+
+    assert result.best_candidate == "second"
+    assert result.best_score == 0.5
+
+
+def test_autoresearch_quiet_close_does_not_wait_for_hung_eval(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def evaluate(_candidate: str) -> tuple[float, dict[str, object]]:
+        started.set()
+        assert release.wait(timeout=2.0)
+        return 0.9, {}
+
+    task = Task(name="quiet-close", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
+    )
+    session_id = server.open_evaluation_session("seed")
+    eval_thread = threading.Thread(target=lambda: server.evaluate("hung", evaluation_session_id=session_id))
+    try:
+        eval_thread.start()
+        assert started.wait(timeout=2.0)
+        started_at = time.monotonic()
+        engine._close_session_quietly(server, session_id)
+        assert time.monotonic() - started_at < 0.2
+        assert session_id not in server._evaluation_sessions
+        with pytest.raises(EvaluationSessionClosedError):
+            server.evaluate("late", evaluation_session_id=session_id)
+    finally:
+        release.set()
+        eval_thread.join(timeout=2)
 
 
 def test_autoresearch_drain_timeout_is_not_max_no_eval_seconds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -670,12 +782,14 @@ def test_autoresearch_closes_each_ralph_iteration_before_opening_the_next(
     server = EvalServer(task, lambda candidate: (scores[candidate], {}), BudgetTracker(max_evals=3))
     server.start()
     session_ids: list[str] = []
+    opened_with: list[str] = []
     late_errors: list[BaseException] = []
     original_open = server.open_evaluation_session
 
     def open_evaluation_session(initial_candidate: str) -> str:
         session_id = original_open(initial_candidate)
         session_ids.append(session_id)
+        opened_with.append(initial_candidate)
         return session_id
 
     monkeypatch.setattr(server, "open_evaluation_session", open_evaluation_session)
@@ -689,6 +803,8 @@ def test_autoresearch_closes_each_ralph_iteration_before_opening_the_next(
 
         assert len(session_ids) == 2
         work_dir = Path(str(kwargs["cwd"]))
+        assert (work_dir / "candidate.txt").read_text() == "first"
+        assert (work_dir / "best_candidate.txt").read_text() == "first"
         assert session_ids[1] in (work_dir / "eval-2.sh").read_text()
         assert str(work_dir / "eval-2.sh") in cmd[-1]
         assert "do not run retired eval*.sh scripts" in cmd[-1]
@@ -716,6 +832,7 @@ def test_autoresearch_closes_each_ralph_iteration_before_opening_the_next(
 
     assert len(calls) == 2
     assert len(session_ids) == 2
+    assert opened_with == ["seed", "first"]
     assert len(late_errors) == 1
     assert result.best_candidate == "second"
     assert result.best_score == 0.8

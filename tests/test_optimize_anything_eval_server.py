@@ -388,7 +388,8 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         self.assertEqual(sorted(seen), ["a", "b", "c"])
         self.assertEqual(closed[0].best_candidate, "good")
         self.assertEqual(closed[0].best_score, 1.0)
-        self.assertIsNone(closed[0].aggregate_candidate)
+        self.assertEqual(closed[0].aggregate_candidate, "good")
+        self.assertEqual(closed[0].aggregate_score, 1.0)
 
     def test_http_close_does_not_zero_queued_evaluate_examples(self) -> None:
         import urllib.request
@@ -600,6 +601,90 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             server.evaluate(f"c{i}", evaluation_session_id=session_id)
             server.close_evaluation_session(session_id, timeout=0.1)
         self.assertLessEqual(len(server._completed_sessions), _MAX_COMPLETED_EVALUATION_SESSIONS)
+
+    def test_python_evaluate_examples_records_full_pool_aggregate(self) -> None:
+        task = Task(name="task", seed_candidate="seed", train_set=["a", "b"])
+        server = EvalServer(task, lambda _candidate, _example: (0.5, {}), BudgetTracker(max_evals=4))
+        session_id = server.open_evaluation_session("seed")
+        avg, _info = server.evaluate_examples("steady", evaluation_session_id=session_id)
+        result = server.close_evaluation_session(session_id, timeout=0.1)
+        self.assertEqual(avg, 0.5)
+        self.assertEqual(result.aggregate_candidate, "steady")
+        self.assertEqual(result.aggregate_score, 0.5)
+
+    def test_python_subset_evaluate_examples_does_not_record_aggregate(self) -> None:
+        task = Task(name="task", seed_candidate="seed", train_set=["a", "b"])
+        server = EvalServer(task, lambda _candidate, _example: (1.0, {}), BudgetTracker(max_evals=4))
+        session_id = server.open_evaluation_session("seed")
+        first_id = server._agent_visible_ids()[0]
+        server.evaluate_examples("partial", example_ids=[first_id], evaluation_session_id=session_id)
+        result = server.close_evaluation_session(session_id, timeout=0.1)
+        self.assertIsNone(result.aggregate_candidate)
+        self.assertEqual(result.best_candidate, "partial")
+
+    def test_validate_does_not_record_session_aggregate_when_train_exists(self) -> None:
+        task = Task(name="task", seed_candidate="seed", train_set=["a"], val_set=["b"])
+        server = EvalServer(task, lambda _candidate, _example: (1.0, {}), BudgetTracker(max_evals=4))
+        session_id = server.open_evaluation_session("seed")
+        server.validate("val-only", evaluation_session_id=session_id)
+        result = server.close_evaluation_session(session_id, timeout=0.1)
+        self.assertIsNone(result.aggregate_candidate)
+        self.assertEqual(result.best_candidate, "val-only")
+
+    def test_drain_timeout_retires_session_and_allows_tokenless_http(self) -> None:
+        import urllib.error
+        import urllib.request
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+            if candidate == "hung":
+                started.set()
+                self.assertTrue(release.wait(timeout=2))
+            return 1.0, {}
+
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, evaluate, BudgetTracker(max_evals=4), max_concurrency=2)
+        session_id = server.open_evaluation_session("seed")
+        server.start()
+        eval_thread = threading.Thread(target=lambda: server.evaluate("hung", evaluation_session_id=session_id))
+        try:
+            eval_thread.start()
+            self.assertTrue(started.wait(timeout=2))
+            with self.assertRaises(TimeoutError):
+                server.close_evaluation_session(session_id, timeout=0.05)
+            self.assertNotIn(session_id, server._evaluation_sessions)
+
+            tokenless = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "tokenless"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(tokenless, timeout=5) as resp:
+                self.assertEqual(resp.status, 200)
+
+            stale = urllib.request.Request(
+                f"{server.url}/evaluate",
+                data=json.dumps({"candidate": "stale", "evaluation_session_id": session_id}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(stale, timeout=5)
+            self.assertEqual(raised.exception.code, 409)
+        finally:
+            release.set()
+            eval_thread.join(timeout=2)
+            server.stop()
+
+    def test_stop_retires_live_sessions(self) -> None:
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=1))
+        session_id = server.open_evaluation_session("seed")
+        server.stop()
+        self.assertNotIn(session_id, server._evaluation_sessions)
+        with self.assertRaises(EvaluationSessionClosedError):
+            server.evaluate("late", evaluation_session_id=session_id)
 
 
 if __name__ == "__main__":

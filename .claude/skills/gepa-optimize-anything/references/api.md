@@ -134,7 +134,7 @@ e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **ca
 | `handoffs` | `None` | prior-stage artifacts for sequential compositions (materialized under `handoff/`). |
 | `effort` | `None` | `claude --effort` value. |
 | `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
-| `drain_timeout_seconds` | `None` | wait for admitted evals after Claude exits; `None` waits until they finish. |
+| `drain_timeout_seconds` | `None` | wait for admitted evals after Claude exits; `None` waits until they finish. A positive value fail-closes the run, retires the live session, and leaves the shared eval server reusable. |
 
 The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
 launches `claude --print`. Each invocation gets an evaluation-session token baked into the live

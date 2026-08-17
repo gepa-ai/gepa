@@ -75,8 +75,8 @@ class OptimizeAnythingConfig:
               a Claude Code proposer here — see
               :class:`~gepa.oa.engines.gepa.GepaEngine`.
             - ``autoresearch`` — ``model``, ``ralph``, ``max_no_eval_seconds``,
-              ``handoffs``, ``effort``, ``max_thinking_tokens`` (see
-              ``AutoResearchEngine`` / ``_AR_CONFIG_KEYS``).
+              ``handoffs``, ``effort``, ``max_thinking_tokens``,
+              ``drain_timeout_seconds`` (see :class:`~gepa.oa.engines.autoresearch.AutoResearchConfig`).
             - ``best_of_n`` — ``model``, ``temperature``, ``max_n``,
               ``lm_kwargs``, ``effort``, ``max_thinking_tokens`` (see
               ``BestOfNEngine`` / ``_BON_CONFIG_KEYS``).

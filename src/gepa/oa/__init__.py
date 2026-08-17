@@ -8,7 +8,7 @@ that public API.
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
-from gepa.oa.eval_server import EvalServer
+from gepa.oa.eval_server import EvalServer, EvaluationSessionClosedError, EvaluationSessionResult
 from gepa.oa.registry import (
     get_engine_cls,
     get_task,
@@ -25,6 +25,8 @@ __all__ = [
     "BudgetTracker",
     "Engine",
     "EvalServer",
+    "EvaluationSessionClosedError",
+    "EvaluationSessionResult",
     "OptimizeAnythingConfig",
     "Result",
     "Task",

@@ -618,7 +618,7 @@ class AutoResearchEngine:
         )
         if iteration_score > best_score:
             best_candidate, best_score = iteration_candidate, iteration_score
-        best_file.write_text(best_candidate)
+        self._persist_session_winner(candidate_file, best_file, best_candidate)
         if (
             proc.returncode != 0
             and not budget.exhausted
@@ -645,7 +645,7 @@ class AutoResearchEngine:
                     break
                 if proc.returncode != 0:
                     break
-                evaluation_session_id = server.open_evaluation_session(initial_candidate)
+                evaluation_session_id = server.open_evaluation_session(best_candidate)
                 eval_script = work_dir / f"eval-{ralph_iterations + 1}.sh"
                 try:
                     _materialize_eval_script(work_dir, task, server, evaluation_session_id, eval_script.name)
@@ -681,7 +681,7 @@ class AutoResearchEngine:
                 )
                 if iteration_score > best_score:
                     best_candidate, best_score = iteration_candidate, iteration_score
-                best_file.write_text(best_candidate)
+                self._persist_session_winner(candidate_file, best_file, best_candidate)
                 iter_cost = _extract_claude_cost(proc.stdout)
                 adapter_cost += iter_cost
                 invocations.append({"cost": iter_cost, "score": iteration_score, "returncode": proc.returncode})
@@ -827,6 +827,10 @@ class AutoResearchEngine:
                 return False
         return True
 
+    def _persist_session_winner(self, candidate_file: Path, best_file: Path, best_candidate: str) -> None:
+        best_file.write_text(best_candidate)
+        candidate_file.write_text(best_candidate)
+
     def _drain_timeout(self) -> float | None:
         # Drain waits for admitted evals to finish. That is independent of
         # ``max_no_eval_seconds``, which only kills a silent Claude subprocess,
@@ -836,8 +840,10 @@ class AutoResearchEngine:
         return self.drain_timeout_seconds
 
     def _close_session_quietly(self, server: EvalServer, session_id: str) -> None:
+        # Cleanup must not block on hung evals: timeout=0 snapshots and retires
+        # the live session immediately if anything is still in flight.
         try:
-            server.close_evaluation_session(session_id, timeout=self._drain_timeout())
+            server.close_evaluation_session(session_id, timeout=0)
         except Exception:
             pass
 
