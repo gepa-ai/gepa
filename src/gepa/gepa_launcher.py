@@ -147,10 +147,12 @@ from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMuta
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
+    BatchLexicaseCandidateSelector,
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
     ParetoCandidateSelector,
     TopKParetoCandidateSelector,
+    UnprunedParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -493,7 +495,8 @@ class EngineConfig:
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: (
-        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+        CandidateSelector
+        | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto", "batch_lexicase", "unpruned_pareto"]
     ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
@@ -1529,6 +1532,8 @@ def optimize_anything(
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
             "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
+            "batch_lexicase": lambda: BatchLexicaseCandidateSelector(rng=rng),
+            "unpruned_pareto": lambda: UnprunedParetoCandidateSelector(rng=rng),
         }
 
         try:
@@ -1536,7 +1541,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'batch_lexicase', 'unpruned_pareto'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy
