@@ -5,10 +5,64 @@ import dspy
 from dspy.adapters.types import History
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
-from dspy.teleprompt.bootstrap_trace import TraceData
+from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
+
+# One DSPy trace entry: (predictor, inputs, outputs). outputs may be a FailedPrediction.
+_TraceInstance = tuple[Any, dict[str, Any], Any]
+
+
+def _trajectory_field_grew(key: str, prev: Any, curr: Any) -> bool:
+    """True when ReAct's ``trajectory`` input grew as a strict prefix extension.
+
+    Other string fields are not treated as cumulative. Independent calls that append a
+    newline section to ``context`` or ``document`` must stay in the trace. History objects
+    are also left alone: an empty or shared-prefix History is a valid independent input,
+    and prefix matching cannot tell that apart from a later turn of the same conversation.
+    """
+    if key.lower() != "trajectory":
+        return False
+    if not isinstance(prev, str) or not isinstance(curr, str):
+        return False
+    return prev != curr and curr.startswith(prev)
+
+
+def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:
+    """True when curr is the same predictor continuing a growing ReAct trajectory."""
+    if prev[0] is not curr[0]:
+        return False
+    if isinstance(prev[2], FailedPrediction) or isinstance(curr[2], FailedPrediction):
+        return False
+    prev_inputs, curr_inputs = prev[1], curr[1]
+    if not isinstance(prev_inputs, dict) or not isinstance(curr_inputs, dict):
+        return False
+    for key in prev_inputs.keys() & curr_inputs.keys():
+        if _trajectory_field_grew(key, prev_inputs[key], curr_inputs[key]):
+            return True
+    return False
+
+
+def _select_trace_instances_for_reflection(trace_instances: list[_TraceInstance]) -> list[_TraceInstance]:
+    """Choose which predictor calls to send to the reflection LM.
+
+    Walk the trace in execution order. Consecutive calls to the same predictor are collapsed
+    to the last call only when ReAct's ``trajectory`` string grew as a prefix. Independent
+    map calls, interleaved draft-critique-revise (A, B, A) calls, History inputs (including
+    empty, shared-prefix, and growing conversations), and prefix-related ``context`` /
+    ``document`` strings are kept.
+
+    A FailedPrediction is never collapsed into a neighbor, so the raw completion stays in
+    the trace together with the surrounding calls.
+    """
+    selected: list[_TraceInstance] = []
+    for t in trace_instances:
+        if selected and _is_cumulative_repeat(selected[-1], t):
+            selected[-1] = t
+        else:
+            selected.append(t)
+    return selected
 
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
@@ -131,10 +185,17 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+        """Build reflection examples from captured DSPy traces.
+
+        Each example includes program-level inputs and outputs plus a ``Program Trace``.
+        Consecutive ReAct calls whose ``trajectory`` string grew as a prefix are collapsed
+        to the last call of that run. Independent repeats, History inputs, and interleaved
+        calls are kept in execution order. A FailedPrediction stays in the trace and is
+        not merged into a neighboring call.
+        """
         proposed_program, _ = self.build_program(candidate)
 
         assert set(components_to_update) == {"program"}, f"set(components_to_update) = {set(components_to_update)}"
-        from dspy.teleprompt.bootstrap_trace import FailedPrediction
 
         ret_d: dict[str, list[dict[str, Any]]] = {}
 
@@ -166,14 +227,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             if len(trace_instances) == 0:
                 continue
 
-            selected = None
-            for t in trace_instances:
-                if isinstance(t[2], FailedPrediction):
-                    selected = t
-                    break
-
-            if selected is not None:
-                trace_instances = [selected]
+            trace_instances = _select_trace_instances_for_reflection(trace_instances)
 
             trace_d = []
             example_data["Program Trace"] = trace_d
