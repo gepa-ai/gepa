@@ -266,8 +266,10 @@ class EvalServer:
 
         Stays accepting until currently admitted work finishes and ``quiet``
         seconds pass with no new admits, so a curl that left the agent process
-        but has not reached :meth:`_admit_http` can still land. Then rejects
-        new HTTP and waits once more.
+        but has not entered the HTTP handler can still land. Admission happens
+        at handler entry, before the body is read, so an in-flight POST is
+        visible to :meth:`wait_idle` during ``_read_body``. Then rejects new
+        HTTP and waits once more.
 
         Returns True if the server was idle after the pause. False if
         ``timeout`` elapsed first. HTTP is paused either way; completed work
@@ -537,12 +539,22 @@ class EvalServer:
         if not self.task.val_set:
             raise ValueError("validate() requires a task with val_set")
         avg_score, _ = self.evaluate_examples(candidate, example_ids=list(self._split_ids["val"]))
-        return self.log_progress(avg_score, candidate=candidate)
+        # Val-only checkpoints must not compete with full-pool AutoResearch selection.
+        return self.log_progress(avg_score, candidate=candidate, selectable=False)
 
     def log_progress(
-        self, val_score: float, candidate: str | None = None, reflection_cost: float = 0.0
+        self,
+        val_score: float,
+        candidate: str | None = None,
+        reflection_cost: float = 0.0,
+        *,
+        selectable: bool = True,
     ) -> dict[str, Any]:
-        """Record a progress checkpoint."""
+        """Record a progress checkpoint.
+
+        ``selectable=False`` keeps the row for logging (GEPA val, ``/validate``)
+        but excludes it from AutoResearch full-pool winner selection.
+        """
         candidate_id: int | None = None
         if candidate is not None:
             candidate_id = self._register_candidate(candidate)
@@ -557,6 +569,7 @@ class EvalServer:
                 "wall_time": time.time() - self._start_time,
                 "total_cost": self.total_cost,
                 "reflection_cost": reflection_cost,
+                "selectable": selectable,
             }
             if candidate_id is not None:
                 entry["candidate_id"] = candidate_id
@@ -613,14 +626,23 @@ class EvalServer:
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
-                if self.path == "/evaluate":
-                    server_ref._handle_evaluate(self)
-                elif self.path == "/evaluate_examples":
-                    server_ref._handle_evaluate_examples(self)
-                elif self.path == "/validate":
-                    server_ref._handle_validate(self)
-                else:
+                dispatch = {
+                    "/evaluate": server_ref._handle_evaluate,
+                    "/evaluate_examples": server_ref._handle_evaluate_examples,
+                    "/validate": server_ref._handle_validate,
+                }.get(self.path)
+                if dispatch is None:
                     self.send_error(404)
+                    return
+                # Admit before reading the body so drain_http can see a POST that
+                # is still blocked in rfile.read.
+                if not server_ref._admit_http():
+                    server_ref._send_json(self, {"error": "Eval server is not accepting HTTP evaluations"}, status=409)
+                    return
+                try:
+                    dispatch(self)
+                finally:
+                    server_ref._finish_work()
 
             def do_GET(self):
                 if self.path == "/status":
@@ -718,111 +740,93 @@ class EvalServer:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_id = body.get("example_id")
-        if not self._admit_http():
-            self._send_json(handler, {"error": "Eval server is not accepting HTTP evaluations"}, status=409)
+        if self.budget.exhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
-        try:
-            if self.budget.exhausted:
-                self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+
+        # Reject any example_id outside the agent-visible pool (train+val).
+        # Single-task tasks have no examples, so example_id is ignored there.
+        if example_id is not None and self.task.has_dataset:
+            if example_id not in set(self._agent_visible_ids()):
+                self._send_json(
+                    handler,
+                    {"error": f"Unknown or sealed example_id: {example_id!r}"},
+                    status=400,
+                )
                 return
 
-            # Reject any example_id outside the agent-visible pool (train+val).
-            # Single-task tasks have no examples, so example_id is ignored there.
-            if example_id is not None and self.task.has_dataset:
-                if example_id not in set(self._agent_visible_ids()):
-                    self._send_json(
-                        handler,
-                        {"error": f"Unknown or sealed example_id: {example_id!r}"},
-                        status=400,
-                    )
-                    return
-
-            try:
-                example = self._examples.get(example_id) if example_id else None
-                score, info = self.evaluate(candidate, example)
-                self._send_json(handler, {"score": score, "info": info, "budget": self.budget.status()})
-            except BudgetExhausted:
-                self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
-            except Exception as e:
-                self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
-        finally:
-            self._finish_work()
+        try:
+            example = self._examples.get(example_id) if example_id else None
+            score, info = self.evaluate(candidate, example)
+            self._send_json(handler, {"score": score, "info": info, "budget": self.budget.status()})
+        except BudgetExhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+        except Exception as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
 
     def _handle_evaluate_examples(self, handler: BaseHTTPRequestHandler) -> None:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_ids = body.get("example_ids")
-        if not self._admit_http():
-            self._send_json(handler, {"error": "Eval server is not accepting HTTP evaluations"}, status=409)
+        if self.budget.exhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
-        try:
-            if self.budget.exhausted:
-                self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
-                return
 
-            # The HTTP endpoint speaks only the agent-visible pool (train+val).
-            # ``split`` is no longer a parameter — agents either default to the
-            # whole visible pool or pass explicit ``example_ids`` from it. Any
-            # example_id outside the visible pool is rejected; the test set is
-            # not even registered in the server, so it cannot be probed at all.
-            visible = set(self._agent_visible_ids())
-            if example_ids is not None:
-                invalid = [eid for eid in example_ids if eid not in visible]
-                if invalid:
-                    self._send_json(
-                        handler,
-                        {"error": f"Unknown or sealed example_ids: {invalid[:5]}"},
-                        status=400,
-                    )
-                    return
-                target_ids: list[str] = list(example_ids)
-            else:
-                target_ids = self._agent_visible_ids()
-
-            try:
-                avg_score, info = self.evaluate_examples(candidate, example_ids=target_ids)
-                if set(target_ids) == visible:
-                    self.log_progress(avg_score, candidate=candidate)
+        # The HTTP endpoint speaks only the agent-visible pool (train+val).
+        # ``split`` is no longer a parameter — agents either default to the
+        # whole visible pool or pass explicit ``example_ids`` from it. Any
+        # example_id outside the visible pool is rejected; the test set is
+        # not even registered in the server, so it cannot be probed at all.
+        visible = set(self._agent_visible_ids())
+        if example_ids is not None:
+            invalid = [eid for eid in example_ids if eid not in visible]
+            if invalid:
                 self._send_json(
                     handler,
-                    {
-                        "average_score": avg_score,
-                        "scores": info.get("scores", {}),
-                        "infos": info.get("infos", {}),
-                        "num_evaluated": info.get("num_evaluated", 1),
-                        "errors": info.get("errors", {}),
-                        "budget": self.budget.status(),
-                    },
+                    {"error": f"Unknown or sealed example_ids: {invalid[:5]}"},
+                    status=400,
                 )
-            except BudgetExhausted:
-                self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
-            except Exception as e:
-                self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
-        finally:
-            self._finish_work()
+                return
+            target_ids: list[str] = list(example_ids)
+        else:
+            target_ids = self._agent_visible_ids()
+
+        try:
+            avg_score, info = self.evaluate_examples(candidate, example_ids=target_ids)
+            if set(target_ids) == visible:
+                self.log_progress(avg_score, candidate=candidate)
+            self._send_json(
+                handler,
+                {
+                    "average_score": avg_score,
+                    "scores": info.get("scores", {}),
+                    "infos": info.get("infos", {}),
+                    "num_evaluated": info.get("num_evaluated", 1),
+                    "errors": info.get("errors", {}),
+                    "budget": self.budget.status(),
+                },
+            )
+        except BudgetExhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+        except Exception as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
 
     def _handle_validate(self, handler: BaseHTTPRequestHandler) -> None:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
-        if not self._admit_http():
-            self._send_json(handler, {"error": "Eval server is not accepting HTTP evaluations"}, status=409)
+        if not self.task.val_set:
+            self._send_json(handler, {"error": "Task has no validation set"}, status=400)
+            return
+        if self.budget.exhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
         try:
-            if not self.task.val_set:
-                self._send_json(handler, {"error": "Task has no validation set"}, status=400)
-                return
-            if self.budget.exhausted:
-                self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
-                return
-            try:
-                result = self.validate(candidate)
-                self._send_json(handler, {**result, "budget": self.budget.status()})
-            except BudgetExhausted:
-                self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
-            except Exception as e:
-                self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
-        finally:
-            self._finish_work()
+            result = self.validate(candidate)
+            self._send_json(handler, {**result, "budget": self.budget.status()})
+        except BudgetExhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+        except Exception as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
 
     def _handle_status(self, handler: BaseHTTPRequestHandler) -> None:
         self._send_json(

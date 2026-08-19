@@ -142,9 +142,11 @@ launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which 
 server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from
 `max_token_cost`). After the subprocess exits, AutoResearch waits for admitted evals, stays
 accepting briefly for in-transit `eval.sh` requests, then pauses HTTP and picks the winner from
-eval-server tracking. It ignores `best_candidate.txt` for the returned result (the agent's file is
-kept as `agent_best_candidate.txt` when it differs). For a dataset task it uses the best full-pool
-average. For a single-task run it uses the best completed single eval. Train and val are presented
+eval-server tracking. It ignores `best_candidate.txt` for the returned result (the agent's last
+file is kept as `agent_best_candidate.txt` when it differs). `Result.metadata["drain_timed_out"]`
+is true if that wait hit `drain_timeout_seconds` before the server went idle. For a dataset task
+it uses the best full-pool average (val-only `/validate` checkpoints do not count). For a
+single-task run it uses the best completed single eval. Train and val are presented
 to the agent as one combined pool; the test set is unreachable over HTTP.
 
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`

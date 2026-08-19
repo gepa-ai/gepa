@@ -667,6 +667,151 @@ def test_process_result_keeps_agent_file_when_winner_differs(tmp_path: Path) -> 
     assert (work / "agent_best_candidate.txt").read_text() == "agent-pick"
 
 
+def test_run_preserves_agent_file_when_syncing_tracked_winner(tmp_path: Path) -> None:
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        return (0.9 if candidate == "server-winner" else 0.0), {}
+
+    task = Task(name="preserve-agent", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2))
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("agent-pick")
+        _http_evaluate(server, "server-winner")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+        engine.process_result(result, tmp_path)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "server-winner"
+    assert (tmp_path / "best_candidate.txt").read_text() == "server-winner"
+    assert (tmp_path / "agent_best_candidate.txt").read_text() == "agent-pick"
+
+
+def test_autoresearch_waits_for_inflight_http_dataset_eval(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    returned = threading.Event()
+
+    def evaluate(candidate: str, example: object) -> tuple[float, dict[str, object]]:
+        del example
+        if candidate == "http-pool":
+            started.set()
+            assert release.wait(timeout=2.0)
+            return 0.7, {}
+        return 0.0, {}
+
+    task = Task(name="dataset-http-race", seed_candidate="seed", train_set=["a", "b"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=10), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        threading.Thread(target=lambda: _http_evaluate_examples(server, "http-pool"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        outcome["result"] = engine.run(task, server)
+        returned.set()
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            runner = threading.Thread(target=run)
+            runner.start()
+            returned_before_completion = returned.wait(timeout=0.1)
+            release.set()
+            runner.join(timeout=5.0)
+    finally:
+        release.set()
+        server.stop()
+
+    assert not returned_before_completion
+    assert returned.is_set()
+    result = outcome["result"]
+    assert result.best_candidate == "http-pool"
+    assert result.best_score == pytest.approx(0.7)
+
+
+def test_autoresearch_drain_timeout_returns_completed_work(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        if candidate == "slow":
+            started.set()
+            assert release.wait(timeout=5.0)
+            return 0.99, {}
+        return 0.4, {}
+
+    task = Task(name="drain-timeout", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=4), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        server.evaluate("done")
+        threading.Thread(target=lambda: server.evaluate("slow"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path, drain_timeout_seconds=0.2, drain_quiet_seconds=0.0)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            started_at = time.monotonic()
+            result = engine.run(task, server)
+            assert time.monotonic() - started_at < 2.0
+    finally:
+        release.set()
+        server.stop()
+
+    assert result.best_candidate == "done"
+    assert result.best_score == 0.4
+    assert result.metadata["drain_timed_out"] is True
+
+
+def test_autoresearch_ignores_validate_checkpoint(tmp_path: Path) -> None:
+    def evaluate(candidate: str, example: object) -> tuple[float, dict[str, object]]:
+        if candidate == "val-spike":
+            return (1.0 if str(example) == "v" else 0.0), {}
+        if candidate == "steady":
+            return 0.6, {}
+        return 0.0, {}
+
+    task = Task(name="validate-ignore", seed_candidate="seed", train_set=["a", "b"], val_set=["v"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=20), max_concurrency=2)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        req = urllib.request.Request(
+            f"{server.url}/validate",
+            data=json.dumps({"candidate": "val-spike"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=5)
+        _http_evaluate_examples(server, "steady")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "steady"
+    assert result.best_score == pytest.approx(0.6)
+
+
 def test_program_md_tells_agent_full_pool_eval_selects_the_winner() -> None:
     task = Task(name="t", seed_candidate="seed", train_set=["a", "b"])
     text = _build_program_md(

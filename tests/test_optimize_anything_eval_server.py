@@ -260,7 +260,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             eval_thread.join(timeout=2)
         server.resume_http()
 
-    def test_drain_http_accepts_request_blocked_before_admit(self) -> None:
+    def test_drain_http_waits_for_request_blocked_in_body_read(self) -> None:
         import urllib.request
 
         started = threading.Event()
@@ -296,17 +296,19 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
                 http_thread = threading.Thread(target=do_http)
                 http_thread.start()
                 self.assertTrue(started.wait(timeout=2))
-                self.assertEqual(server._inflight, 0)
+                self.assertGreater(server._inflight, 0)
 
                 drain_ok: dict[str, bool] = {}
+                drain_done = threading.Event()
 
                 def do_drain() -> None:
-                    drain_ok["ok"] = server.drain_http(timeout=2.0, quiet=0.8)
+                    # quiet=0 is enough: admit happens before the body is read.
+                    drain_ok["ok"] = server.drain_http(timeout=2.0, quiet=0.0)
+                    drain_done.set()
 
                 drain_thread = threading.Thread(target=do_drain)
                 drain_thread.start()
-                time.sleep(0.1)
-                self.assertTrue(server._http_accepting)
+                self.assertFalse(drain_done.wait(timeout=0.1))
                 release.set()
                 http_thread.join(timeout=2)
                 drain_thread.join(timeout=2)
@@ -317,6 +319,14 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         finally:
             release.set()
             server.stop()
+
+    def test_validate_progress_is_not_selectable(self) -> None:
+        task = Task(name="task", seed_candidate="seed", train_set=["a"], val_set=["v"])
+        server = EvalServer(task, lambda _candidate, _example: (1.0, {}), BudgetTracker(max_evals=10))
+        result = server.validate("val-only")
+        self.assertEqual(result["val_score"], 1.0)
+        self.assertEqual(len(server.progress_log), 1)
+        self.assertFalse(server.progress_log[0]["selectable"])
 
     def test_drain_http_rejects_new_requests_after_quiet_period(self) -> None:
         import urllib.error

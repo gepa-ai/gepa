@@ -512,6 +512,7 @@ class AutoResearchEngine:
         # via --max-budget-usd; the eval server never sees proposer spend.
         self.max_token_cost = config.max_token_cost
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
+        self._drain_timed_out = False
 
     def run(self, task: Task, server: EvalServer) -> Result:
         preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
@@ -569,6 +570,7 @@ class AutoResearchEngine:
         seed = seed_as_text(task.seed_candidate)
         progress_mark = len(getattr(server, "progress_log", []) or [])
         tracked_candidate, tracked_score = seed, float("-inf")
+        self._drain_timed_out = False
 
         try:
             proc = self._run_claude(
@@ -648,6 +650,7 @@ class AutoResearchEngine:
                 "work_dir": str(work_dir),
                 "ralph_iterations": ralph_iterations,
                 "invocations": invocations,
+                "drain_timed_out": self._drain_timed_out,
             },
         )
 
@@ -748,7 +751,8 @@ class AutoResearchEngine:
         """Wait for leftover eval.sh work, then pause HTTP."""
         drain = getattr(server, "drain_http", None)
         if callable(drain):
-            drain(timeout=self.drain_timeout_seconds, quiet=self.drain_quiet_seconds)
+            if not drain(timeout=self.drain_timeout_seconds, quiet=self.drain_quiet_seconds):
+                self._drain_timed_out = True
             return
         pause = getattr(server, "pause_http", None)
         if callable(pause):
@@ -765,11 +769,17 @@ class AutoResearchEngine:
     def _sync_workspace_best(self, work_dir: Path, candidate: str, score: float) -> None:
         """Write the official winner into the workspace for the next Ralph iteration.
 
-        Leave the agent's file alone when there is no completed checkpoint.
+        Keep the agent's last ``best_candidate.txt`` as ``agent_best_candidate.txt``
+        when it differs. Leave both files alone when there is no completed checkpoint.
         """
         if score == float("-inf"):
             return
-        (work_dir / "best_candidate.txt").write_text(candidate)
+        best_path = work_dir / "best_candidate.txt"
+        if best_path.exists():
+            previous = best_path.read_text()
+            if previous != candidate:
+                (work_dir / "agent_best_candidate.txt").write_text(previous)
+        best_path.write_text(candidate)
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         # Prefer ``self.run_dir`` when the caller's server has no output_dir:
@@ -785,13 +795,11 @@ class AutoResearchEngine:
                 self._pending_tempdir = None
             return
         dest.mkdir(parents=True, exist_ok=True)
-        best_path = dest / "best_candidate.txt"
-        if best_path.exists():
-            previous = best_path.read_text()
-            if previous != result.best_candidate:
-                dest.joinpath("agent_best_candidate.txt").write_text(previous)
-        best_path.write_text(result.best_candidate)
         work_dir = Path(result.metadata["work_dir"])
+        agent_pick = _agent_workspace_pick(work_dir, result.best_candidate)
+        if agent_pick is not None:
+            dest.joinpath("agent_best_candidate.txt").write_text(agent_pick)
+        dest.joinpath("best_candidate.txt").write_text(result.best_candidate)
         session_id = result.metadata["session_id"]
         copy_session_transcript(work_dir, session_id, dest / "sessions")
         if not _is_under(work_dir, dest):
@@ -799,6 +807,18 @@ class AutoResearchEngine:
         if self._pending_tempdir is not None:
             self._pending_tempdir.cleanup()
             self._pending_tempdir = None
+
+
+def _agent_workspace_pick(work_dir: Path, official: str) -> str | None:
+    """Return the agent's last best_candidate.txt when it differs from the winner."""
+    for name in ("agent_best_candidate.txt", "best_candidate.txt"):
+        path = work_dir / name
+        if not path.exists():
+            continue
+        text = path.read_text()
+        if text != official:
+            return text
+    return None
 
 
 def _is_under(child: Path, parent: Path) -> bool:
@@ -862,6 +882,8 @@ def _best_aggregate_candidate(server: EvalServer, *, after: int = 0) -> tuple[st
     candidates_by_id = {cid: candidate for candidate, cid in registry.items()}
     best_entry = None
     for entry in progress:
+        if not entry.get("selectable", True):
+            continue
         candidate_id = entry.get("candidate_id")
         if candidate_id not in candidates_by_id:
             continue
