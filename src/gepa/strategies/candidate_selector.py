@@ -102,6 +102,18 @@ class BatchLexicaseCandidateSelector(CandidateSelector):
         return self.rng.choice(survivors)
 
 
+class LatestCandidateSelector(CandidateSelector):
+    """Always selects the most recently accepted candidate, growing a single
+    sequential chain: depth equals the number of accepts. With GEPA's
+    minibatch acceptance gate this is a greedy incumbent loop; useful for
+    isolating sequential-depth effects from pool selection.
+    """
+
+    def select_candidate_idx(self, state: GEPAState) -> int:
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
+        return len(state.program_candidates) - 1
+
+
 class UnprunedParetoCandidateSelector(CandidateSelector):
     """Samples proportional to per-instance Pareto-front membership, skipping the
     dominance-pruning step of `ParetoCandidateSelector`. Serves as an ablation control

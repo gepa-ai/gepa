@@ -280,3 +280,20 @@ class TestUnprunedParetoCandidateSelector:
         results1 = [selector1.select_candidate_idx(mock_state) for _ in range(10)]
         results2 = [selector2.select_candidate_idx(mock_state) for _ in range(10)]
         assert results1 == results2
+
+
+class TestLatestCandidateSelector:
+    def test_selects_newest_candidate(self, mock_state):
+        from gepa.strategies.candidate_selector import LatestCandidateSelector
+
+        selector = LatestCandidateSelector()
+        assert selector.select_candidate_idx(mock_state) == 2
+
+        mock_state.program_candidates.append({"system_prompt": "test4"})
+        mock_state.prog_candidate_val_subscores.append({0: 0.1, 1: 0.1, 2: 0.1})
+        mock_state.prog_candidate_objective_scores.append({})
+        mock_state.parent_program_for_candidate.append([2])
+        mock_state.named_predictor_id_to_update_next_for_program_candidate.append(0)
+        mock_state.num_metric_calls_by_discovery.append(0)
+        mock_state.iteration_ids_by_candidate_idx.append("3")
+        assert selector.select_candidate_idx(mock_state) == 3

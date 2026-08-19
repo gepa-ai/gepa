@@ -150,6 +150,7 @@ from gepa.strategies.candidate_selector import (
     BatchLexicaseCandidateSelector,
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
+    LatestCandidateSelector,
     ParetoCandidateSelector,
     TopKParetoCandidateSelector,
     UnprunedParetoCandidateSelector,
@@ -496,7 +497,9 @@ class EngineConfig:
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: (
         CandidateSelector
-        | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto", "batch_lexicase", "unpruned_pareto"]
+        | Literal[
+            "pareto", "current_best", "epsilon_greedy", "top_k_pareto", "batch_lexicase", "unpruned_pareto", "latest"
+        ]
     ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
@@ -1534,6 +1537,7 @@ def optimize_anything(
             "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
             "batch_lexicase": lambda: BatchLexicaseCandidateSelector(rng=rng),
             "unpruned_pareto": lambda: UnprunedParetoCandidateSelector(rng=rng),
+            "latest": lambda: LatestCandidateSelector(),
         }
 
         try:
@@ -1541,7 +1545,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'batch_lexicase', 'unpruned_pareto'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'batch_lexicase', 'unpruned_pareto', 'latest'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy
