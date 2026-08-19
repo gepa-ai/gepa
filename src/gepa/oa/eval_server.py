@@ -14,6 +14,9 @@ POST /evaluate
     Body: {"candidate": "<text>", "example_id": "<optional>"}
     Response: {"score": 1.23, "info": {...}, "budget": {"used": 5, ...}}
     Status 429 when budget exhausted.
+    Status 409 when HTTP evaluation has been paused (AutoResearch drains admitted
+    and in-transit work after the agent exits, then selects from completed
+    server tracking).
 
 POST /evaluate_examples
     Body: {"candidate": "<text>", "example_ids": ["a","b","c"]}
@@ -186,6 +189,10 @@ class EvalServer:
         self._candidate_registry: dict[str, int] = {}
         self._next_candidate_id: int = 0
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._inflight = 0
+        self._admit_generation = 0
+        self._http_accepting = True
         self._io_lock = threading.Lock()
         self.output_dir: Path | None = None
         self._evals_dir: Path | None = None
@@ -230,6 +237,95 @@ class EvalServer:
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
+    def pause_http(self) -> None:
+        """Reject new HTTP evaluations. In-flight work is not cancelled."""
+        with self._idle:
+            self._http_accepting = False
+
+    def resume_http(self) -> None:
+        """Accept HTTP evaluations again."""
+        with self._idle:
+            self._http_accepting = True
+
+    def wait_idle(self, timeout: float | None = None) -> bool:
+        """Block until every admitted evaluation has finished.
+
+        Returns True if the server is idle. Returns False if ``timeout``
+        (seconds) elapsed first. ``timeout is None`` waits until idle.
+        """
+        with self._idle:
+            if timeout is None:
+                self._idle.wait_for(lambda: self._inflight == 0)
+                return True
+            if timeout <= 0:
+                return self._inflight == 0
+            return bool(self._idle.wait_for(lambda: self._inflight == 0, timeout=timeout))
+
+    def drain_http(self, *, timeout: float, quiet: float) -> bool:
+        """Wait for admitted and in-transit HTTP evaluations, then pause.
+
+        Stays accepting until currently admitted work finishes and ``quiet``
+        seconds pass with no new admits, so a curl that left the agent process
+        but has not entered the HTTP handler can still land. Admission happens
+        at handler entry, before the body is read, so an in-flight POST is
+        visible to :meth:`wait_idle` during ``_read_body``. Then rejects new
+        HTTP and waits once more.
+
+        Returns True if the server was idle after the pause. False if
+        ``timeout`` elapsed first. HTTP is paused either way; completed work
+        is kept. In-flight evaluations are not cancelled.
+        """
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        quiet = max(0.0, float(quiet))
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self.wait_idle(timeout=max(0.0, remaining)):
+                self.pause_http()
+                with self._idle:
+                    return self._inflight == 0
+            with self._idle:
+                generation = self._admit_generation
+            remaining_quiet = min(quiet, max(0.0, deadline - time.monotonic()))
+            if remaining_quiet > 0:
+                with self._idle:
+                    got_work = self._idle.wait_for(
+                        lambda gen=generation: self._inflight > 0 or self._admit_generation != gen,
+                        timeout=remaining_quiet,
+                    )
+                    if got_work:
+                        continue
+                    self._http_accepting = False
+            else:
+                with self._idle:
+                    if self._inflight > 0 or self._admit_generation != generation:
+                        continue
+                    self._http_accepting = False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                with self._idle:
+                    return self._inflight == 0
+            return self.wait_idle(timeout=remaining)
+
+    def _begin_work(self) -> None:
+        with self._idle:
+            self._inflight += 1
+            self._idle.notify_all()
+
+    def _finish_work(self) -> None:
+        with self._idle:
+            self._inflight -= 1
+            self._idle.notify_all()
+
+    def _admit_http(self) -> bool:
+        """Count one HTTP request if the server is still accepting them."""
+        with self._idle:
+            if not self._http_accepting:
+                return False
+            self._inflight += 1
+            self._admit_generation += 1
+            self._idle.notify_all()
+            return True
+
     def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate with budget enforcement.
 
@@ -240,28 +336,32 @@ class EvalServer:
         Raises:
             BudgetExhausted: When the budget has been used up.
         """
-        self._eval_semaphore.acquire()
+        self._begin_work()
         try:
-            self.budget.check()
-
+            self._eval_semaphore.acquire()
             try:
-                if example is not None:
-                    score, info = self.eval_fn(candidate, example, **kwargs)
-                else:
-                    score, info = self.eval_fn(candidate, **kwargs)
-            except Exception:
-                # check() passed above, so this record cannot itself raise.
-                self.budget.record(0.0)
-                raise
+                self.budget.check()
 
-            self.budget.record(score)
-            self._track(candidate, score, info)
+                try:
+                    if example is not None:
+                        score, info = self.eval_fn(candidate, example, **kwargs)
+                    else:
+                        score, info = self.eval_fn(candidate, **kwargs)
+                except Exception:
+                    # check() passed above, so this record cannot itself raise.
+                    self.budget.record(0.0)
+                    raise
 
-            info = dict(info) if info else {}
-            info["_budget"] = self.budget.status()
-            return score, info
+                self.budget.record(score)
+                self._track(candidate, score, info)
+
+                info = dict(info) if info else {}
+                info["_budget"] = self.budget.status()
+                return score, info
+            finally:
+                self._eval_semaphore.release()
         finally:
-            self._eval_semaphore.release()
+            self._finish_work()
 
     def evaluate_batch(
         self,
@@ -284,30 +384,34 @@ class EvalServer:
         """
         if self.batch_fn is None:
             raise RuntimeError("evaluate_batch requires the server to be constructed with batch_evaluate")
-        self._eval_semaphore.acquire()
+        self._begin_work()
         try:
-            self.budget.check()
+            self._eval_semaphore.acquire()
             try:
-                results = self.batch_fn(pairs, opt_states=opt_states)
-            except Exception:
-                # Guard each record so crossing the cap while recording
-                # failures never masks the user's original exception.
-                for _ in pairs:
-                    try:
-                        self.budget.record(0.0)
-                    except BudgetExhausted:
-                        break
-                raise
+                self.budget.check()
+                try:
+                    results = self.batch_fn(pairs, opt_states=opt_states)
+                except Exception:
+                    # Guard each record so crossing the cap while recording
+                    # failures never masks the user's original exception.
+                    for _ in pairs:
+                        try:
+                            self.budget.record(0.0)
+                        except BudgetExhausted:
+                            break
+                    raise
+            finally:
+                self._eval_semaphore.release()
+            out: list[tuple[float, dict[str, Any]]] = []
+            for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
+                self.budget.record(score)
+                self._track(candidate, score, info)
+                info = dict(info)
+                info["_budget"] = self.budget.status()
+                out.append((score, info))
+            return out
         finally:
-            self._eval_semaphore.release()
-        out: list[tuple[float, dict[str, Any]]] = []
-        for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
-            self.budget.record(score)
-            self._track(candidate, score, info)
-            info = dict(info)
-            info["_budget"] = self.budget.status()
-            out.append((score, info))
-        return out
+            self._finish_work()
 
     def evaluate_examples(
         self,
@@ -325,6 +429,18 @@ class EvalServer:
         Returns:
             (average_score, info_dict) with per-example scores and metadata.
         """
+        self._begin_work()
+        try:
+            return self._evaluate_examples(candidate, example_ids=example_ids, split=split)
+        finally:
+            self._finish_work()
+
+    def _evaluate_examples(
+        self,
+        candidate: str,
+        example_ids: list[str] | None = None,
+        split: str | None = None,
+    ) -> tuple[float, dict[str, Any]]:
         if not self.task.has_dataset:
             score, info = self.evaluate(candidate)
             return score, {
@@ -423,12 +539,22 @@ class EvalServer:
         if not self.task.val_set:
             raise ValueError("validate() requires a task with val_set")
         avg_score, _ = self.evaluate_examples(candidate, example_ids=list(self._split_ids["val"]))
-        return self.log_progress(avg_score, candidate=candidate)
+        # Val-only checkpoints must not compete with full-pool AutoResearch selection.
+        return self.log_progress(avg_score, candidate=candidate, selectable=False)
 
     def log_progress(
-        self, val_score: float, candidate: str | None = None, reflection_cost: float = 0.0
+        self,
+        val_score: float,
+        candidate: str | None = None,
+        reflection_cost: float = 0.0,
+        *,
+        selectable: bool = True,
     ) -> dict[str, Any]:
-        """Record a progress checkpoint."""
+        """Record a progress checkpoint.
+
+        ``selectable=False`` keeps the row for logging (GEPA val, ``/validate``)
+        but excludes it from AutoResearch full-pool winner selection.
+        """
         candidate_id: int | None = None
         if candidate is not None:
             candidate_id = self._register_candidate(candidate)
@@ -443,6 +569,7 @@ class EvalServer:
                 "wall_time": time.time() - self._start_time,
                 "total_cost": self.total_cost,
                 "reflection_cost": reflection_cost,
+                "selectable": selectable,
             }
             if candidate_id is not None:
                 entry["candidate_id"] = candidate_id
@@ -499,14 +626,23 @@ class EvalServer:
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
-                if self.path == "/evaluate":
-                    server_ref._handle_evaluate(self)
-                elif self.path == "/evaluate_examples":
-                    server_ref._handle_evaluate_examples(self)
-                elif self.path == "/validate":
-                    server_ref._handle_validate(self)
-                else:
+                dispatch = {
+                    "/evaluate": server_ref._handle_evaluate,
+                    "/evaluate_examples": server_ref._handle_evaluate_examples,
+                    "/validate": server_ref._handle_validate,
+                }.get(self.path)
+                if dispatch is None:
                     self.send_error(404)
+                    return
+                # Admit before reading the body so drain_http can see a POST that
+                # is still blocked in rfile.read.
+                if not server_ref._admit_http():
+                    server_ref._send_json(self, {"error": "Eval server is not accepting HTTP evaluations"}, status=409)
+                    return
+                try:
+                    dispatch(self)
+                finally:
+                    server_ref._finish_work()
 
             def do_GET(self):
                 if self.path == "/status":
@@ -535,6 +671,9 @@ class EvalServer:
         if self._server:
             self._server.shutdown()
             self._server = None
+        with self._idle:
+            self._http_accepting = False
+            self._idle.notify_all()
         self._pool.shutdown(wait=False)
 
     # ── Internal ────────────────────────────────────────────────────────
@@ -601,7 +740,6 @@ class EvalServer:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_id = body.get("example_id")
-
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
@@ -630,7 +768,6 @@ class EvalServer:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_ids = body.get("example_ids")
-
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return

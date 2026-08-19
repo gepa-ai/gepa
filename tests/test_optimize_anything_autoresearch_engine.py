@@ -3,7 +3,9 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +14,9 @@ import pytest
 
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
-from gepa.oa.engines.autoresearch import AutoResearchEngine
+from gepa.oa.engine import Result
+from gepa.oa.engines.autoresearch import AutoResearchEngine, _build_program_md
+from gepa.oa.eval_server import EvalServer
 from gepa.oa.task import Task
 
 
@@ -26,8 +30,25 @@ class _FakeServer:
     def __init__(self) -> None:
         self.budget = BudgetTracker(max_evals=10)
         self.url = "http://127.0.0.1:9"
-        self.best_score = 0.0
+        self.best_score = float("-inf")
+        self.best_candidate = "seed"
         self.eval_log = []
+        self.progress_log: list[dict[str, object]] = []
+        self._candidate_registry: dict[str, int] = {}
+
+    def drain_http(self, *, timeout: float, quiet: float) -> bool:
+        del timeout, quiet
+        return True
+
+    def pause_http(self) -> None:
+        return None
+
+    def resume_http(self) -> None:
+        return None
+
+    def wait_idle(self, timeout: float | None = None) -> bool:
+        del timeout
+        return True
 
 
 class _FakePopen:
@@ -65,6 +86,29 @@ class _HangingFakePopen(_FakePopen):
 
     def kill(self) -> None:
         self._running = False
+
+
+def _engine(tmp_path: Path, **engine_config: object) -> AutoResearchEngine:
+    merged: dict[str, object] = {
+        "ralph": False,
+        "drain_quiet_seconds": 0.0,
+        "drain_timeout_seconds": 5.0,
+    }
+    merged.update(engine_config)
+    run_dir = str(merged.pop("run_dir", str(tmp_path)))
+    stop_at_score = merged.pop("stop_at_score", None)
+    max_token_cost = merged.pop("max_token_cost", None)
+    config_kwargs: dict[str, object] = {
+        "engine": "autoresearch",
+        "sandbox": False,
+        "run_dir": run_dir,
+        "engine_config": merged,
+    }
+    if stop_at_score is not None:
+        config_kwargs["stop_at_score"] = stop_at_score
+    if max_token_cost is not None:
+        config_kwargs["max_token_cost"] = max_token_cost
+    return AutoResearchEngine(OptimizeAnythingConfig(**config_kwargs))  # type: ignore[arg-type]
 
 
 def _engine_with_no_eval_watchdog(seconds: float) -> AutoResearchEngine:
@@ -239,7 +283,7 @@ def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path)
     assert "--resume" not in calls[0]
     assert "--resume" in calls[1]
     assert calls[1][calls[1].index("--max-budget-usd") + 1] == "0.800000"
-    assert result.best_candidate == "candidate"
+    assert result.best_candidate == "seed"
     assert result.metadata["adapter_cost"] == 0.2005
     assert result.metadata["ralph_iterations"] == 2
 
@@ -385,4 +429,406 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
         result = engine.run(task, server)
 
-    assert result.best_candidate == "candidate"
+    assert result.best_candidate == "seed"
+
+
+def _http_evaluate(server: EvalServer, candidate: str) -> dict[str, object]:
+    req = urllib.request.Request(
+        f"{server.url}/evaluate",
+        data=json.dumps({"candidate": candidate}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _http_evaluate_examples(server: EvalServer, candidate: str, example_ids: list[str] | None = None) -> None:
+    body: dict[str, object] = {"candidate": candidate}
+    if example_ids is not None:
+        body["example_ids"] = example_ids
+    req = urllib.request.Request(
+        f"{server.url}/evaluate_examples",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    urllib.request.urlopen(req, timeout=5)
+
+
+def test_autoresearch_waits_for_inflight_eval_and_ignores_the_workspace_file(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    returned = threading.Event()
+
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        assert candidate == "server-winner"
+        started.set()
+        assert release.wait(timeout=2.0)
+        return 0.9, {}
+
+    task = Task(name="race", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("tampered-workspace-file")
+        threading.Thread(target=lambda: server.evaluate("server-winner"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        outcome["result"] = engine.run(task, server)
+        returned.set()
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            runner = threading.Thread(target=run)
+            runner.start()
+            returned_before_completion = returned.wait(timeout=0.1)
+            release.set()
+            runner.join(timeout=2.0)
+    finally:
+        release.set()
+        server.stop()
+
+    assert not returned_before_completion
+    assert returned.is_set()
+    result = outcome["result"]
+    assert result.best_candidate == "server-winner"
+    assert result.best_score == 0.9
+
+
+def test_autoresearch_waits_for_inflight_http_eval(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    returned = threading.Event()
+
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        if candidate == "http-winner":
+            started.set()
+            assert release.wait(timeout=2.0)
+            return 0.9, {}
+        return 0.0, {}
+
+    task = Task(name="http-race", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("tampered-workspace-file")
+        threading.Thread(target=lambda: _http_evaluate(server, "http-winner"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        outcome["result"] = engine.run(task, server)
+        returned.set()
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            runner = threading.Thread(target=run)
+            runner.start()
+            returned_before_completion = returned.wait(timeout=0.1)
+            release.set()
+            runner.join(timeout=2.0)
+    finally:
+        release.set()
+        server.stop()
+
+    assert not returned_before_completion
+    assert returned.is_set()
+    result = outcome["result"]
+    assert result.best_candidate == "http-winner"
+    assert result.best_score == 0.9
+
+
+def test_autoresearch_dataset_selects_full_pool_winner_not_per_example_spike(tmp_path: Path) -> None:
+    def evaluate(candidate: str, example: object) -> tuple[float, dict[str, object]]:
+        if candidate == "spiky":
+            return (1.0 if str(example) == "a" else 0.0), {}
+        if candidate == "steady":
+            return 0.6, {}
+        return 0.0, {}
+
+    task = Task(name="dataset-select", seed_candidate="seed", train_set=["a", "b"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=10), max_concurrency=2)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        _http_evaluate_examples(server, "spiky")
+        _http_evaluate_examples(server, "steady")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "steady"
+    assert result.best_score == pytest.approx(0.6)
+
+
+def test_autoresearch_dataset_subset_eval_returns_seed(tmp_path: Path) -> None:
+    def evaluate(_candidate: str, example: object) -> tuple[float, dict[str, object]]:
+        return (1.0 if str(example) == "a" else 0.0), {}
+
+    task = Task(name="subset-only", seed_candidate="seed", train_set=["a", "b"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=10), max_concurrency=2)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        subset_id = next(iter(server._split_ids["train"]))
+        _http_evaluate_examples(server, "spiky", example_ids=[subset_id])
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "seed"
+    assert result.best_score == float("-inf")
+
+
+def test_autoresearch_dataset_per_example_spike_does_not_stop_ralph(tmp_path: Path) -> None:
+    task = Task(name="spike-continue", seed_candidate="seed", train_set=["a", "b"])
+    server = EvalServer(task, lambda _candidate, _example: (1.0, {}), BudgetTracker(max_evals=10))
+    server.start()
+    calls: list[list[str]] = []
+
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
+        del kwargs
+        calls.append(cmd)
+        if len(calls) == 1:
+            server.evaluate("spiky", "a")
+            return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.0005}))
+
+    engine = _engine(tmp_path, ralph=True, stop_at_score=1.0)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+    finally:
+        server.stop()
+
+    assert len(calls) == 2
+    assert result.best_candidate == "seed"
+    assert result.best_score == float("-inf")
+
+
+def test_autoresearch_test_set_only_uses_single_task_tracking(tmp_path: Path) -> None:
+    def evaluate(candidate: str, example: object | None = None) -> tuple[float, dict[str, object]]:
+        del example
+        return (0.8 if candidate == "winner" else 0.0), {}
+
+    task = Task(name="test-only", seed_candidate="seed", test_set=["held-out"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=4))
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        _http_evaluate_examples(server, "winner")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "winner"
+    assert result.best_score == 0.8
+
+
+def test_process_result_keeps_agent_file_when_winner_differs(tmp_path: Path) -> None:
+    work = tmp_path / "run"
+    work.mkdir()
+    (work / "best_candidate.txt").write_text("agent-pick")
+    engine = _engine(work)
+    result = Result(
+        best_candidate="seed",
+        best_score=float("-inf"),
+        metadata={"work_dir": str(work), "session_id": "unused"},
+    )
+    engine.process_result(result, work)
+    assert (work / "best_candidate.txt").read_text() == "seed"
+    assert (work / "agent_best_candidate.txt").read_text() == "agent-pick"
+
+
+def test_run_preserves_agent_file_when_syncing_tracked_winner(tmp_path: Path) -> None:
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        return (0.9 if candidate == "server-winner" else 0.0), {}
+
+    task = Task(name="preserve-agent", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=2))
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("agent-pick")
+        _http_evaluate(server, "server-winner")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+        engine.process_result(result, tmp_path)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "server-winner"
+    assert (tmp_path / "best_candidate.txt").read_text() == "server-winner"
+    assert (tmp_path / "agent_best_candidate.txt").read_text() == "agent-pick"
+
+
+def test_autoresearch_waits_for_inflight_http_dataset_eval(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    returned = threading.Event()
+
+    def evaluate(candidate: str, example: object) -> tuple[float, dict[str, object]]:
+        del example
+        if candidate == "http-pool":
+            started.set()
+            assert release.wait(timeout=2.0)
+            return 0.7, {}
+        return 0.0, {}
+
+    task = Task(name="dataset-http-race", seed_candidate="seed", train_set=["a", "b"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=10), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        threading.Thread(target=lambda: _http_evaluate_examples(server, "http-pool"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        outcome["result"] = engine.run(task, server)
+        returned.set()
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            runner = threading.Thread(target=run)
+            runner.start()
+            returned_before_completion = returned.wait(timeout=0.1)
+            release.set()
+            runner.join(timeout=5.0)
+    finally:
+        release.set()
+        server.stop()
+
+    assert not returned_before_completion
+    assert returned.is_set()
+    result = outcome["result"]
+    assert result.best_candidate == "http-pool"
+    assert result.best_score == pytest.approx(0.7)
+
+
+def test_autoresearch_drain_timeout_returns_completed_work(tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+        if candidate == "slow":
+            started.set()
+            assert release.wait(timeout=5.0)
+            return 0.99, {}
+        return 0.4, {}
+
+    task = Task(name="drain-timeout", seed_candidate="seed")
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=4), max_concurrency=1)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        server.evaluate("done")
+        threading.Thread(target=lambda: server.evaluate("slow"), daemon=True).start()
+        assert started.wait(timeout=2.0)
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path, drain_timeout_seconds=0.2, drain_quiet_seconds=0.0)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            started_at = time.monotonic()
+            result = engine.run(task, server)
+            assert time.monotonic() - started_at < 2.0
+    finally:
+        release.set()
+        server.stop()
+
+    assert result.best_candidate == "done"
+    assert result.best_score == 0.4
+    assert result.metadata["drain_timed_out"] is True
+
+
+def test_autoresearch_ignores_validate_checkpoint(tmp_path: Path) -> None:
+    def evaluate(candidate: str, example: object) -> tuple[float, dict[str, object]]:
+        if candidate == "val-spike":
+            return (1.0 if str(example) == "v" else 0.0), {}
+        if candidate == "steady":
+            return 0.6, {}
+        return 0.0, {}
+
+    task = Task(name="validate-ignore", seed_candidate="seed", train_set=["a", "b"], val_set=["v"])
+    server = EvalServer(task, evaluate, BudgetTracker(max_evals=20), max_concurrency=2)
+    server.start()
+
+    def fake_popen(_cmd: list[str], **kwargs: object) -> _FakePopen:
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("workspace-only")
+        req = urllib.request.Request(
+            f"{server.url}/validate",
+            data=json.dumps({"candidate": "val-spike"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=5)
+        _http_evaluate_examples(server, "steady")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = _engine(tmp_path)
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "steady"
+    assert result.best_score == pytest.approx(0.6)
+
+
+def test_program_md_tells_agent_full_pool_eval_selects_the_winner() -> None:
+    task = Task(name="t", seed_candidate="seed", train_set=["a", "b"])
+    text = _build_program_md(
+        task,
+        BudgetTracker(max_evals=10),
+        max_token_cost=None,
+        perfect_score=None,
+        handoffs=None,
+    )
+    assert "full-pool" in text
+    assert "ignores `best_candidate.txt`" in text
+
+
+def test_eval_sh_treats_http_409_as_failure(tmp_path: Path) -> None:
+    from gepa.oa.engines.autoresearch import EVAL_SCRIPT_SINGLE
+
+    script = tmp_path / "eval.sh"
+    script.write_text(EVAL_SCRIPT_SINGLE.format(server_url="http://127.0.0.1:9"))
+    assert 'HTTP_CODE" = "409"' in script.read_text()
+    assert "EVAL_SERVER_PAUSED" in script.read_text()
