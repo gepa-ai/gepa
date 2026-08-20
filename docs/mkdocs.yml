@@ -23,6 +23,8 @@ nav:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
         - FAQ: guides/faq.md
+        - Choosing max_metric_calls: guides/budget.md
+        - Running GEPA inside Coding Agents: guides/coding-agents.md
         - Creating Adapters: guides/adapters.md
         - Confidence-Aware Classification: guides/confidence-adapter.md
         - Candidate Selection Strategies: guides/candidate-selection.md
