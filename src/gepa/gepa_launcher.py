@@ -144,7 +144,12 @@ from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
+from gepa.strategies.acceptance import (
+    AcceptanceCriterion,
+    AlwaysAcceptance,
+    ImprovementOrEqualAcceptance,
+    StrictImprovementAcceptance,
+)
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
     BatchLexicaseCandidateSelector,
@@ -504,7 +509,7 @@ class EngineConfig:
     frontier_type: FrontierType = "hybrid"
 
     # Acceptance criterion for reflective mutation proposals
-    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal"] = (
+    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal", "always"] = (
         "strict_improvement"
     )
 
@@ -1568,13 +1573,14 @@ def optimize_anything(
         acceptance_factories: dict[str, type[AcceptanceCriterion]] = {
             "strict_improvement": StrictImprovementAcceptance,
             "improvement_or_equal": ImprovementOrEqualAcceptance,
+            "always": AlwaysAcceptance,
         }
         try:
             acceptance_criterion_instance = acceptance_factories[config.engine.acceptance_criterion]()
         except KeyError as exc:
             raise ValueError(
                 f"Unknown acceptance_criterion: {config.engine.acceptance_criterion}. "
-                "Supported strategies: 'strict_improvement', 'improvement_or_equal'"
+                "Supported strategies: 'strict_improvement', 'improvement_or_equal', 'always'"
             ) from exc
     elif isinstance(config.engine.acceptance_criterion, AcceptanceCriterion):
         acceptance_criterion_instance = config.engine.acceptance_criterion

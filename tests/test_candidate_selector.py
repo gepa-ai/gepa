@@ -297,3 +297,15 @@ class TestLatestCandidateSelector:
         mock_state.num_metric_calls_by_discovery.append(0)
         mock_state.iteration_ids_by_candidate_idx.append("3")
         assert selector.select_candidate_idx(mock_state) == 3
+
+
+class TestAlwaysAcceptance:
+    def test_accepts_everything(self):
+        from gepa.strategies.acceptance import AlwaysAcceptance
+
+        class FakeProposal:
+            def __init__(self):
+                self.subsample_scores_before = [1.0, 1.0, 1.0]
+                self.subsample_scores_after = [0.0, 0.0, 0.0]
+
+        assert AlwaysAcceptance().should_accept(FakeProposal(), state=None) is True
