@@ -144,13 +144,21 @@ from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
+from gepa.strategies.acceptance import (
+    AcceptanceCriterion,
+    AlwaysAcceptance,
+    ImprovementOrEqualAcceptance,
+    StrictImprovementAcceptance,
+)
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
+    BatchLexicaseCandidateSelector,
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
+    LatestCandidateSelector,
     ParetoCandidateSelector,
     TopKParetoCandidateSelector,
+    UnprunedParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -493,12 +501,15 @@ class EngineConfig:
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: (
-        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+        CandidateSelector
+        | Literal[
+            "pareto", "current_best", "epsilon_greedy", "top_k_pareto", "batch_lexicase", "unpruned_pareto", "latest"
+        ]
     ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Acceptance criterion for reflective mutation proposals
-    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal"] = (
+    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal", "always"] = (
         "strict_improvement"
     )
 
@@ -1529,6 +1540,9 @@ def optimize_anything(
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
             "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
+            "batch_lexicase": lambda: BatchLexicaseCandidateSelector(rng=rng),
+            "unpruned_pareto": lambda: UnprunedParetoCandidateSelector(rng=rng),
+            "latest": lambda: LatestCandidateSelector(),
         }
 
         try:
@@ -1536,7 +1550,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'batch_lexicase', 'unpruned_pareto', 'latest'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy
@@ -1559,13 +1573,14 @@ def optimize_anything(
         acceptance_factories: dict[str, type[AcceptanceCriterion]] = {
             "strict_improvement": StrictImprovementAcceptance,
             "improvement_or_equal": ImprovementOrEqualAcceptance,
+            "always": AlwaysAcceptance,
         }
         try:
             acceptance_criterion_instance = acceptance_factories[config.engine.acceptance_criterion]()
         except KeyError as exc:
             raise ValueError(
                 f"Unknown acceptance_criterion: {config.engine.acceptance_criterion}. "
-                "Supported strategies: 'strict_improvement', 'improvement_or_equal'"
+                "Supported strategies: 'strict_improvement', 'improvement_or_equal', 'always'"
             ) from exc
     elif isinstance(config.engine.acceptance_criterion, AcceptanceCriterion):
         acceptance_criterion_instance = config.engine.acceptance_criterion
