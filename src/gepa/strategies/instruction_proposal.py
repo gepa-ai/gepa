@@ -31,6 +31,36 @@ Provide the new instructions within ``` blocks."""
     input_keys: ClassVar[list[str]] = ["current_instruction_doc", "dataset_with_feedback", "prompt_template"]
     output_keys: ClassVar[list[str]] = ["new_instruction"]
 
+    #: Reasoning-block tag names whose opening tag must be matched by a closing
+    #: one. Subclass and extend this if your reflection LM wraps its chain of
+    #: thought in a different tag.
+    reasoning_tags: ClassVar[tuple[str, ...]] = ("think",)
+
+    @classmethod
+    def _has_fence_pair(cls, lm_out: str) -> bool:
+        """Whether ``lm_out`` holds an opening and a closing fence to extract between."""
+        return (lm_out.find("```") + 3) < lm_out.rfind("```")
+
+    @classmethod
+    def is_truncated_output(cls, lm_out: str) -> bool:
+        """Whether ``lm_out`` was cut off before the model finished reasoning.
+
+        A reflection LM that hits its generation budget mid-thought emits an
+        opening reasoning tag it never closes and never reaches the fenced
+        instruction, so its monologue arrives at :meth:`output_extractor` with
+        nothing to extract and is returned verbatim. Both halves are required
+        here: an unmatched opening tag, and no fence pair. A well-formed
+        proposal is not withheld because its instruction text happens to
+        mention a reasoning tag, and an output that merely chose not to use a
+        fence is not judged at all, since that salvage path is deliberate.
+
+        This cannot detect a monologue truncated so early that no tag was ever
+        opened; it reports what the output itself makes visible.
+        """
+        if cls._has_fence_pair(lm_out):
+            return False
+        return any(lm_out.count(f"<{tag}>") > lm_out.count(f"</{tag}>") for tag in cls.reasoning_tags)
+
     @classmethod
     def validate_prompt_template(cls, prompt_template: str | None) -> None:
         if prompt_template is None:
@@ -128,8 +158,11 @@ Provide the new instructions within ``` blocks."""
             start = lm_out.find("```") + 3
             end = lm_out.rfind("```")
 
-            # Handle if the first and last backticks are the same or overlap
-            if start >= end:
+            # Handle if the first and last backticks are the same or overlap.
+            # is_truncated_output asks the same question through
+            # _has_fence_pair, so the two cannot disagree about what counts as
+            # an extractable span.
+            if not cls._has_fence_pair(lm_out):
                 # Handle incomplete blocks
                 stripped = lm_out.strip()
                 if stripped.startswith("```"):
