@@ -34,6 +34,23 @@ The engine builds a `GitAgentProposer` from `agent` and turns off text-merge
 `engine_config={"reflection": {"custom_candidate_proposer": ...}}` and omit
 `agent`.
 
+## Supported engines
+
+The same `git_commit` config works across the agent-capable engines — the
+candidate is a commit SHA and your `evaluate` scores a checked-out SHA in every
+case:
+
+| Engine | How a candidate commit is produced |
+|---|---|
+| `gepa` | The reflective loop's proposer (`GitAgentProposer`) leases the parent SHA, runs `agent`, and the host commits via `pool.commit_worktree`. |
+| `meta_harness` | Each iteration leases the base slot, the agent edits it, and the host commits it; the resulting SHA is the candidate. |
+| `autoresearch` | The agent works in one persistent leased worktree and **self-commits**; a git-aware `eval.sh` resolves and scores each SHA. |
+
+`meta_harness` and `autoresearch` are agent-driven (they shell out to a coding
+CLI), so they read `git_commit` for `repo_dir` / `manifest_globs` /
+`worktree_pool` / `base_commit` and drive the agent themselves — they do not use
+the `agent` callable (that is only for the `gepa` engine's `GitAgentProposer`).
+
 ## Bring your own agent
 
 The `agent` is any callable `(slot_dir: Path, ctx: ProposalContext) -> None`. It

@@ -27,11 +27,12 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.engines.claude_utils import copy_session_transcript
+from gepa.oa.git_commit import RepoCandidate, resolve_repo_candidate
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
@@ -216,13 +217,60 @@ if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
 """
 
 
+# Git-commit variants: candidate.txt holds a git ref (a SHA the agent committed
+# in the worktree). Resolve it to a full commit SHA before POSTing so the
+# evaluator receives an unambiguous, checkout-able candidate.
+EVAL_SCRIPT_SINGLE_GIT = """\
+#!/usr/bin/env bash
+# Usage: ./eval.sh <candidate_file>
+set -euo pipefail
+CANDIDATE_FILE="$1"
+SERVER_URL="{server_url}"
+CANDIDATE=$(git -C "{worktree}" rev-parse --verify "$(cat "$CANDIDATE_FILE")^{{commit}}")
+BODY=$(jq -n --arg c "$CANDIDATE" '{{candidate: $c}}')
+RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate" \\
+    -H "Content-Type: application/json" -d "$BODY")
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
+echo "$BODY"
+if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
+"""
+
+EVAL_SCRIPT_DATASET_GIT = """\
+#!/usr/bin/env bash
+# Usage: ./eval.sh <candidate_file>                   # all training examples
+#        ./eval.sh <candidate_file> --ids id1,id2,id3 # specific examples
+set -euo pipefail
+CANDIDATE_FILE="$1"; shift
+SERVER_URL="{server_url}"
+CANDIDATE=$(git -C "{worktree}" rev-parse --verify "$(cat "$CANDIDATE_FILE")^{{commit}}")
+IDS=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ids) IDS="$2"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+if [ -n "$IDS" ]; then
+    IDS_JSON=$(echo "$IDS" | jq -R 'split(",")')
+    BODY=$(jq -n --arg c "$CANDIDATE" --argjson ids "$IDS_JSON" '{{candidate: $c, example_ids: $ids}}')
+else
+    BODY=$(jq -n --arg c "$CANDIDATE" '{{candidate: $c}}')
+fi
+RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate_examples" \\
+    -H "Content-Type: application/json" -d "$BODY")
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
+echo "$BODY"
+if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
+"""
+
+
 _PROGRAM_MD = """\
 # Task: {name}
 
 {optional_sections}\
-## Candidate
-Iteratively improve the candidate in `candidate.txt`.
-Initial candidate: {candidate_len} chars.
+{candidate_section}
 
 {handoff_section}\
 {eval_section}
@@ -273,13 +321,52 @@ def _budget_section(budget: BudgetTracker, max_token_cost: float | None) -> str:
     return "\n".join(lines)
 
 
-def _strategy_section(task: Task) -> str:
+def _candidate_section(task: Task, repo: RepoCandidate | None, worktree: Path | None) -> str:
+    """The '## Candidate' block — text mode vs git-commit mode."""
+    if repo is not None and worktree is not None:
+        manifest_lines = "\n".join(f"- `{g}`" for g in repo.manifest_globs)
+        return (
+            "## Candidate (git-commit mode)\n"
+            "A candidate is a git **commit SHA**, not text. You work in a leased "
+            f"worktree at `{worktree}`. To make a candidate: edit files there (only "
+            "within the manifest globs below), commit them in the worktree with hooks "
+            f"disabled (`git -C {worktree} -c core.hooksPath=/dev/null commit --no-verify "
+            f"-am '...'`), then write the resulting `git -C {worktree} rev-parse HEAD` "
+            "into `candidate.txt` and score it with `./eval.sh candidate.txt`.\n\n"
+            "Editable manifest globs (relative to the worktree root); edits outside "
+            f"them are rejected by the scorer:\n{manifest_lines}\n"
+            "Do NOT edit `eval.sh` or `program.md`."
+        )
+    return (
+        "## Candidate\n"
+        "Iteratively improve the candidate in `candidate.txt`.\n"
+        f"Initial candidate: {len(task.seed_candidate or '')} chars."
+    )
+
+
+def _strategy_section(task: Task, repo: RepoCandidate | None = None, worktree: Path | None = None) -> str:
     """Explicit experiment loop, in the spirit of karpathy/autoresearch.
 
     Two modes:
       - dataset task  → ``./eval.sh`` on the full training pool is the signal.
       - single task   → ``./eval.sh`` runs the single-task ``eval_fn``.
+
+    In git-commit mode each iteration commits the edited worktree and writes the
+    new SHA into ``candidate.txt`` before scoring.
     """
+    if repo is not None and worktree is not None:
+        return (
+            "Run this as an explicit experiment loop until you hit the max score (if any).\n"
+            f"1. **Baseline.** Write the base SHA into `candidate.txt` and run "
+            f"`./eval.sh candidate.txt`; note the score.\n"
+            f"2. **Hypothesize and edit.** Form a hypothesis, then edit the manifest files "
+            f"in the worktree `{worktree}`.\n"
+            f"3. **Commit + score.** Commit in the worktree (hooks disabled), write "
+            f"`git -C {worktree} rev-parse HEAD` into `candidate.txt`, run `./eval.sh candidate.txt`.\n"
+            "4. **Keep or discard.** If the score improved, `cp candidate.txt best_candidate.txt`. "
+            f"Otherwise revert your worktree edits (e.g. `git -C {worktree} checkout -- .`).\n"
+            "5. Repeat from step 2."
+        )
     has_train_dir = task.has_dataset and bool(task.train_set)
 
     if has_train_dir:
@@ -316,13 +403,19 @@ def _perfect_score_section(perfect_score: float | None) -> str:
     )
 
 
-def _rules_section(task: Task, budget: BudgetTracker) -> str:
+def _rules_section(task: Task, budget: BudgetTracker, repo: RepoCandidate | None = None) -> str:
     del task
     exhaust_rule = (
         "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
     )
+    git_rule = (
+        "\n- Edit ONLY within the manifest globs; the scorer rejects out-of-manifest paths, symlinks, and gitlinks."
+        if repo is not None
+        else ""
+    )
     return (
-        f"- You cannot modify eval.sh or the server.\n- Focus on meaningful improvements each iteration.{exhaust_rule}"
+        f"- You cannot modify eval.sh or the server.\n"
+        f"- Focus on meaningful improvements each iteration.{exhaust_rule}{git_rule}"
     )
 
 
@@ -344,6 +437,8 @@ def _build_program_md(
     max_token_cost: float | None,
     perfect_score: float | None,
     handoffs: list[dict[str, Any]] | None,
+    repo: RepoCandidate | None = None,
+    worktree: Path | None = None,
 ) -> str:
     optional = ""
     if task.objective:
@@ -372,12 +467,12 @@ def _build_program_md(
     return _PROGRAM_MD.format(
         name=task.name,
         optional_sections=optional,
-        candidate_len=len(task.seed_candidate or ""),
+        candidate_section=_candidate_section(task, repo, worktree),
         handoff_section=_handoff_section(handoffs),
         eval_section=eval_section,
         budget_section=_budget_section(budget, max_token_cost) + _perfect_score_section(perfect_score),
-        strategy_section=_strategy_section(task),
-        rules_section=_rules_section(task, budget),
+        strategy_section=_strategy_section(task, repo, worktree),
+        rules_section=_rules_section(task, budget, repo),
     )
 
 
@@ -390,18 +485,33 @@ def _materialize_sandbox(
     max_token_cost: float | None = None,
     perfect_score: float | None = None,
     handoffs: list[dict[str, Any]] | None = None,
+    repo: RepoCandidate | None = None,
+    worktree: Path | None = None,
 ) -> None:
     server_url = server.url
     work_dir.mkdir(parents=True, exist_ok=True)
     (work_dir / "program.md").write_text(
-        _build_program_md(task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs)
+        _build_program_md(
+            task,
+            budget,
+            max_token_cost=max_token_cost,
+            perfect_score=perfect_score,
+            handoffs=handoffs,
+            repo=repo,
+            worktree=worktree,
+        )
     )
     (work_dir / "candidate.txt").write_text(seed_as_text(task.seed_candidate))
     (work_dir / "best_candidate.txt").write_text(seed_as_text(task.seed_candidate))
 
-    eval_template = EVAL_SCRIPT_DATASET if task.has_dataset else EVAL_SCRIPT_SINGLE
+    if repo is not None and worktree is not None:
+        eval_template = EVAL_SCRIPT_DATASET_GIT if task.has_dataset else EVAL_SCRIPT_SINGLE_GIT
+        eval_body = eval_template.format(server_url=server_url, worktree=worktree)
+    else:
+        eval_template = EVAL_SCRIPT_DATASET if task.has_dataset else EVAL_SCRIPT_SINGLE
+        eval_body = eval_template.format(server_url=server_url)
     eval_script = work_dir / "eval.sh"
-    eval_script.write_text(eval_template.format(server_url=server_url))
+    eval_script.write_text(eval_body)
     eval_script.chmod(0o755)
 
     if task.train_set:
@@ -486,6 +596,9 @@ class AutoResearchEngine:
         # Proposer-cost cap: USD the claude subprocess(es) may spend. Enforced
         # via --max-budget-usd; the eval server never sees proposer spend.
         self.max_token_cost = config.max_token_cost
+        # Git-commit candidate mode: when set, candidates are commit SHAs. The
+        # agent self-commits inside one persistent leased worktree slot.
+        self.git_commit: dict[str, Any] | None = config.git_commit
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
@@ -509,6 +622,13 @@ class AutoResearchEngine:
             self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_cc_")
             work_dir = Path(self._pending_tempdir.name)
 
+        # Git-commit mode: candidates are commit SHAs (None = text mode). Lease
+        # one persistent worktree slot for the whole agent session; the agent
+        # self-commits into it and writes each SHA to candidate.txt.
+        repo = resolve_repo_candidate(self.git_commit, seed=seed_as_text(task.seed_candidate) or None)
+        lease = repo.pool.lease(repo.base_commit, exclusive=True) if repo is not None else None
+        worktree = Path(lease.slot_dir) if lease is not None else None
+
         _materialize_sandbox(
             work_dir,
             task,
@@ -517,6 +637,8 @@ class AutoResearchEngine:
             max_token_cost=self.max_token_cost,
             perfect_score=self.stop_at_score,
             handoffs=self.handoffs,
+            repo=repo,
+            worktree=worktree,
         )
 
         candidate_file = work_dir / "candidate.txt"
@@ -550,6 +672,7 @@ class AutoResearchEngine:
             adapter_cost=adapter_cost,
             resume=False,
             env=env,
+            repo=repo,
         )
         if (
             proc.returncode != 0
@@ -557,6 +680,8 @@ class AutoResearchEngine:
             and "NO_EVAL_PROGRESS" not in proc.stderr
             and not _saw_budget_exhausted(proc)
         ):
+            if repo is not None and lease is not None:
+                repo.pool.release(lease)
             raise RuntimeError(
                 "Claude Code subprocess failed "
                 f"(exit {proc.returncode}). "
@@ -589,6 +714,7 @@ class AutoResearchEngine:
                     adapter_cost=adapter_cost,
                     resume=True,
                     env=env,
+                    repo=repo,
                 )
                 iter_cost = _extract_claude_cost(proc.stdout)
                 adapter_cost += iter_cost
@@ -603,14 +729,28 @@ class AutoResearchEngine:
                 if iter_cost < 0.001:
                     break
 
-        best_candidate = best_file.read_text() if best_file.exists() else seed_as_text(task.seed_candidate)
-        best_score = server.best_score
-        if task.has_dataset:
-            aggregate_best = _best_aggregate_candidate(server)
-            if aggregate_best is not None:
-                best_candidate, best_score = aggregate_best
-            else:
-                best_score = float("-inf")
+        if repo is not None and lease is not None:
+            repo.pool.release(lease)
+
+        if repo is not None:
+            # Git mode: the winning candidate is the best-scoring commit SHA the
+            # agent evaluated through the server; best_candidate.txt (also a SHA)
+            # is the fallback if the server never recorded a best.
+            best_candidate = (
+                cast(str, server.best_candidate)
+                if server.best_candidate
+                else (best_file.read_text() if best_file.exists() else seed_as_text(task.seed_candidate))
+            )
+            best_score = server.best_score
+        else:
+            best_candidate = best_file.read_text() if best_file.exists() else seed_as_text(task.seed_candidate)
+            best_score = server.best_score
+            if task.has_dataset:
+                aggregate_best = _best_aggregate_candidate(server)
+                if aggregate_best is not None:
+                    best_candidate, best_score = aggregate_best
+                else:
+                    best_score = float("-inf")
 
         return Result(
             best_candidate=best_candidate,
@@ -636,6 +776,7 @@ class AutoResearchEngine:
         adapter_cost: float,
         resume: bool,
         env: dict[str, str],
+        repo: RepoCandidate | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Invoke ``claude --print`` once.
 
@@ -649,7 +790,11 @@ class AutoResearchEngine:
           * the eval-count budget reported exhausted ``_BUDGET_EXHAUSTION_GRACE_SECONDS``
             ago (giving in-flight 429s time to drain).
         """
-        cmd: list[str] = bwrap_prefix(work_dir) if self.sandbox else []
+        # In git-commit mode the jail must also cover the repo dir so the agent
+        # can edit + commit inside the leased worktree (the bind covers both the
+        # worktree slot and the shared .git common-dir).
+        extra_writable: list[Path | str] = [repo.repo_dir] if repo is not None else []
+        cmd: list[str] = bwrap_prefix(work_dir, extra_writable=extra_writable) if self.sandbox else []
         cmd += [
             "claude",
             "--print",
@@ -666,7 +811,7 @@ class AutoResearchEngine:
         # Single source of the permission posture (see claude_permission_args):
         # bypassPermissions in the bwrap jail / unsandboxed, or the macOS
         # Seatbelt settings whose --permission-mode default enforces the whitelist.
-        cmd.extend(claude_permission_args(work_dir, sandboxed=self.sandbox))
+        cmd.extend(claude_permission_args(work_dir, sandboxed=self.sandbox, extra_writable=extra_writable))
         if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if self.max_token_cost is not None:
