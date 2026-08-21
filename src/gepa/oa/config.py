@@ -88,6 +88,26 @@ class OptimizeAnythingConfig:
             Claude-CLI knobs, so they live in each agent engine's
             ``engine_config``; the gepa engine takes reasoning knobs through
             ``reflection.reflection_lm_kwargs`` instead.
+        git_commit: Opt-in *git-commit candidate* mode. When set, a candidate is
+            a git commit SHA rather than a text string: the engine evolves the
+            repo by committing edits, and the evaluator scores a checked-out
+            worktree. ``None`` (default) = ordinary text mode. It carries a live
+            pool object, so it lives here rather than in ``engine_config``. Keys:
+
+            - ``repo_dir`` (str): the git repo whose object store backs candidates.
+            - ``manifest_globs`` (list[str]): the editable surface — only these
+              paths may change between candidates; the pool rejects anything else.
+            - ``worktree_pool``: a :class:`~gepa.oa.repo_pool.RepoCandidatePool`
+              (the portable :class:`~gepa.oa.repo_pool.GitWorktreePool`, or a
+              custom implementation). The caller creates and ``start()``s it, and
+              typically closes over it in the ``evaluate`` function too.
+            - ``base_commit`` (str, optional): the run's base SHA; defaults to the
+              task's ``seed_candidate``.
+            - ``agent`` (optional): a coding-agent callable
+              ``(slot_dir, ctx) -> None`` used to build a default
+              :class:`~gepa.oa.proposers.git_agent.GitAgentProposer`. Omit it and
+              instead set ``reflection.custom_candidate_proposer`` to supply your
+              own proposer.
     """
 
     engine: str | Engine = "gepa"
@@ -105,6 +125,10 @@ class OptimizeAnythingConfig:
     run_dir: str | None = None
     stop_at_score: float | None = None
     sandbox: bool = True
+
+    # Git-commit candidate mode: carries a live pool object (see the class
+    # docstring for the accepted keys). None = ordinary text mode.
+    git_commit: dict[str, Any] | None = None
 
     # Engine-specific. Each engine's factory pops what it knows (see the
     # engine's _<ENGINE>_CONFIG_KEYS tuple) and warns about anything left over.
