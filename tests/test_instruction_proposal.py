@@ -137,6 +137,11 @@ class TestTruncatedOutputDetection:
             # An unclosed reasoning block that still reached a fenced
             # instruction: the extractor takes the fence, so nothing is lost.
             "<think>\nStill thinking\n```\nAn instruction\n```",
+            # An UNFENCED instruction that mentions the tag mid-text. The salvage path is meant to keep this,
+            # and a truncated monologue is not what it looks like: this output does not begin inside a
+            # reasoning block, it talks about one.
+            "Answer concisely. Open a <think> block before you answer, then give the final line.",
+            "Do not emit <think> tags in your output.",
         ],
     )
     def test_well_formed_output_is_not_truncated(self, lm_out):

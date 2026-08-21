@@ -45,21 +45,33 @@ Provide the new instructions within ``` blocks."""
     def is_truncated_output(cls, lm_out: str) -> bool:
         """Whether ``lm_out`` was cut off before the model finished reasoning.
 
-        A reflection LM that hits its generation budget mid-thought emits an
-        opening reasoning tag it never closes and never reaches the fenced
+        A reflection LM that hits its generation budget mid-thought opens a
+        reasoning block, never closes it, and never reaches the fenced
         instruction, so its monologue arrives at :meth:`output_extractor` with
-        nothing to extract and is returned verbatim. Both halves are required
-        here: an unmatched opening tag, and no fence pair. A well-formed
-        proposal is not withheld because its instruction text happens to
-        mention a reasoning tag, and an output that merely chose not to use a
-        fence is not judged at all, since that salvage path is deliberate.
+        nothing to extract and is returned verbatim. All three parts of that
+        shape are required here: the output BEGINS with an opening reasoning
+        tag, one of the tags it opened is never closed, and there is no fence
+        pair to extract from.
 
-        This cannot detect a monologue truncated so early that no tag was ever
-        opened; it reports what the output itself makes visible.
+        Each part earns its place by the false positive it prevents. Without
+        the fence-pair test, a proposal whose instruction text mentions a
+        reasoning tag would be discarded. Without the "begins with" test, so
+        would an unfenced instruction that merely talks about one, such as
+        "open a <think> block before you answer". The unfenced salvage path is
+        deliberate, so it has to keep working.
+
+        The honest limit: a monologue truncated before any tag was emitted, or
+        one whose tags the provider strips, is indistinguishable from a
+        deliberately unfenced instruction. This reports what the output itself
+        makes visible and does not guess beyond it.
         """
         if cls._has_fence_pair(lm_out):
             return False
-        return any(lm_out.count(f"<{tag}>") > lm_out.count(f"</{tag}>") for tag in cls.reasoning_tags)
+        stripped = lm_out.lstrip()
+        return any(
+            stripped.startswith(f"<{tag}>") and lm_out.count(f"<{tag}>") > lm_out.count(f"</{tag}>")
+            for tag in cls.reasoning_tags
+        )
 
     @classmethod
     def validate_prompt_template(cls, prompt_template: str | None) -> None:
