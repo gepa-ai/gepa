@@ -11,6 +11,15 @@ from gepa.core.state import GEPAState
 
 
 class BatchSampler(Protocol[DataId, DataInst]):
+    """Yields the minibatch of trainset ids to propose from.
+
+    Multi-proposal sampling strategies call ``next_minibatch_ids`` once per
+    task within a single iteration (``state.i`` unchanged between calls).
+    Implementations should return a *different* minibatch on each repeated
+    call within an iteration, so parallel proposal tasks don't all share one
+    minibatch.
+    """
+
     def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], state: GEPAState) -> list[DataId]: ...
 
 
@@ -28,6 +37,8 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
         self.epoch = -1
         self.id_freqs = Counter()
         self.last_trainset_size = 0
+        self._current_iteration: int | None = None
+        self._calls_in_iteration = 0
         if rng is None:
             self.rng = random.Random(0)
         else:
@@ -60,6 +71,18 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
         if trainset_size == 0:
             raise ValueError("Cannot sample a minibatch from an empty loader.")
 
+        # Repeated calls within one iteration (multi-proposal sampling
+        # strategies request one minibatch per task) advance one chunk each,
+        # so tasks in the same iteration get distinct minibatches. The first
+        # call of an iteration is unchanged from the classic behavior. Chunks
+        # wrap around, so distinctness holds only while the iteration's call
+        # count stays within len(shuffled_ids) / minibatch_size.
+        if state.i == self._current_iteration:
+            self._calls_in_iteration += 1
+        else:
+            self._current_iteration = state.i
+            self._calls_in_iteration = 0
+
         base_idx = state.i * self.minibatch_size
         curr_epoch = 0 if self.epoch == -1 else base_idx // max(len(self.shuffled_ids), 1)
 
@@ -71,7 +94,10 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
         assert len(self.shuffled_ids) >= self.minibatch_size
         assert len(self.shuffled_ids) % self.minibatch_size == 0
 
-        base_idx = base_idx % len(self.shuffled_ids)
+        # The epoch bookkeeping above uses the un-offset base_idx (constant
+        # within an iteration), so repeat calls never trigger a reshuffle and
+        # the shuffle sequence stays identical to the single-call path.
+        base_idx = (base_idx + self._calls_in_iteration * self.minibatch_size) % len(self.shuffled_ids)
         end_idx = base_idx + self.minibatch_size
         assert end_idx <= len(self.shuffled_ids)
         return self.shuffled_ids[base_idx:end_idx]

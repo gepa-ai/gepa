@@ -1,0 +1,10 @@
+{
+  "name": "gepa-optimize-anything",
+  "version": "0.1.0",
+  "description": "Optimize any scorable text artifact (prompts, code, configs, agent scaffolds, search solutions) with optimize_anything — one evaluator-driven API across the GEPA optimizer (reflective evolutionary search, the default), AutoResearch, and MetaHarness backends, with a best-of-N baseline for comparisons.",
+  "author": { "name": "GEPA", "url": "https://github.com/gepa-ai/gepa" },
+  "homepage": "https://gepa-ai.github.io/gepa/",
+  "repository": "https://github.com/gepa-ai/gepa",
+  "license": "MIT",
+  "keywords": ["gepa", "optimization", "prompt-optimization", "optimize-anything", "agent-skill", "dspy"]
+}

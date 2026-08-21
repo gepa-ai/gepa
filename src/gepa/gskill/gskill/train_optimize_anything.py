@@ -20,13 +20,12 @@ load_dotenv()
 
 import re
 
-import litellm
 from datasets import load_dataset
 from gskill.cost_tracker import reset_tracker
 from gskill.experiment_logger import ExperimentLogger, set_logger
 from gskill.swe_fitness_fn import create_swe_fitness_fn
 
-from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, TrackingConfig, optimize_anything
+from gepa.gepa_launcher import EngineConfig, GEPAConfig, ReflectionConfig, TrackingConfig, optimize_anything
 from gepa.utils.stop_condition import TimeoutStopCondition
 
 
@@ -136,8 +135,11 @@ Provide the new skills within a SINGLE ``` block. Only include one ``` block, if
             run_dir: Directory to save logs
             reflection_lm: Model name for reflection LLM
         """
+        from gepa.lm import LM
+
         self.run_dir = run_dir
         self.reflection_lm = reflection_lm
+        self._lm = LM(reflection_lm)
         self.proposer_dir = run_dir / "proposer_calls"
         self.proposer_dir.mkdir(parents=True, exist_ok=True)
         self.call_counter = 0
@@ -157,12 +159,7 @@ Provide the new skills within a SINGLE ``` block. Only include one ``` block, if
 
         Override this method to customize LLM calling.
         """
-        response = litellm.completion(
-            model=self.reflection_lm,
-            messages=[{"role": "user", "content": prompt}],
-            drop_params=True,  # Let litellm drop unsupported params like temperature for gpt-5
-        )
-        return response.choices[0].message.content
+        return self._lm(prompt)
 
     def extract_skills(self, response_text: str) -> str:
         """Extract skills from LLM response.

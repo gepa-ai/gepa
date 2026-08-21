@@ -30,3 +30,34 @@ def test_gepa_result_from_dict_upcasts_version0():
 
     serialized = result.to_dict()
     assert serialized["validation_schema_version"] == GEPAResult._VALIDATION_SCHEMA_VERSION
+
+
+def test_to_dict_omits_runtime_oa_fields():
+    """eval_log / metadata / eval_server_calls are runtime conveniences; the
+    frozen JSON pool snapshot stays byte-stable without them."""
+    result = GEPAResult(
+        candidates=[{"current_candidate": "x"}],
+        parents=[[None]],
+        val_aggregate_scores=[0.1],
+        val_subscores=[{}],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[1],
+        total_metric_calls=4,
+        eval_log=[{"score": 0.1}],
+        metadata={"engine": "gepa"},
+        eval_server_calls=7,
+        _str_candidate_key="current_candidate",
+    )
+
+    serialized = result.to_dict()
+    assert "eval_log" not in serialized
+    assert "metadata" not in serialized
+    assert "eval_server_calls" not in serialized
+    assert serialized["total_metric_calls"] == 4
+    assert result.total_evals == 7
+
+    restored = GEPAResult.from_dict(serialized)
+    assert restored.eval_log == []
+    assert restored.metadata == {}
+    assert restored.eval_server_calls is None
+    assert restored.total_evals == 4  # falls back to total_metric_calls

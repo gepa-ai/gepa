@@ -21,11 +21,11 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
-from gepa.proposer.base import ProposeNewCandidate
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
@@ -38,18 +38,69 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_sampling import SamplingStrategy
+from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
+
 
 def optimize(
     seed_candidate: dict[str, str],
     trainset: list[DataInst] | DataLoader[DataId, DataInst],
     valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
-    logger: LoggerProtocol = StdOutLogger(),
+    task_lm: str | ChatCompletionCallable | None = None,
+    evaluator: Evaluator | None = None,
+    # Reflection-based configuration
+    reflection_lm: LanguageModel | str | None = None,
+    reflection_lm_kwargs: dict[str, Any] | None = None,
+    candidate_selection_strategy: CandidateSelector
+    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
     frontier_type: FrontierType = "instance",
+    skip_perfect_score: bool = True,
+    batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
+    reflection_minibatch_size: int | None = None,
     perfect_score: float = 1.0,
+    reflection_prompt_template: str | dict[str, str] | None = None,
+    custom_candidate_proposer: ProposalFn | None = None,
+    # Component selection configuration
+    module_selector: ReflectionComponentSelector | str = "round_robin",
+    # Merge-based configuration
+    use_merge: bool = False,
+    max_merge_invocations: int = 5,
+    merge_val_overlap_floor: int = 5,
+    # Budget and Stop Condition
+    max_metric_calls: int | None = None,
+    max_reflection_cost: float | None = None,
+    stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
+    # Logging and Callbacks
+    logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
-    proposer: ProposeNewCandidate | None = None,
+    callbacks: "list[GEPACallback] | None" = None,
+    use_wandb: bool = False,
+    wandb_api_key: str | None = None,
+    wandb_init_kwargs: dict[str, Any] | None = None,
+    wandb_attach_existing: bool = False,
+    use_mlflow: bool = False,
+    mlflow_tracking_uri: str | None = None,
+    mlflow_experiment_name: str | None = None,
+    mlflow_attach_existing: bool = False,
+    tracking_key_prefix: str = "",
+    track_best_outputs: bool = True,
+    display_progress_bar: bool = False,
+    use_cloudpickle: bool = False,
+    write_agent_state: bool = False,
+    # Evaluation caching
+    cache_evaluation: bool = False,
+    # Reproducibility
+    seed: int = 0,
+    raise_on_exception: bool = True,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
+    acceptance_criterion: AcceptanceCriterion
+    | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    # Proposal strategies (default: 1 parent, 1 mutation per iteration)
+    sampling_strategy: SamplingStrategy | None = None,
+    selection_strategy: SelectionStrategy | None = None,
+    reflection_strategy: ReflectionLM | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -96,6 +147,9 @@ def optimize(
 
     # Reflection-based configuration
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
+    - sampling_strategy: Controls how many (parent, minibatch) proposal tasks are sampled per iteration. One of `SingleMutationSampling` (default; 1 parent, 1 mutation — identical to classic GEPA), `SameParentSampling(n)`, `IndependentSampling(n)`, or `PxNSampling(p, n)`, or any custom `SamplingStrategy`.
+    - selection_strategy: Controls which of an iteration's improving proposals enter the candidate pool. One of `AllImprovements` (default), `BestImprovement`, or `TopKImprovements(k)`, or any custom `SelectionStrategy`.
+    - reflection_strategy: Advanced: a `ReflectionLM` implementation that owns how reflective mutation calls the reflection model (e.g. stateful sessions or aggregating reflectors). Defaults to the stateless single-call reflector built from `reflection_lm`. Implementations may provide `reflect_many` for batched reflection; otherwise `reflect` is called once per task.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
@@ -103,7 +157,7 @@ def optimize(
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
     - reflection_prompt_template: The prompt template to use for reflection. Can be either a string (applied to all components) or a dict mapping component names to their specific templates. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). Each prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions/component to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). When using a dict, components without a specified template will use the default template. This will be ignored if the adapter provides its own `propose_new_texts` method.
-    - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`.
+    - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`. The proposer may optionally accept a keyword argument `metadata` (an open context dict from the reflective proposer, e.g. iteration info); it is passed only if the signature accepts it, and the plain 3-arg form remains fully supported.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -124,6 +178,8 @@ def optimize(
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.
+    - wandb_attach_existing: When True, log into the already-active W&B run without calling wandb.init() or wandb.finish(). Use when GEPA is embedded in a training loop that owns the run.
+    - mlflow_attach_existing: When True, log into the already-active MLflow run without calling mlflow.start_run() or mlflow.end_run(). Use when GEPA is embedded in a training loop that owns the run.
     - use_mlflow: Whether to use MLflow to log the progress of the optimization.
       Both wandb and mlflow can be used simultaneously if desired.
     - mlflow_tracking_uri: The tracking URI to use for MLflow.
@@ -131,60 +187,285 @@ def optimize(
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
     - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
+    - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
 
     # Evaluation caching
-    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
+    - cache_evaluation: Whether to cache the (score, output, objective_scores) of
+      (candidate, split, example) triples. If True and a cache entry exists, GEPA skips the
+      fitness evaluation. Trainset minibatches and valset evaluation share the cache only when
+      they use the same DataLoader instance (valset=None, or the same dataset object passed as
+      both trainset and valset). A distinct valset is a separate namespace, so held-out scores
+      cannot be served from trainset rollouts at the same list index. Defaults to False.
+      Resuming a run_dir whose cache was written before this namespacing existed drops those
+      entries; already-recorded valset scores in the pickled state are left as they are.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
-    - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
+    - raise_on_exception: Whether to propagate proposer/evaluator exceptions. False suppresses failures only after
+      an iteration consumes metric budget; zero-progress failures still propagate.
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
         raise ValueError("seed_candidate must contain at least one component text.")
 
-    active_adapter = adapter
+    active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
+    if adapter is None:
+        assert task_lm is not None, (
+            "Since no adapter is provided, GEPA requires a task LM to be provided. Please set the `task_lm` parameter."
+        )
+        active_adapter = cast(
+            GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm, evaluator=evaluator)
+        )
+    else:
+        assert task_lm is None, (
+            "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
+        )
+        assert evaluator is None, (
+            "Since an adapter is provided, GEPA does not require an evaluator to be provided. Please set the `evaluator` parameter to None."
+        )
+        active_adapter = adapter
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
-    val_loader = ensure_loader(valset) if valset is not None else train_loader
+    val_loader = train_loader if valset is None or valset is trainset else ensure_loader(valset)
 
-    # Comprehensive stop_callback logic
-    # Convert stop_callbacks to a list if it's not already
-    # stop_callbacks_list: list[StopperProtocol] = []
-    # if stop_callbacks is not None:
-    #     if isinstance(stop_callbacks, Sequence):
-    #         stop_callbacks_list.extend(stop_callbacks)
-    #     else:
-    #         stop_callbacks_list.append(stop_callbacks)
+    # Validate that only one custom proposal method is provided
+    adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
+    if adapter_has_propose and custom_candidate_proposer is not None:
+        raise ValueError(
+            "Cannot provide both adapter.propose_new_texts and custom_candidate_proposer. "
+            "Please use only one custom proposal method."
+        )
 
-    # Add file stopper if run_dir is provided
-    # if run_dir is not None:
-    #     stop_file_path = os.path.join(run_dir, "gepa.stop")
-    #     file_stopper = FileStopper(stop_file_path)
-    #     stop_callbacks_list.append(file_stopper)
-    #
-    # # Add max_metric_calls stopper if provided
-    # if max_metric_calls is not None:
-    #     from gepa.utils import MaxMetricCallsStopper
-    #
-    #     max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
-    #     stop_callbacks_list.append(max_calls_stopper)
-    #
-    # # Assert that at least one stopping condition is provided
-    # if not stop_callbacks_list:
-    #     raise ValueError(
-    #         "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
-    #     )
+    if not adapter_has_propose and custom_candidate_proposer is None:
+        assert reflection_lm is not None or reflection_strategy is not None, (
+            f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
+            + "and custom_candidate_proposer was not provided. "
+            + "GEPA will use the default proposer, which requires a reflection_lm (or a "
+            + "reflection_strategy) to be specified."
+        )
+
+    # Resolve reflection LM before building stoppers so cost stopper can reference it
+    reflection_lm_callable: LanguageModel | None = None
+    if isinstance(reflection_lm, str):
+        from gepa.lm import LM
+
+        reflection_lm_callable = LM(reflection_lm, **(reflection_lm_kwargs or {}))
+    elif reflection_lm is not None:
+        from gepa.lm import TrackingLM
+
+        reflection_lm_callable = (
+            TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        )
+    else:
+        reflection_lm_callable = None
+
+    # --- Build stoppers (all in one place, after LM conversion) ---
+    stop_callbacks_list: list[StopperProtocol] = []
+    if stop_callbacks is not None:
+        if isinstance(stop_callbacks, Sequence):
+            stop_callbacks_list.extend(stop_callbacks)
+        else:
+            stop_callbacks_list.append(stop_callbacks)
+
+    if run_dir is not None:
+        stop_callbacks_list.append(FileStopper(os.path.join(run_dir, "gepa.stop")))
+
+    if max_metric_calls is not None:
+        from gepa.utils import MaxMetricCallsStopper
+
+        stop_callbacks_list.append(MaxMetricCallsStopper(max_metric_calls))
+
+    if max_reflection_cost is not None:
+        from gepa.utils import MaxReflectionCostStopper
+
+        if reflection_strategy is not None:
+            if not hasattr(reflection_strategy, "total_cost"):
+                raise ValueError(
+                    "max_reflection_cost is set but reflection_strategy does not expose total_cost — "
+                    "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
+                    "total_cost property on the strategy, or remove max_reflection_cost."
+                )
+            _supports_cost_tracking = getattr(reflection_strategy, "supports_cost_tracking", None)
+            if callable(_supports_cost_tracking) and not _supports_cost_tracking():
+                raise ValueError(
+                    "max_reflection_cost requires a reflection strategy backed by a cost-tracking LM. "
+                    "ComBEE plain callables use TrackingLM token estimates and cannot report provider spend; "
+                    "pass gepa.lm.LM (or another callable with real total_cost), or remove max_reflection_cost."
+                )
+            stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_strategy))
+        else:
+            stop_callbacks_list.append(
+                MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable)
+            )
+
+    if not stop_callbacks_list:
+        raise ValueError(
+            "The user must provide at least one of stop_callbacks, max_metric_calls, or max_reflection_cost to specify a stopping condition."
+        )
+
+    stop_callback: StopperProtocol
+    if len(stop_callbacks_list) == 1:
+        stop_callback = stop_callbacks_list[0]
+    else:
+        from gepa.utils import CompositeStopper
+
+        stop_callback = CompositeStopper(*stop_callbacks_list)
+
+    if logger is None:
+        if run_dir is not None:
+            os.makedirs(run_dir, exist_ok=True)
+            logger = Logger(os.path.join(run_dir, "run_log.txt"))
+        else:
+            logger = StdOutLogger()
+
+    rng = random.Random(seed)
+
+    candidate_selector: CandidateSelector
+    if isinstance(candidate_selection_strategy, str):
+        factories = {
+            "pareto": lambda: ParetoCandidateSelector(rng=rng),
+            "current_best": lambda: CurrentBestCandidateSelector(),
+            "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
+        }
+
+        try:
+            candidate_selector = factories[candidate_selection_strategy]()
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
+            ) from exc
+    elif isinstance(candidate_selection_strategy, CandidateSelector):
+        candidate_selector = candidate_selection_strategy
+    else:
+        raise TypeError(
+            "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
+        )
+
+    if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
+        val_evaluation_policy = FullEvaluationPolicy()
+    elif not isinstance(val_evaluation_policy, EvaluationPolicy):
+        raise ValueError(
+            f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
+        )
+
+    if isinstance(module_selector, str):
+        module_selector_cls = {
+            "round_robin": RoundRobinReflectionComponentSelector,
+            "all": AllReflectionComponentSelector,
+        }.get(module_selector)
+
+        assert module_selector_cls is not None, (
+            f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin', 'all'"
+        )
+
+        module_selector_instance: ReflectionComponentSelector = module_selector_cls()
+    else:
+        module_selector_instance = module_selector
+
+    if batch_sampler == "epoch_shuffled":
+        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
+    else:
+        assert reflection_minibatch_size is None, (
+            "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+        )
+
+    acceptance_criterion_instance: AcceptanceCriterion
+    if isinstance(acceptance_criterion, str):
+        acceptance_factories: dict[str, type[AcceptanceCriterion]] = {
+            "strict_improvement": StrictImprovementAcceptance,
+            "improvement_or_equal": ImprovementOrEqualAcceptance,
+        }
+        try:
+            acceptance_criterion_instance = acceptance_factories[acceptance_criterion]()
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown acceptance_criterion: {acceptance_criterion}. "
+                "Supported strategies: 'strict_improvement', 'improvement_or_equal'"
+            ) from exc
+    elif isinstance(acceptance_criterion, AcceptanceCriterion):
+        acceptance_criterion_instance = acceptance_criterion
+    else:
+        raise TypeError(
+            "acceptance_criterion must be a supported string strategy or an instance of AcceptanceCriterion."
+        )
 
     experiment_tracker = create_experiment_tracker(
-        use_wandb=False,
-        use_mlflow=False,
+        use_wandb=use_wandb,
+        wandb_api_key=wandb_api_key,
+        wandb_init_kwargs=wandb_init_kwargs,
+        wandb_attach_existing=wandb_attach_existing,
+        use_mlflow=use_mlflow,
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+        mlflow_attach_existing=mlflow_attach_existing,
+        key_prefix=tracking_key_prefix,
     )
 
-    # Build proposer: use the custom one if provided, otherwise create ReflectiveMutationProposer
-    active_proposer = proposer
+    if reflection_prompt_template is not None:
+        assert not (adapter is not None and getattr(adapter, "propose_new_texts", None) is not None), (
+            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. "
+            "Set reflection_prompt_template to None."
+        )
+
+    # Create evaluation cache if enabled
+    evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None
+    if cache_evaluation:
+        evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
+
+    if reflection_strategy is not None:
+        _bind_rng = getattr(reflection_strategy, "bind_rng", None)
+        if callable(_bind_rng):
+            # Preserve #307's shared-stream semantics for ComBEE and any other
+            # strategy that opts into SeedableReflectionLM. An explicit
+            # strategy RNG remains the opt-in isolation mechanism.
+            _bind_rng(rng)
+        _bind_logger = getattr(reflection_strategy, "bind_logger", None)
+        if callable(_bind_logger):
+            _bind_logger(logger)
+        _bind_lm_kwargs = getattr(reflection_strategy, "bind_lm_kwargs", None)
+        if callable(_bind_lm_kwargs):
+            _bind_lm_kwargs(reflection_lm_kwargs)
+
+    reflective_proposer = ReflectiveMutationProposer(
+        logger=logger,
+        trainset=train_loader,
+        adapter=active_adapter,
+        candidate_selector=candidate_selector,
+        module_selector=module_selector_instance,
+        batch_sampler=batch_sampler,
+        perfect_score=perfect_score,
+        skip_perfect_score=skip_perfect_score,
+        experiment_tracker=experiment_tracker,
+        reflection_lm=reflection_lm_callable,
+        reflection_prompt_template=reflection_prompt_template,
+        custom_candidate_proposer=custom_candidate_proposer,
+        callbacks=callbacks,
+        sampling_strategy=sampling_strategy,
+        reflection_strategy=reflection_strategy,
+    )
+
+    def evaluator_fn(
+        inputs: list[DataInst], prog: dict[str, str]
+    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
+        eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+
+    merge_proposer: MergeProposer | None = None
+    if use_merge:
+        merge_proposer = MergeProposer(
+            logger=logger,
+            valset=val_loader,
+            evaluator=evaluator_fn,
+            use_merge=use_merge,
+            max_merge_invocations=max_merge_invocations,
+            rng=rng,
+            val_overlap_floor=merge_val_overlap_floor,
+            callbacks=callbacks,
+        )
 
     engine = GEPAEngine(
         adapter=active_adapter,
@@ -192,196 +473,30 @@ def optimize(
         valset=val_loader,
         seed_candidate=seed_candidate,
         perfect_score=perfect_score,
-        seed=0,
-        reflective_proposer=active_proposer,
-        merge_proposer=None,
+        seed=seed,
+        reflective_proposer=reflective_proposer,
+        merge_proposer=merge_proposer,
         frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
+        callbacks=callbacks,
+        track_best_outputs=track_best_outputs,
+        display_progress_bar=display_progress_bar,
+        raise_on_exception=raise_on_exception,
+        stop_callback=stop_callback,
+        val_evaluation_policy=val_evaluation_policy,
+        acceptance_criterion=acceptance_criterion_instance,
+        selection_strategy=selection_strategy,
+        use_cloudpickle=use_cloudpickle,
+        write_agent_state=write_agent_state,
+        evaluation_cache=evaluation_cache,
     )
 
     with experiment_tracker:
-        state = engine.run()
-
-    return GEPAResult.from_state(state, run_dir=run_dir, seed=0)
-
-
-def main() -> None:
-    """CLI entry point to run optimize with Glean AL adapter and evolutionary proposer."""
-    import argparse
-    import hashlib
-    import json
-    from pathlib import Path
-
-    from gepa.adapters.glean_adapter import ALBatchSampler, ALDataInst
-    from gepa.adapters.glean_adapter.al_adapter import (
-        MODULES,
-        ALRunner,
-        Judge,
-        AssistantALAdapter,
-        Thresholds,
-        ModuleSpec,
-    )
-    from gepa.proposer.evolutionary_proposer import EvolutionaryProposer
-
-    parser = argparse.ArgumentParser(
-        description="Run GEPA optimize with Glean AL adapter and evolutionary proposer."
-    )
-    parser.add_argument(
-        "--seed_candidate",
-        required=True,
-        help='Path to a .json file',
-    )
-    parser.add_argument("--max_metric_calls", type=int, default=10, help="Maximum number of metric calls (default: 10)")
-    parser.add_argument("--run_dir", type=Path, default=None, help="Directory for run artifacts and resume")
-    parser.add_argument("--student_model", type=str, default='fast', help="Student model name (default: claude)")
-    parser.add_argument("--teacher_model", type=str, default="gpt", help="Teacher model name (default: gpt)")
-    parser.add_argument("--reflection_lm_model", type=str, default="gpt-5.1", help="Model for reflection LLM (default: gpt-5.1")
-    parser.add_argument("--global_token_cap", type=int, default=4096, help="Global token cap for candidates (default: 4096)")
-    parser.add_argument("--cookie", type=str, default=None, help="Cookie string for Glean API authentication")
-    args = parser.parse_args()
-
-    # Load seed_candidate (JSON string or path)
-    raw = args.seed_candidate.strip()
-    path = Path(raw)
-    if not path.is_file():
-        raise SystemExit(f"seed_candidate file not found: {path}")
-    seed_candidate_raw = json.loads(path.read_text())
-    if not isinstance(seed_candidate_raw, dict) or not seed_candidate_raw:
-        raise SystemExit("seed_candidate must be a non-empty JSON object")
-
-    # Flatten seed candidate: TOOL_USAGE list becomes TOOL_USAGE_1-4
-    seed_candidate_flat: dict[str, str] = {}
-    for k, v in seed_candidate_raw.items():
-        if k == "TOOL_USAGE" and isinstance(v, list):
-            # Flatten TOOL_USAGE list into TOOL_USAGE_1, TOOL_USAGE_2, etc.
-            for i, part in enumerate(v[:4], start=1):
-                seed_candidate_flat[f"TOOL_USAGE_{i}"] = str(part)
-        elif isinstance(v, str):
-            seed_candidate_flat[str(k)] = v
-        elif isinstance(v, list) and len(v) == 1:
-            # Single-element list, unwrap it
-            seed_candidate_flat[str(k)] = str(v[0])
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
         else:
-            raise SystemExit(
-                f"seed_candidate values must be strings or (for TOOL_USAGE) a list of strings. "
-                f"Got key={k!r} type={type(v)}"
-            )
+            state = engine.run()
 
-    # Eval set names (hardcoded - always the same)
-    # Important: We don't have separate "train" and "val" sets. We train ON eval runs.
-    # Mini-batch sampling = running on a small eval set (Small)
-    # Full evaluation = running on a larger eval set (Medium/Large)
-    SCREEN_EVAL_SET_NAME = "AI Answers Small"  # For screening/mini-batch
-    # TODO(Cathy): Update this to use the correct eval set name
-    FULL_EVAL_SET_NAME = "AI Answers Small"   # For full evaluation
-
-    # Create multiple ALDataInst objects with different eval_set_versions (dates)
-    # Each represents a complete eval set snapshot from different dates
-    # This provides diversity in the training data across different time periods
-
-    # Screening/training eval sets - multiple dates for diverse mini-batch sampling
-    eval_versions = [
-        "20260403",  # March 16, 2026
-        "20260406",
-        "20260408",
-        "20260410",
-        "20260412",
-    ]
-
-    screen_evalset: list[ALDataInst] = [
-        {
-            "eval_set_name": SCREEN_EVAL_SET_NAME,
-            "eval_set_version": version,
-            "deployment_ids": ["scio-prod"],
-            "status": "active",
-        }
-        for version in eval_versions
-    ]
-
-
-    full_evalset: list[ALDataInst] = [
-        {
-            "eval_set_name": FULL_EVAL_SET_NAME,
-            "eval_set_version": version,
-            "deployment_ids": ["scio-prod"],
-            "status": "active",
-        }
-        for version in eval_versions
-    ]
-
-    al_adapter = AssistantALAdapter(
-        runner=ALRunner(
-            cookie=args.cookie,
-        ),
-        judge=Judge(
-            cookie=args.cookie,
-        ),
-        teacher_model=args.teacher_model,
-        thresholds=Thresholds(
-            quality_min=0.7,
-            tools_min=0.7,
-            max_student_tokens=100000
-        ),
-        student_model=args.student_model,
-        cache_file="~/eval_cache.json"
-    )
-
-    # Module specs with default token budgets
-    module_specs = {mid: ModuleSpec(module_id=mid, kind="free_text", token_budget=1024) for mid in MODULES}
-
-    baseline_prompt_hash = hashlib.md5(json.dumps(seed_candidate_flat, sort_keys=True).encode()).hexdigest()
-
-    # Set up shared components for the proposer
-    logger = StdOutLogger()
-    experiment_tracker = create_experiment_tracker()
-
-    # Reflection LLM callable
-    reflection_lm_name = args.reflection_lm_model
-    MAX_TOKENS = 4096
-
-    def reflection_llm(prompt: str) -> str:
-        import openai
-
-        try:
-            completion = openai.chat.completions.create(
-                model=reflection_lm_name,
-                messages=[{"role": "user", "content": prompt}],
-                reasoning_effort="none",
-                max_completion_tokens=MAX_TOKENS,
-            )
-            content = completion.choices[0].message.content
-            return content if content is not None else ""
-        except Exception as e:
-            print(f'OpenAI API call failed: {e}')
-            return ""
-
-    # Create EvolutionaryProposer
-    proposer = EvolutionaryProposer(
-        logger=logger,
-        trainset=screen_evalset,
-        al_adapter=al_adapter,
-        reflection_llm=reflection_llm,
-        experiment_tracker=experiment_tracker,
-        model=args.student_model,
-        module_specs=module_specs,
-        global_token_cap=args.global_token_cap,
-        baseline_prompt_hash=baseline_prompt_hash,
-    )
-
-    optimize(
-        seed_candidate=seed_candidate_flat,
-        trainset=screen_evalset,
-        valset=full_evalset,
-        adapter=al_adapter,
-        proposer=proposer,
-        logger=logger,
-        # max_metric_calls=args.max_metric_calls,
-        run_dir=None,
-        # run_dir=str(args.run_dir) if args.run_dir else None,
-        frontier_type="objective",
-    )
-
-
-if __name__ == "__main__":
-    main()
+    return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)

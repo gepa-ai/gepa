@@ -12,7 +12,7 @@ across single or multiple tools.
 import asyncio
 import json
 import logging
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, TypedDict, cast
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
@@ -179,9 +179,11 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
         # Setup model
         if isinstance(task_model, str):
-            import litellm
+            from gepa.lm import LM
 
-            self.litellm = litellm
+            self._lm: LM | None = LM(task_model)
+        else:
+            self._lm = None
         self.task_model = task_model
 
     def evaluate(
@@ -375,16 +377,12 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         ]
 
         try:
-            if isinstance(self.task_model, str):
+            if self._lm is not None:
                 logger.debug(f"Calling model with messages: {messages}")
-                response = self.litellm.completion(
-                    model=self.task_model,
-                    messages=messages,
-                )
-                model_output = response.choices[0].message.content.strip()  # type: ignore[union-attr]
+                model_output = self._lm(messages).strip()
                 logger.debug(f"Model output: '{model_output}'")
             else:
-                model_output = self.task_model(messages)
+                model_output = cast(Callable, self.task_model)(messages)
 
             # Parse tool call (JSON format)
             tool_called = False
@@ -453,14 +451,10 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         ]
 
         try:
-            if isinstance(self.task_model, str):
-                response = self.litellm.completion(
-                    model=self.task_model,
-                    messages=messages,
-                )
-                return response.choices[0].message.content.strip()  # type: ignore[union-attr]
+            if self._lm is not None:
+                return self._lm(messages).strip()
             else:
-                return self.task_model(messages)
+                return cast(Callable, self.task_model)(messages)
 
         except Exception as e:
             logger.exception("Second pass failed")

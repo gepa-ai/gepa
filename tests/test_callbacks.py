@@ -736,6 +736,8 @@ class TestReflectionEvents:
             ProposalEndEvent(
                 iteration=3,
                 new_instructions={"instructions": "Improved instructions"},
+                prompts={"instructions": "Reflect on this prompt..."},
+                raw_lm_outputs={"instructions": "```\nImproved instructions\n```"},
             ),
         )
 
@@ -747,6 +749,8 @@ class TestReflectionEvents:
 
         assert len(end_calls) == 1
         assert end_calls[0]["new_instructions"]["instructions"] == "Improved instructions"
+        assert end_calls[0]["prompts"]["instructions"] == "Reflect on this prompt..."
+        assert end_calls[0]["raw_lm_outputs"]["instructions"] == "```\nImproved instructions\n```"
 
 
 # =============================================================================

@@ -129,7 +129,7 @@ def _alarm_handler(signum, frame):
 def _compute_code_hash(code: str) -> str:
     """Compute MD5 hash of code for caching/deduplication."""
     normalized = "\n".join(line.rstrip() for line in code.strip().split("\n"))
-    return hashlib.md5(normalized.encode()).hexdigest()
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 def execute_code(

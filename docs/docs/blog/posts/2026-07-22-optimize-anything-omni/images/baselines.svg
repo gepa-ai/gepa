@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 380"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse" fill="#9CA3AF">
+      <path d="M 0 0 L 10 5 L 0 10 z"/>
+    </marker>
+  </defs>
+
+  <!-- ============================================================
+       Panel 1: Orchestrator Framework
+       (covers LLM-based + Agent-based)
+       ============================================================ -->
+  <g transform="translate(20, 0)">
+    <text x="220" y="28" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">Orchestrator Framework</text>
+    <text x="220" y="48" text-anchor="middle" font-size="12" fill="#6B7280">LLM-based · Agent-based</text>
+
+    <!-- Backdrop -->
+    <rect x="20" y="64" width="400" height="208" rx="12" fill="#ECF1F8" stroke="#B8C8DD" stroke-width="1.2"/>
+
+    <!-- Selector node (single line, both categories agree) -->
+    <rect x="48" y="84" width="344" height="62" rx="6" fill="#FFFFFF" stroke="#6B7280" stroke-width="1"/>
+    <text x="64" y="103" font-size="11" font-weight="700" fill="#374151" letter-spacing="0.6">PARENT SELECTION</text>
+    <text x="64" y="128" font-size="13" fill="#111827">Pareto frontier (or similar heuristic)</text>
+
+    <!-- Arrow selector -> proposer -->
+    <line x1="220" y1="146" x2="220" y2="170" stroke="#9CA3AF" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+    <!-- Proposer node: header + two category sub-boxes -->
+    <rect x="48" y="172" width="344" height="90" rx="6" fill="#FFFFFF" stroke="#6B7280" stroke-width="1"/>
+    <text x="64" y="189" font-size="11" font-weight="700" fill="#374151" letter-spacing="0.6">PROPOSER</text>
+    <!-- Sub-box: LLM-based -->
+    <rect x="66" y="200" width="145" height="52" rx="6" fill="#F4F8FC" stroke="#C4D0DF" stroke-width="1"/>
+    <text x="138" y="221" text-anchor="middle" font-size="11" font-weight="700" fill="#5A78A4">LLM-based</text>
+    <text x="138" y="240" text-anchor="middle" font-size="12" fill="#111827">Single LLM call</text>
+    <!-- Sub-box: Agent-based -->
+    <rect x="229" y="200" width="145" height="52" rx="6" fill="#F4F8FC" stroke="#C4D0DF" stroke-width="1"/>
+    <text x="301" y="221" text-anchor="middle" font-size="11" font-weight="700" fill="#5A78A4">Agent-based</text>
+    <text x="301" y="240" text-anchor="middle" font-size="12" fill="#111827">Coding agent</text>
+
+    <!-- Candidate arrow: proposer -> eval server (centered) -->
+    <line x1="220" y1="272" x2="220" y2="304" stroke="#9CA3AF" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+    <!-- Eval server (outside backdrop) -->
+    <rect x="48" y="306" width="344" height="44" rx="6" fill="#FFFFFF" stroke="#374151" stroke-width="1.4"/>
+    <text x="220" y="333" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Eval server</text>
+
+    <!-- Score arrow: eval server -> selector (loops back, around LEFT side) -->
+    <path d="M 48 328 Q 8 328 8 115 Q 8 115 46 115"
+          fill="none" stroke="#9CA3AF" stroke-width="1.3"
+          marker-end="url(#arrow)" stroke-dasharray="4,3"/>
+  </g>
+
+  <!-- ============================================================
+       Panel 2: Autonomous Agent
+       ============================================================ -->
+  <g transform="translate(480, 0)">
+    <text x="220" y="28" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">Autonomous Agent</text>
+    <text x="220" y="48" text-anchor="middle" font-size="12" fill="#6B7280">single agent owns the loop</text>
+
+    <!-- Backdrop -->
+    <rect x="20" y="64" width="400" height="208" rx="12" fill="#FCF1DD" stroke="#DDC59A" stroke-width="1.2"/>
+
+    <!-- Single combined agent box -->
+    <rect x="48" y="84" width="344" height="178" rx="6" fill="#FFFFFF" stroke="#6B7280" stroke-width="1"/>
+    <rect x="48" y="84" width="344" height="6" rx="3" fill="#E0B871"/>
+    <text x="220" y="115" text-anchor="middle" font-size="11" font-weight="700" fill="#9C7B36" letter-spacing="0.6">SELECTION + PROPOSER + ORCHESTRATOR</text>
+    <text x="220" y="138" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Coding agent</text>
+
+    <!-- Activity chips: 2x2, centered horizontally and vertically -->
+    <g font-size="11" fill="#7A5A1F">
+      <rect x="95"  y="170" width="118" height="30" rx="15" fill="#FFFAF0" stroke="#DDC59A" stroke-width="1"/>
+      <text x="154" y="189" text-anchor="middle">Read history</text>
+      <rect x="227" y="170" width="118" height="30" rx="15" fill="#FFFAF0" stroke="#DDC59A" stroke-width="1"/>
+      <text x="286" y="189" text-anchor="middle">Plan next step</text>
+      <rect x="95"  y="212" width="118" height="30" rx="15" fill="#FFFAF0" stroke="#DDC59A" stroke-width="1"/>
+      <text x="154" y="231" text-anchor="middle">Edit candidate</text>
+      <rect x="227" y="212" width="118" height="30" rx="15" fill="#FFFAF0" stroke="#DDC59A" stroke-width="1"/>
+      <text x="286" y="231" text-anchor="middle">Call eval</text>
+    </g>
+
+    <!-- Parallel arrows between agent and eval server (close together, no labels) -->
+    <line x1="212" y1="272" x2="212" y2="304" stroke="#9CA3AF" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <line x1="228" y1="304" x2="228" y2="272" stroke="#9CA3AF" stroke-width="1.4" marker-end="url(#arrow)" stroke-dasharray="4,3"/>
+
+    <!-- Eval server (outside backdrop) -->
+    <rect x="48" y="306" width="344" height="44" rx="6" fill="#FFFFFF" stroke="#374151" stroke-width="1.4"/>
+    <text x="220" y="333" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Eval server</text>
+  </g>
+</svg>

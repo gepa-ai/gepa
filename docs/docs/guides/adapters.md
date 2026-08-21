@@ -341,6 +341,7 @@ GEPA provides several ready-to-use adapters for common use cases:
 | Adapter | Description | Use Case |
 |---------|-------------|----------|
 | [DefaultAdapter](../api/adapters/DefaultAdapter.md) | Simple adapter for prompt optimization with any LLM | General prompt tuning, Q&A systems |
+| [ConfidenceAdapter](../api/adapters/ConfidenceAdapter.md) | Logprob-aware adapter for structured-output classification | Category classification, label prediction with enum outputs |
 | [DSPy Adapter](../api/adapters/DSPyAdapter.md) | Optimizes DSPy program instructions and prompts | DSPy module optimization |
 | [DSPy Full Program Adapter](../api/adapters/DSPyFullProgramAdapter.md) | Evolves entire DSPy programs including structure | Full program evolution, architecture search |
 | [RAG Adapter](../api/adapters/RAGAdapter.md) | Optimizes RAG pipeline components | Retrieval-augmented generation systems |
@@ -350,6 +351,8 @@ GEPA provides several ready-to-use adapters for common use cases:
 ### When to Use Each Adapter
 
 - **DefaultAdapter**: Start here for simple prompt optimization tasks. Works with any LLM via litellm.
+
+- **ConfidenceAdapter**: Use for **classification tasks** where the LLM returns a structured JSON output with `enum`-constrained fields (e.g. transaction categorization, sentiment analysis, intent classification). It extracts token-level logprobs via [`llm-structured-confidence`](https://github.com/rodolfonobrega/llm-structured-confidence) to penalise "lucky guesses" -- correct answers the model was uncertain about -- and feeds confidence details into the reflective feedback so GEPA can evolve prompts that resolve specific ambiguities between categories. Requires `pip install "gepa[confidence]"`.
 
 - **DSPy Adapter**: Use when you have a DSPy program and want to optimize the instructions for individual predictors while keeping the program structure fixed.
 

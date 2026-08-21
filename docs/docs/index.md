@@ -45,6 +45,8 @@ hide:
   <div class="marquee-wrapper">
     <div class="marquee-track">
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
+      <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent" target="_blank">Google</a>
+      <a href="https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf" target="_blank">Microsoft</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
       <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
       <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
@@ -60,32 +62,41 @@ hide:
       <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank">The Browser Company</a>
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
-      <span>NuBank</span>
-      <span>Infosys</span>
-      <span>Invitae</span>
-      <span>Bespoke Labs</span>
-      <!-- duplicate set for seamless loop -->
-      <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
-      <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
-      <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
-      <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
-      <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" target="_blank">Dropbox</a>
-      <a href="https://www.comet.com/site/blog/opik-product-releases-october2025/" target="_blank">Comet ML</a>
-      <a href="https://github.com/weaviate/recipes/blob/main/integrations/llm-agent-frameworks/dspy/GEPA-Hands-On-Reranker.ipynb" target="_blank">Weaviate</a>
-      <a href="https://mlflow.org/blog/mlflow-prompt-optimization" target="_blank">MLFlow</a>
-      <span>Uber</span>
-      <span>Meta</span>
-      <span>AWS</span>
-      <span>Cerebras</span>
-      <a href="https://x.com/risk_seeking/status/2015853790512222602?s=20" target="_blank">Standard Metrics</a>
-      <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank">The Browser Company</a>
-      <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
-      <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
-      <span>NuBank</span>
+      <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
+      <a href="https://arxiv.org/abs/2606.08867" target="_blank">Nubank</a>
       <span>Infosys</span>
       <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
       <span>Bespoke Labs</span>
+      <a href="https://decagon.ai/blog/optimizing-gepa-for-production" target="_blank">Decagon</a>
+      <a href="https://agenta.ai" target="_blank">Agenta</a>
+      <!-- duplicate set for seamless loop -->
+      <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
+      <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent" target="_blank">Google</a>
+      <a href="https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf" target="_blank">Microsoft</a>
+      <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
+      <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
+      <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
+      <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" target="_blank">Dropbox</a>
+      <a href="https://www.comet.com/site/blog/opik-product-releases-october2025/" target="_blank">Comet ML</a>
+      <a href="https://github.com/weaviate/recipes/blob/main/integrations/llm-agent-frameworks/dspy/GEPA-Hands-On-Reranker.ipynb" target="_blank">Weaviate</a>
+      <a href="https://mlflow.org/blog/mlflow-prompt-optimization" target="_blank">MLFlow</a>
+      <span>Uber</span>
+      <span>Meta</span>
+      <span>AWS</span>
+      <span>Cerebras</span>
+      <a href="https://x.com/risk_seeking/status/2015853790512222602?s=20" target="_blank">Standard Metrics</a>
+      <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank">The Browser Company</a>
+      <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
+      <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
+      <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
+      <a href="https://arxiv.org/abs/2606.08867" target="_blank">Nubank</a>
+      <span>Infosys</span>
+      <a href="https://sutro.sh/" target="_blank">Sutro</a>
+      <span>Invitae</span>
+      <span>Bespoke Labs</span>
+      <a href="https://decagon.ai/blog/optimizing-gepa-for-production" target="_blank">Decagon</a>
+      <a href="https://agenta.ai" target="_blank">Agenta</a>
     </div>
   </div>
 </div>
@@ -501,8 +512,10 @@ Traditional optimizers (RL, evolutionary strategies) collapse rich execution tra
     <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></div>
     <div class="use-case-title">Research & Advanced</div>
     <ul class="use-case-list">
-      <li>Multi-objective optimization</li>
+      <li>AI safety &amp; misalignment detection</li>
+      <li>Clinical NLP &amp; medical error detection</li>
       <li>Agent architecture discovery</li>
+      <li>Multi-objective optimization</li>
       <li>Adversarial prompt search</li>
     </ul>
   </a>

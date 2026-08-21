@@ -343,7 +343,7 @@ The results are striking: GEPA-optimized skills boost resolve rates from 24% to 
 
 <figure markdown="span">
   ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](images/kernelbench_results.png)
-  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors.<a href="#fn-kernelbench" class="fn-ref" id="fn-ref-kernelbench"><sup>1</sup></a></figcaption>
+  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster.[^kernelbench]</figcaption>
 </figure>
 
 To gauge the effectiveness of cross-task learning, we take the 10 problems where multi-task mode performed best and re-optimize each from scratch in single-task mode to see whether a dedicated single-task run can beat the multi-task result. The graph below shows that a multi-task mode converges faster and solves more problems across all speedup thresholds.
@@ -435,7 +435,7 @@ The seedless mode is particularly useful for tasks where the solution space is l
 
 The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns blind mutation into targeted, diagnostic-driven engineering; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
-By design, `optimize_anything` is a general frontend for text optimization. It is currently powered by GEPA as the optimization backend, but the API is backend-agnostic: as new optimization strategies emerge with increasingly powerful models, they can be plugged in without changing any user code. Our goal is for `optimize_anything` to always dispatch to the best available optimizer for your problem. We welcome community contributions of new optimization backends, evaluators, and case studies.
+By design, `optimize_anything` is a general frontend for text optimization. It is currently powered by GEPA as the default optimization engine, but the API is engine-agnostic: as new optimization strategies emerge with increasingly powerful models, they can be plugged in without changing any user code. Our goal is for `optimize_anything` to always dispatch to the best available optimizer for your problem. We welcome community contributions of new optimization engines, evaluators, and case studies.
 
 Get started:
 
@@ -499,3 +499,4 @@ With `capture_stdio=True`, any `print()` output inside your evaluator is automat
 [^islands]: See OpenEvolve's [island config](https://github.com/algorithmicsuperintelligence/openevolve/blob/main/openevolve/config.py#L308-L337) (e.g. in their [circle-packing example](https://github.com/algorithmicsuperintelligence/openevolve/blob/main/examples/circle_packing/config_phase_1.yaml#L42)) and ShinkaEvolve's [island strategies](https://github.com/SakanaAI/ShinkaEvolve/blob/main/shinka/database/islands.py) (e.g. in their [circle-packing example](https://github.com/SakanaAI/ShinkaEvolve/blob/main/examples/circle_packing/shinka_small.yaml#L9-L50)).
 [^samplers]: See OpenEvolve's [prompt sampler and template system](https://github.com/algorithmicsuperintelligence/openevolve/blob/main/openevolve/prompt/sampler.py) and ShinkaEvolve's [patch-type sampling](https://github.com/SakanaAI/ShinkaEvolve/blob/main/shinka/core/sampler.py) with [prompt co-evolution](https://github.com/SakanaAI/ShinkaEvolve/blob/main/examples/circle_packing/shinka_small.yaml#L138-L153).
 [^cascade]: See OpenEvolve's [three-stage cascade evaluator](https://github.com/algorithmicsuperintelligence/openevolve/blob/main/openevolve/evaluator.py#L110-L124) (e.g. [configured here](https://github.com/algorithmicsuperintelligence/openevolve/blob/main/examples/circle_packing/config_phase_1.yaml#L47-L52)) and ShinkaEvolve's [multi-run evaluation wrapper](https://github.com/SakanaAI/ShinkaEvolve/blob/main/shinka/core/wrap_eval.py).
+[^kernelbench]: See KernelBench's [representative subsets of 35 problems](https://github.com/ScalingIntelligence/KernelBench/blob/main/src/kernelbench/dataset.py#L503-L556). 4 problems (`23_Softmax`, `26_GELU`, `36_RMSNorm`, and `87_conv_pointwise_2D`) are excluded due to OOM on V100 32GB.

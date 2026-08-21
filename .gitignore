@@ -18,7 +18,6 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-.idea/
 build/
 develop-eggs/
 dist/
@@ -215,5 +214,11 @@ __marimo__/
 
 # Experiments
 runs/
+outputs/
 gepa_terminus/
 gepa_runs/
+archive/
+
+# Local MLflow tracking artifacts (TrackingConfig(use_mlflow=True))
+mlflow.db
+mlruns/

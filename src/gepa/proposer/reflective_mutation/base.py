@@ -48,3 +48,17 @@ class Signature:
         lm_res = lm(full_prompt)
         lm_out = lm_res.strip()
         return cls.output_extractor(lm_out)
+
+    @classmethod
+    def run_with_metadata(
+        cls, lm: LanguageModel, input_dict: Mapping[str, Any]
+    ) -> tuple[dict[str, str], str | list[dict[str, Any]], str]:
+        """Like ``run()``, but also returns the rendered prompt and raw LM output.
+
+        Returns:
+            A tuple of (extracted_output, rendered_prompt, raw_lm_output).
+        """
+        full_prompt = cls.prompt_renderer(input_dict)
+        lm_res = lm(full_prompt)
+        lm_out = lm_res.strip()
+        return cls.output_extractor(lm_out), full_prompt, lm_out

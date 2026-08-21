@@ -251,14 +251,14 @@ def _make_state(prog_val_scores, evaluator=None):
     state.increment_evals = lambda count: setattr(state, "total_num_evals", state.total_num_evals + count)
 
     # Add cached_evaluate method to match GEPAState interface (no caching for stubs)
-    def cached_evaluate(candidate, example_ids, fetcher, eval_fn):
+    def cached_evaluate(candidate, example_ids, fetcher, eval_fn, split=None):
         _, scores, _ = eval_fn(fetcher(example_ids), candidate)
         return scores, len(example_ids)
 
     state.cached_evaluate = cached_evaluate
 
     # Add cached_evaluate_full method to match GEPAState interface (no caching for stubs)
-    def cached_evaluate_full(candidate, example_ids, fetcher, eval_fn):
+    def cached_evaluate_full(candidate, example_ids, fetcher, eval_fn, split=None):
         outputs, scores, obj_scores = eval_fn(fetcher(example_ids), candidate)
         outputs_by_id = dict(zip(example_ids, outputs, strict=False))
         scores_by_id = dict(zip(example_ids, scores, strict=False))

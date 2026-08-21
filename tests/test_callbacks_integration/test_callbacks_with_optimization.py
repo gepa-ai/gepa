@@ -238,6 +238,15 @@ def test_callbacks_during_optimization(mocked_lms, recorder_dir):
     for call in proposal_end_calls:
         assert "new_instructions" in call
         assert "iteration" in call
+        assert "prompts" in call, "on_proposal_end should include prompts"
+        assert "raw_lm_outputs" in call, "on_proposal_end should include raw_lm_outputs"
+        # prompts and raw_lm_outputs should have the same keys as new_instructions
+        assert set(call["prompts"].keys()) == set(call["new_instructions"].keys())
+        assert set(call["raw_lm_outputs"].keys()) == set(call["new_instructions"].keys())
+        for comp_name in call["new_instructions"]:
+            assert call["prompts"][comp_name], f"Empty prompt for {comp_name}"
+            assert isinstance(call["raw_lm_outputs"][comp_name], str)
+            assert len(call["raw_lm_outputs"][comp_name]) > 0
 
     # Candidate acceptance/rejection callbacks - verify optimization decisions are tracked
     accepted_calls = callback.get_calls("on_candidate_accepted")

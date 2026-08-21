@@ -8,7 +8,7 @@ Callbacks are synchronous, observational (cannot modify state), and receive
 full GEPAState access for maximum flexibility.
 
 Each callback receives a single event TypedDict containing all parameters.
-This allows easy extension via NotRequired fields without breaking changes.
+This allows easy extension with optional fields without breaking changes.
 
 Example usage:
 
@@ -30,11 +30,14 @@ Example usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict, runtime_checkable
 
 if TYPE_CHECKING:
+    from gepa.core.data_loader import DataLoader
     from gepa.core.state import GEPAState, ProgramIdx
 
 logger = logging.getLogger(__name__)
@@ -44,7 +47,8 @@ logger = logging.getLogger(__name__)
 # Event TypedDicts
 # =============================================================================
 # Each callback receives a single event object containing all parameters.
-# Use NotRequired for optional fields when extending in the future.
+# Add optional fields via a `total=False` base TypedDict (see ProposalEndEvent) —
+# not `typing_extensions.NotRequired`, which the dependency-free core cannot import.
 
 
 class OptimizationStartEvent(TypedDict):
@@ -70,6 +74,7 @@ class IterationStartEvent(TypedDict):
 
     iteration: int
     state: GEPAState
+    trainset_loader: DataLoader
 
 
 class IterationEndEvent(TypedDict):
@@ -137,6 +142,7 @@ class ReflectiveDatasetBuiltEvent(TypedDict):
     """Event for on_reflective_dataset_built callback."""
 
     iteration: int
+    iteration_id: str
     candidate_idx: int
     components: list[str]
     dataset: dict[str, list[dict[str, Any]]]
@@ -151,11 +157,26 @@ class ProposalStartEvent(TypedDict):
     reflective_dataset: dict[str, list[dict[str, Any]]]
 
 
-class ProposalEndEvent(TypedDict):
+class _ProposalEndEventOptional(TypedDict, total=False):
+    """Optional keys of :class:`ProposalEndEvent`.
+
+    A separate ``total=False`` base class instead of ``NotRequired`` so the
+    dependency-free core does not need ``typing_extensions`` on Python 3.10.
+    """
+
+    metadata: dict[str, Any]
+    """Strategy diagnostics, including ComBEE map/reduce details when available."""
+
+
+class ProposalEndEvent(_ProposalEndEventOptional):
     """Event for on_proposal_end callback."""
 
     iteration: int
     new_instructions: dict[str, str]
+    prompts: dict[str, str | list[dict[str, Any]]]
+    """Per-component prompts sent to the reflection LM (component name → rendered prompt)."""
+    raw_lm_outputs: dict[str, str]
+    """Per-component raw LM outputs before extraction (component name → raw text)."""
 
 
 class CandidateAcceptedEvent(TypedDict):
@@ -543,3 +564,33 @@ def notify_callbacks(
                 method(event)
             except Exception as e:
                 logger.warning(f"Callback {callback} failed on {method_name}: {e}")
+
+
+class ReflectiveDatasetDumpCallback:
+    """Persist each iteration's reflective dataset under ``run_dir``.
+
+    GEPA writes per-iteration meta / components / trace / outputs under
+    ``iterations/<iteration_id>/`` when ``write_agent_state`` is enabled, but
+    the adapter-curated reflective dataset (the ``<side_info>`` the reflection
+    LM sees) is not otherwise persisted. This callback closes that gap so an
+    agent proposer can browse past iterations' structured feedback via
+    ``iterations/<iteration_id>/reflective_dataset.json``.
+
+    Registered automatically by the launcher when ``write_agent_state`` and
+    ``run_dir`` are both set — the same condition that produces the rest of the
+    ``iterations/<id>/`` tree. The ``iteration_id`` on the event is the on-disk
+    anchor GEPA uses for every other file in that directory.
+    """
+
+    def __init__(self, run_dir: str) -> None:
+        self._run_dir = run_dir
+
+    def on_reflective_dataset_built(self, event: ReflectiveDatasetBuiltEvent) -> None:
+        iteration_id = event.get("iteration_id")
+        dataset = event.get("dataset")
+        if not iteration_id or dataset is None:
+            return
+        base = os.path.join(self._run_dir, "iterations", str(iteration_id))
+        os.makedirs(base, exist_ok=True)
+        with open(os.path.join(base, "reflective_dataset.json"), "w") as f:
+            json.dump(dataset, f, indent=2, default=str)
