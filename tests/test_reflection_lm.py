@@ -598,3 +598,66 @@ def test_max_reflection_cost_with_costless_strategy_raises():
             max_reflection_cost=5.0,
             max_metric_calls=10,
         )
+
+
+# ---------------------------------------------------------------------------
+# A truncated reflection output must not become a candidate (#390)
+# ---------------------------------------------------------------------------
+
+
+class TruncatedLM:
+    """A fake reflection LM whose generation budget ran out mid-thought."""
+
+    def __init__(self):
+        self.calls: list = []
+
+    def __call__(self, prompt):
+        self.calls.append(prompt)
+        return "<think>\nOkay, let me try to figure out how to improve the parameter value based on"
+
+
+def test_reflect_skips_a_truncated_reflection_output():
+    fake = TruncatedLM()
+    logger = CollectingLogger()
+    lm = StatelessReflectionLM(fake, logger=logger)
+    candidate = {"a": "old_a"}
+
+    proposal, _ = lm.reflect(candidate, _reflective_dataset(["a"]), ["a"])
+
+    # The monologue is not offered as an instruction, and the component is left
+    # out entirely rather than proposed unchanged.
+    assert proposal.new_texts == {}
+    assert len(fake.calls) == 1
+    assert any("unterminated reasoning" in m for m in logger.messages)
+
+
+def test_reflect_many_skips_only_the_truncated_task():
+    class HalfTruncatedLM(TruncatedLM):
+        def __call__(self, prompt):
+            self.calls.append(prompt)
+            if "old_a" in str(prompt):
+                return "<think>\nran out of room"
+            return "```\nbrand new prompt\n```"
+
+    lm = StatelessReflectionLM(HalfTruncatedLM())
+    jobs = [
+        ({"a": "old_a"}, _reflective_dataset(["a"]), ["a"]),
+        ({"b": "old_b"}, _reflective_dataset(["b"]), ["b"]),
+    ]
+
+    results = lm.reflect_many(jobs)
+
+    assert results[0][0].new_texts == {}
+    assert results[1][0].new_texts == {"b": "brand new prompt"}
+
+
+def test_a_truncated_reflection_produces_no_child_and_burns_no_metric_calls():
+    """The end of the path #390 describes: through the real proposer, a
+    truncated monologue never reaches the candidate pool."""
+    proposer, adapter = _make_propose_harness(StatelessReflectionLM(TruncatedLM()))
+
+    proposals = proposer.propose(_make_state())
+
+    assert proposals == []
+    # Parent stage only: no minibatch evaluation was spent scoring a monologue.
+    assert adapter.batch_evaluate.call_count == 1
