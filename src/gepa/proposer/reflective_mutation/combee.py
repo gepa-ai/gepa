@@ -125,9 +125,9 @@ class ComBEEReflectionLM:
         logger: Optional logger with a ``log(str)`` method. When the strategy
             is passed to a GEPA front door, its configured logger is used when
             this argument is omitted.
-        batch_reflection: When True (default), multi-proposal iterations batch
-            all Level-1 calls into one wave and all Level-2 calls into a
-            second when the underlying LM provides ``batch_complete``. Without
+        batch_reflection: When True (default), iterations batch all Level-1
+            calls into one wave and all Level-2 calls into a second when the
+            underlying LM provides ``batch_complete``. Without
             that capability, it automatically preserves #307's strict
             sequential per-proposal order. Set False to enforce that order
             even for batch-capable, order-dependent callables. The strategy
@@ -459,6 +459,9 @@ class ComBEEReflectionLM:
         if self._active_job_idx is not None:
             return self._reflect(candidate, reflective_dataset, components_to_update, self._active_job_idx)
         if self._attempt is None:
+            if self._batch_reflection and callable(getattr(self.lm, "batch_complete", None)):
+                # Two-wave path: the job's map calls form one batched wave.
+                return self.reflect_many([(candidate, reflective_dataset, components_to_update)])[0]
             return self._reflect(candidate, reflective_dataset, components_to_update, None)
 
         attempt = self._attempt
@@ -542,7 +545,7 @@ class ComBEEReflectionLM:
             batch_complete = getattr(self.lm, "batch_complete", None)
             results = (
                 self._reflect_many_inner(jobs)
-                if self._batch_reflection and callable(batch_complete) and len(jobs) > 1
+                if self._batch_reflection and callable(batch_complete)
                 else self._reflect_many_sequential(jobs)
             )
         except Exception:

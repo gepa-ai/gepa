@@ -565,9 +565,11 @@ def test_reflect_many_batches_in_two_waves():
 
 
 def test_reflect_many_one_job_matches_reflect_for_transport_sensitive_lm():
-    """The public BatchReflectionLM API must preserve #307's single-job
-    transport. A batch-capable provider can return different samples through
-    batch_complete than through direct completion."""
+    """reflect() and reflect_many([job]) stay identical for a single job.
+
+    Since single-job map waves were enabled, both route the k map calls through
+    batch_complete (one wave) and the singleton reduce through a plain call;
+    ``batch_reflection=False`` restores #307's fully sequential transport."""
 
     class TransportSensitiveLM:
         def __init__(self):
@@ -592,12 +594,18 @@ def test_reflect_many_one_job_matches_reflect_for_transport_sensitive_lm():
     many = ComBEEReflectionLM(many_lm, rng=random.Random(7))
     many_proposal, _ = many.reflect_many([job])[0]
 
-    assert many_proposal.new_texts == direct_proposal.new_texts == {"comp": "plain-4"}
+    assert many_proposal.new_texts == direct_proposal.new_texts == {"comp": "plain-1"}
+    assert direct_lm.batch_sizes == many_lm.batch_sizes == [3]
+    assert direct_lm.plain_calls == many_lm.plain_calls == 1
+
+    sequential_lm = TransportSensitiveLM()
+    sequential = ComBEEReflectionLM(sequential_lm, rng=random.Random(7), batch_reflection=False)
+    sequential_proposal, _ = sequential.reflect(*job)
+    assert sequential_proposal.new_texts == {"comp": "plain-4"}
+    assert sequential_lm.batch_sizes == []
     assert many_proposal.prompts == direct_proposal.prompts
     assert many_proposal.raw_lm_outputs == direct_proposal.raw_lm_outputs
     assert many_proposal.metadata == direct_proposal.metadata
-    assert many_lm.batch_sizes == []
-    assert many_lm.plain_calls == 4
 
 
 class ContentKeyedLM:
@@ -1457,3 +1465,22 @@ def test_ordered_pxn_retry_is_cost_and_result_transparent():
     for retry_proposal, clean_proposal in zip(retry, clean_results, strict=True):
         assert retry_proposal.new_texts == clean_proposal.new_texts
         assert retry_proposal.prompts == clean_proposal.prompts
+
+
+def test_single_job_reflect_batches_map_wave():
+    """A plain single-proposal reflect() on a batch-capable LM runs its k map
+    calls as one wave and matches sequential mode's outputs and call order."""
+    replies = [f"map{i}" for i in range(3)] + ["reduced"]
+    batched_lm = BatchScriptedLM(replies)
+    combee_batched = ComBEEReflectionLM(batched_lm, rng=random.Random(0))
+    proposal_batched, _ = combee_batched.reflect({"comp": "seed instruction"}, {"comp": RECORDS9}, ["comp"])
+
+    sequential_lm = ScriptedLM(replies)
+    combee_sequential = ComBEEReflectionLM(sequential_lm, rng=random.Random(0), batch_reflection=False)
+    proposal_sequential, _ = combee_sequential.reflect({"comp": "seed instruction"}, {"comp": RECORDS9}, ["comp"])
+
+    # k = floor(sqrt(9)) = 3 maps form exactly one wave; the singleton reduce
+    # goes through the plain-call path, not a wave of one.
+    assert batched_lm.batch_sizes == [3]
+    assert proposal_batched.new_texts == proposal_sequential.new_texts == {"comp": "reduced"}
+    assert batched_lm.prompts == sequential_lm.prompts
