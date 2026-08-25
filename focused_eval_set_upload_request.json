@@ -1,0 +1,21 @@
+{
+  "name": "gepa-high-signal-glean-chat-v2",
+  "version": "20260806_hs_d6b2730909c4_retry_9137bf5fab98",
+  "bucketType": "SESSION",
+  "entries": [
+    {
+      "deploymentId": "scio-prod",
+      "user": "someone@glean.com",
+      "traceId": "trace-1",
+      "stt": "stt-1",
+      "qtt": "qtt-1",
+      "runId": "run-1",
+      "query": "how do I list shell files"
+    }
+  ],
+  "useUploadJob": true,
+  "metadata": {
+    "gepaSourceEvalSetName": "Glean Chat V2",
+    "gepaSourceEvalSetVersion": "20260806"
+  }
+}

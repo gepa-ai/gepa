@@ -12,6 +12,7 @@ from glean_gepa.shell_tool_error_util import (
     ShellToolErrorEntryMetrics,
     ShellToolErrorMetrics,
     build_eval_run_search_params,
+    build_shell_tool_error_per_entry_query,
     build_shell_tool_error_query_params,
     build_shell_tool_error_rate_query,
     empty_shell_tool_error_metrics,
@@ -62,7 +63,18 @@ def test_build_shell_tool_error_rate_query_includes_eval_and_shell_filters():
     for action_id in SHELL_ACTION_IDS:
         assert action_id in sql
     assert "jsonPayload.action.error_str" in sql
+    assert "jsonPayload.span_info.execution_status.message" in sql
+    assert "jsonPayload.span_info.execution_status.user_message" in sql
+    assert "shell_execution_id AS action_run_id" in sql
     assert "recent_error_examples" in sql
+
+
+def test_per_entry_query_collects_only_error_trace_ids_newest_first():
+    sql = build_shell_tool_error_per_entry_query()
+
+    assert "IF(is_error, trace_id, NULL)" in sql
+    assert "ORDER BY start_ms DESC" in sql
+    assert "AS trace_ids" in sql
 
 
 def test_build_shell_tool_error_query_params_uses_eval_run_date_range():
@@ -134,6 +146,8 @@ def test_parse_shell_tool_error_metrics_from_bigquery_row():
                 "span_id": "span-1",
                 "span_name": "Execute Action: Shell",
                 "action_id": "Shell",
+                "action_run_id": "call-1",
+                "action_input": '{"command":"python3 broken.py"}',
                 "action_status": "ERROR",
                 "span_status": "ERROR",
                 "provider_status": "failed",
@@ -152,6 +166,26 @@ def test_parse_shell_tool_error_metrics_from_bigquery_row():
     assert metrics.shell_success_rate == pytest.approx(0.8)
     assert len(metrics.recent_error_examples) == 1
     assert metrics.recent_error_examples[0].error_str == "command not found: foobar"
+    assert metrics.recent_error_examples[0].action_run_id == "call-1"
+    assert metrics.recent_error_examples[0].action_input == '{"command":"python3 broken.py"}'
+
+
+def test_parse_shell_tool_error_entry_metrics_includes_trace_ids():
+    from glean_gepa.shell_tool_error_util import parse_shell_tool_error_entry_metrics
+
+    metrics = parse_shell_tool_error_entry_metrics(
+        {
+            "entry_id": "entry-1",
+            "shell_executions": 2,
+            "shell_errors": 1,
+            "shell_error_rate": 0.5,
+            "shell_error_pct": 50.0,
+            "recent_error_examples": [],
+            "trace_ids": ["trace-newest", "trace-older"],
+        }
+    )
+
+    assert metrics.trace_ids == ("trace-newest", "trace-older")
 
 
 def test_parse_shell_tool_error_example_handles_missing_fields():

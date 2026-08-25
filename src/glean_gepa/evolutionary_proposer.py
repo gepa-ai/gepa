@@ -14,10 +14,9 @@ from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
+from gepa.proposer.base import CandidateProposal
 from glean_gepa.al_adapter import (
     MODULES,
-    AssistantALAdapter,
     Candidate,
     JudgingMode,
     ModuleSpec,
@@ -25,16 +24,20 @@ from glean_gepa.al_adapter import (
     within_prompt_budget,
 )
 from glean_gepa.batch import GleanEvaluationBatch
+from glean_gepa.evalset_policy import UnseenEvalSetPolicy
+from glean_gepa.prompt import WRITING_CODE_KEY, default_writing_code
+from glean_gepa.single_model_adapter import SingleModelAdapter
+from glean_gepa.teacher_student_adapter import TeacherStudentAdapter
 from glean_gepa.utils import apply_single_module_edit
 
 
 # TODO(Cathy): pick modules based on holistic performance of the eval
 def pick_modules_to_edit() -> list[str]:
-    return random.choices(MODULES, k=2)
+    return list(MODULES)
 
 
 def make_children_for_generation(
-    adapter: AssistantALAdapter,
+    adapter: SingleModelAdapter | TeacherStudentAdapter,
     frontier_candidates: list[Candidate],
     frontier_evals: dict[str, GleanEvaluationBatch],
     reflection_llm: Any,
@@ -75,17 +78,18 @@ def make_children_for_generation(
 
         # Ask the reflection model for one to three small rewrite variants.
         for module in modules_to_edit:
-            variants, not_relevant = adapter.propose_new_texts(
+            variants, _ = adapter.propose_new_texts(
                 reflection_llm=reflection_llm,
                 candidate=parent,
                 components_to_update=[module],
                 reflective_examples=high_signal[module],
             )
-            if not_relevant or not variants:
-                print(f"Not relevant or no variants for module {module}")
+            if not variants:
+                print(f"Reflection produced no variants for module {module}")
                 continue
 
             for variant in variants[: max(1, offspring_count - len(children))]:
+                print(f"Updated module {module}:\n{variant}")
                 child = apply_single_module_edit(parent, module, variant)
                 children.append(child)
                 if len(children) >= offspring_count:
@@ -94,10 +98,10 @@ def make_children_for_generation(
     return children
 
 
-class EvolutionaryProposer(ProposeNewCandidate[DataId]):
+class EvolutionaryProposer:
     """
     Proposer that generates reflection-driven mutations from Pareto-frontier
-    candidates and returns the strongest screened child.
+    candidates and returns the strongest screened child as a singleton list.
 
     Bridges between GEPA's dict[str, str] candidate format and the
     Glean AL adapter's Candidate type for reflection-driven mutation.
@@ -107,7 +111,7 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
         self,
         logger: LoggerProtocol,
         trainset: list[DataInst] | DataLoader[DataId, DataInst],
-        al_adapter: AssistantALAdapter,
+        al_adapter: SingleModelAdapter | TeacherStudentAdapter,
         reflection_llm: Any,
         experiment_tracker: ExperimentTracker,
         # Candidate config (for converting dict[str,str] <-> Candidate)
@@ -120,6 +124,7 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
         offspring_count: int = 24,
         reflect_k: int = 8,
         callbacks: list[GEPACallback] | None = None,
+        evalset_policy: UnseenEvalSetPolicy | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -128,6 +133,7 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
         self.experiment_tracker = experiment_tracker
         self.judging_mode = judging_mode
         self.callbacks = callbacks
+        self.evalset_policy = evalset_policy
 
         # Candidate conversion config
         self.model = model
@@ -157,19 +163,20 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
                 self._batch_data = []
 
     def _to_candidate(self, program: dict[str, str]) -> Candidate:
-        """Convert a GEPA dict[str, str] program to a Glean Candidate with a deterministic id."""
-        content = json.dumps(program, sort_keys=True)
+        """Convert a GEPA program to the sole editable Glean prompt module."""
+        prompt_modules = {WRITING_CODE_KEY: program.get(WRITING_CODE_KEY, default_writing_code)}
+        content = json.dumps(prompt_modules, sort_keys=True)
         cand_id = hashlib.md5(content.encode()).hexdigest()[:10]
         return Candidate(
             model=self.model,
-            prompt_modules=dict(program),
+            prompt_modules=prompt_modules,
             module_specs=self.module_specs,
             global_token_cap=self.global_token_cap,
             baseline_prompt_hash=self.baseline_prompt_hash,
             candidate_id=cand_id,
         )
 
-    def propose(self, state: GEPAState) -> CandidateProposal | None:
+    def propose(self, state: GEPAState) -> list[CandidateProposal]:
         i = state.i + 1
 
         # 1. Get frontier program indices from Pareto front
@@ -181,7 +188,7 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
 
         if not frontier_idxs_sorted:
             self.logger.log(f"Iteration {i}: No frontier programs found")
-            return None
+            return []
         else:
             self.logger.log(f"Iteration {i}: Found the following frontier programs {frontier_idxs_sorted}")
 
@@ -196,8 +203,13 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
             prog_idx_to_cand_id[idx] = cand.candidate_id
             frontier_candidates.append(cand)
 
+            if self.evalset_policy is not None:
+                prior_ids = list(state.prog_candidate_val_subscores[idx])
+                trace_batch = self.trainset.fetch(prior_ids)
+            else:
+                trace_batch = self._batch_data
             frontier_evals[cand.candidate_id] = self.al_adapter.evaluate(
-                self._batch_data, program, capture_traces=True
+                trace_batch, cand.prompt_modules, capture_traces=True
             )
 
         # 3. Generate children using evolutionary strategies
@@ -213,22 +225,26 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
 
         if not children:
             self.logger.log(f"Iteration {i}: Evolutionary proposer generated no children")
-            return None
+            return []
 
         # 4. Filter children by prompt budget
         valid_children = [c for c in children if within_prompt_budget(c)]
         if not valid_children:
             self.logger.log(f"Iteration {i}: No children passed budget check")
-            return None
+            return []
 
         # 5. Screen children with AL adapter and pick best
         best_child: Candidate | None = None
         best_child_eval: GleanEvaluationBatch | None = None
         best_child_score = float("-inf")
+        if self.evalset_policy is not None:
+            screen_ids = self.evalset_policy.take_unseen(self.trainset, purpose="offspring full screen")
+            screen_batch = self.trainset.fetch(screen_ids)
+        else:
+            screen_ids = list(self.trainset.all_ids())
+            screen_batch = self._batch_data
         for child in valid_children:
-            screen_eval = self.al_adapter.evaluate(
-                self._batch_data, child.prompt_modules, capture_traces=False
-            )
+            screen_eval = self.al_adapter.evaluate(screen_batch, child.prompt_modules, capture_traces=False)
             child_score = get_screening_score(screen_eval, self.judging_mode)
             if child_score > best_child_score:
                 best_child = child
@@ -236,17 +252,21 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
                 best_child_score = child_score
 
         if best_child is None or best_child_eval is None:
-            return None
+            return []
 
         # 6. Get best parent and their evaluation (already cached)
         val_scores = state.program_full_scores_val_set
         best_parent_idx = max(frontier_idxs_sorted, key=lambda idx: val_scores[idx])
         best_parent_cand_id = prog_idx_to_cand_id[best_parent_idx]
-        parent_eval = frontier_evals[best_parent_cand_id]
+        if self.evalset_policy is not None:
+            best_parent = self._to_candidate(state.program_candidates[best_parent_idx])
+            parent_eval = self.al_adapter.evaluate(screen_batch, best_parent.prompt_modules, capture_traces=False)
+        else:
+            parent_eval = frontier_evals[best_parent_cand_id]
 
         # Use screen eval set as "subsample" (one eval set evaluation)
         # Both parent and child evaluated on same screen eval set
-        subsample_ids = [0]  # Dummy ID since we evaluate on full eval set
+        subsample_ids = screen_ids
         parent_score = get_screening_score(parent_eval, self.judging_mode)
         child_score = get_screening_score(best_child_eval, self.judging_mode)
         state.increment_evals(1)  # One eval set run
@@ -266,11 +286,13 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
             step=i,
         )
 
-        return CandidateProposal(
-            candidate=best_child.prompt_modules,
-            parent_program_ids=[best_parent_idx],
-            subsample_indices=subsample_ids,
-            subsample_scores_before=[parent_score],
-            subsample_scores_after=[child_score],
-            tag="evolutionary",
-        )
+        return [
+            CandidateProposal(
+                candidate=best_child.prompt_modules,
+                parent_program_ids=[best_parent_idx],
+                subsample_indices=subsample_ids,
+                subsample_scores_before=[parent_score],
+                subsample_scores_after=[child_score],
+                tag="evolutionary",
+            )
+        ]

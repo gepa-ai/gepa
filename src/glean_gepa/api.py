@@ -2,60 +2,51 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import FrontierType
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
+from gepa.strategies.eval_policy import EvaluationPolicy
 from gepa.utils import MaxMetricCallsStopper
-from glean_gepa.al_adapter import ALDataInst, AssistantALAdapter
+from glean_gepa.adapter_types import SingleModelALDataInst, TeacherStudentALDataInst
 from glean_gepa.evolutionary_proposer import EvolutionaryProposer
-
-
-class _EngineProposerBridge:
-    """Normalize Glean proposals across GEPA engine revisions."""
-
-    def __init__(self, proposer: EvolutionaryProposer):
-        self._proposer = proposer
-        self.trainset = proposer.trainset
-
-    def propose(self, state: Any) -> Any:
-        proposal = self._proposer.propose(state)
-        if hasattr(GEPAEngine, "_run_reflective_batch"):
-            return [proposal] if proposal is not None else []
-        return proposal
+from glean_gepa.single_model_adapter import SingleModelAdapter
+from glean_gepa.teacher_student_adapter import TeacherStudentAdapter
 
 
 def optimize(
     *,
     seed_candidate: dict[str, str],
-    trainset: list[ALDataInst],
-    valset: list[ALDataInst],
-    adapter: AssistantALAdapter,
+    trainset: list[SingleModelALDataInst] | list[TeacherStudentALDataInst],
+    valset: list[SingleModelALDataInst] | list[TeacherStudentALDataInst],
+    adapter: SingleModelAdapter | TeacherStudentAdapter,
     proposer: EvolutionaryProposer,
     logger: LoggerProtocol,
     experiment_tracker: ExperimentTracker,
     max_metric_calls: int,
     run_dir: str | None,
     frontier_type: FrontierType,
+    val_evaluation_policy: EvaluationPolicy | None = None,
 ) -> GEPAResult:
     """Run the Glean proposer while keeping custom wiring outside ``gepa.api``."""
     del trainset  # The proposer owns its training loader; the engine only needs validation data.
     engine = GEPAEngine(
-        adapter=adapter,
+        adapter=cast(Any, adapter),
         run_dir=run_dir,
-        valset=valset,
+        valset=cast(Any, valset),
         seed_candidate=seed_candidate,
         perfect_score=1.0,
         seed=0,
-        reflective_proposer=_EngineProposerBridge(proposer),  # type: ignore[arg-type]
+        reflective_proposer=proposer,  # type: ignore[arg-type]
         merge_proposer=None,
         frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
         stop_callback=MaxMetricCallsStopper(max_metric_calls),
+        val_evaluation_policy=val_evaluation_policy,
     )
 
     with experiment_tracker:

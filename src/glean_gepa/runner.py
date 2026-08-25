@@ -12,12 +12,11 @@ from typing import cast
 from gepa.core.state import FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import StdOutLogger
+from glean_gepa.adapter_types import ALDataInst
 from glean_gepa.al_adapter import (
     DEFAULT_FRONTIER_TYPE_BY_MODE,
     MODULES,
-    ALDataInst,
     ALRunner,
-    AssistantALAdapter,
     Judge,
     JudgingMode,
     ModuleSpec,
@@ -26,8 +25,12 @@ from glean_gepa.al_adapter import (
 from glean_gepa.api import optimize
 from glean_gepa.bigquery_client import BigQueryClient
 from glean_gepa.evalcli_client import EvalCliClient
+from glean_gepa.evalset_policy import UnseenEvalSetPolicy
 from glean_gepa.evolutionary_proposer import EvolutionaryProposer
 from glean_gepa.openai_client import create_qe_openai_client, format_exception_chain, get_perfeval_secret
+from glean_gepa.prompt import WRITING_CODE_KEY
+from glean_gepa.single_model_adapter import SingleModelAdapter
+from glean_gepa.teacher_student_adapter import TeacherStudentAdapter
 
 
 def _load_seed_candidate(path: Path) -> dict[str, str]:
@@ -37,17 +40,12 @@ def _load_seed_candidate(path: Path) -> dict[str, str]:
     if not isinstance(raw, dict) or not raw:
         raise SystemExit("seed_candidate must be a non-empty JSON object")
 
-    candidate: dict[str, str] = {}
-    for key, value in raw.items():
-        if isinstance(value, str):
-            candidate[str(key)] = value
-        elif isinstance(value, list) and len(value) == 1:
-            candidate[str(key)] = str(value[0])
-        else:
-            raise SystemExit(
-                f"seed_candidate values must be strings or single-element lists. Got key={key!r} type={type(value)}"
-            )
-    return candidate
+    if set(raw) != {WRITING_CODE_KEY}:
+        raise SystemExit(f"seed_candidate must contain only {WRITING_CODE_KEY!r}")
+    writing_code = raw[WRITING_CODE_KEY]
+    if not isinstance(writing_code, str):
+        raise SystemExit(f"{WRITING_CODE_KEY} must be a string. Got type={type(writing_code)}")
+    return {WRITING_CODE_KEY: writing_code}
 
 
 def _make_reflection_lm(
@@ -59,8 +57,13 @@ def _make_reflection_lm(
     max_tokens: int = 4096,
 ) -> Callable[[str], str]:
     client = create_qe_openai_client(qe_instance)
+    call_count = 0
 
     def reflection_lm(prompt: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        print(f"QE reflection LLM call {call_count}: requesting model={model}, prompt_chars={len(prompt)}")
+        print(f"QE reflection LLM call {call_count} prompt:\n{prompt}")
         try:
             response = client.responses.create(
                 model=model,
@@ -75,10 +78,15 @@ def _make_reflection_lm(
                     "authenticated_email": authenticated_email,
                 },
             )
-            return response.output_text
+            response_text = response.output_text.strip()
+            if not response_text:
+                raise RuntimeError("QE reflection LLM returned an empty response")
+            print(f"QE reflection LLM call {call_count}: received response_chars={len(response_text)}")
+            print(f"QE reflection LLM call {call_count} response:\n{response_text}")
+            return response_text
         except Exception as exc:
-            print(f"QE reflection LLM call failed: {format_exception_chain(exc)}")
-            return ""
+            message = format_exception_chain(exc)
+            raise RuntimeError(f"QE reflection LLM call failed: {message}") from exc
 
     return reflection_lm
 
@@ -88,7 +96,7 @@ def main() -> None:
     parser.add_argument("--seed_candidate", required=True, type=Path)
     parser.add_argument("--max_metric_calls", type=int, default=10)
     parser.add_argument("--run_dir", type=Path, default=None)
-    parser.add_argument("--student_model", default="fast")
+    parser.add_argument("--student_model", default="gpt")
     parser.add_argument("--teacher_model", default="gpt")
     parser.add_argument("--reflection_lm_model", default="OPEN_AI:GPT5_LATEST")
     parser.add_argument("--qe_project", default="dev-sandbox-334901")
@@ -124,16 +132,14 @@ def main() -> None:
     evalcli = EvalCliClient(binary=args.evalcli)
     adapter_kwargs = {
         "runner": ALRunner(evalcli=evalcli),
-        "judging_mode": judging_mode,
-        "teacher_model": args.teacher_model,
         "thresholds": Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
         "student_model": args.student_model,
         "cache_file": "~/eval_cache.json",
     }
     if judging_mode == "teacher_student":
-        adapter = AssistantALAdapter(**adapter_kwargs, judge=Judge(evalcli))
+        adapter = TeacherStudentAdapter(**adapter_kwargs, teacher_model=args.teacher_model, judge=Judge(evalcli))
     else:
-        adapter = AssistantALAdapter(
+        adapter = SingleModelAdapter(
             **adapter_kwargs,
             bigquery_client=BigQueryClient(project_id=args.bigquery_project),
             shell_error_lookback_days=args.shell_error_lookback_days,
@@ -142,6 +148,7 @@ def main() -> None:
     logger = StdOutLogger()
     tracker = create_experiment_tracker()
     module_specs = {name: ModuleSpec(name, "free_text", 1024) for name in MODULES}
+    evalset_policy = UnseenEvalSetPolicy() if judging_mode == "single_model" else None
     proposer = EvolutionaryProposer(
         logger=logger,
         trainset=evalset,
@@ -158,6 +165,7 @@ def main() -> None:
         global_token_cap=args.global_token_cap,
         baseline_prompt_hash=hashlib.md5(json.dumps(seed_candidate, sort_keys=True).encode()).hexdigest(),
         judging_mode=judging_mode,
+        evalset_policy=evalset_policy,
     )
     optimize(
         seed_candidate=seed_candidate,
@@ -170,6 +178,7 @@ def main() -> None:
         max_metric_calls=args.max_metric_calls,
         run_dir=str(args.run_dir) if args.run_dir else None,
         frontier_type=cast(FrontierType, DEFAULT_FRONTIER_TYPE_BY_MODE[judging_mode]),
+        val_evaluation_policy=evalset_policy,
     )
 
 

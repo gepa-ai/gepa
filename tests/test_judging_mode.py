@@ -6,7 +6,6 @@ from glean_gepa.al_adapter import (
     DEFAULT_FRONTIER_TYPE_BY_MODE,
     PRIMARY_OBJECTIVE_BY_MODE,
     ALRunner,
-    AssistantALAdapter,
     Judge,
     Thresholds,
     get_screening_score,
@@ -14,6 +13,8 @@ from glean_gepa.al_adapter import (
 from glean_gepa.batch import GleanEvaluationBatch
 from glean_gepa.evalcli_client import EvalCliClient
 from glean_gepa.shell_tool_error_util import SHELL_SUCCESS_OBJECTIVE
+from glean_gepa.single_model_adapter import SingleModelAdapter
+from glean_gepa.teacher_student_adapter import TeacherStudentAdapter
 
 
 def test_primary_objectives_and_frontier_defaults():
@@ -39,25 +40,22 @@ def test_get_screening_score_uses_mode_specific_objective():
     assert get_screening_score(judge_eval, "teacher_student") == 0.9
 
 
-def test_teacher_student_mode_requires_judge():
+def test_teacher_student_adapter_requires_judge():
     runner = ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli"))
     with pytest.raises(ValueError, match="judge is required"):
-        AssistantALAdapter(
+        TeacherStudentAdapter(
             runner=runner,
-            judging_mode="teacher_student",
             teacher_model="gpt",
             student_model="fast",
             thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
         )
 
 
-def test_single_model_mode_requires_bigquery_client():
+def test_single_model_adapter_requires_bigquery_client():
     runner = ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli"))
     with pytest.raises(ValueError, match="bigquery_client is required"):
-        AssistantALAdapter(
+        SingleModelAdapter(
             runner=runner,
-            judging_mode="single_model",
-            teacher_model="gpt",
             student_model="fast",
             thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
         )
@@ -65,9 +63,8 @@ def test_single_model_mode_requires_bigquery_client():
 
 def test_teacher_student_adapter_accepts_judge():
     runner = ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli"))
-    adapter = AssistantALAdapter(
+    adapter = TeacherStudentAdapter(
         runner=runner,
-        judging_mode="teacher_student",
         judge=Judge(EvalCliClient(binary="/fake/evalcli")),
         teacher_model="gpt",
         student_model="fast",

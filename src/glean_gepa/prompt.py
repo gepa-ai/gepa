@@ -227,11 +227,8 @@ def compile_encoded_prompt(candidate: dict[str, str]) -> str:
     system_prompt = prompt_format.replace("{WRITING_CODE}", writing_code)
 
     encoded_system_prompt = str(b64encode(system_prompt.encode("utf-8")))
-    encoded_format_instructions = str(b64encode(b""))
 
     return (
-        "llmo.prompt_overrides=gpt5_agentic_loop_system:"
+        "llmo.per_prompt_overrides.coding_agent_loop_system="
         + encoded_system_prompt
-        + "llmo.per_prompt_overrides.response_formatting_instructions="
-        + encoded_format_instructions
     )

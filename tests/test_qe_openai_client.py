@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 from glean_gepa.openai_client import create_qe_openai_client, format_exception_chain, get_perfeval_secret
 from glean_gepa.runner import _make_reflection_lm
 
@@ -31,12 +33,10 @@ def test_format_exception_chain_includes_transport_root_cause() -> None:
     outer = RuntimeError("Connection error")
     outer.__cause__ = root
 
-    assert format_exception_chain(outer) == (
-        "RuntimeError: Connection error <- OSError: temporary DNS failure"
-    )
+    assert format_exception_chain(outer) == ("RuntimeError: Connection error <- OSError: temporary DNS failure")
 
 
-def test_reflection_lm_uses_qe_responses_auth_body() -> None:
+def test_reflection_lm_uses_qe_responses_auth_body(capsys: pytest.CaptureFixture[str]) -> None:
     response = Mock(output_text="ack")
     client = Mock()
     client.responses.create.return_value = response
@@ -50,6 +50,14 @@ def test_reflection_lm_uses_qe_responses_auth_body() -> None:
         )
 
     assert reflection_lm("Just say ack") == "ack"
+    assert capsys.readouterr().out == (
+        "QE reflection LLM call 1: requesting model=OPEN_AI:GPT5_LATEST, prompt_chars=12\n"
+        "QE reflection LLM call 1 prompt:\n"
+        "Just say ack\n"
+        "QE reflection LLM call 1: received response_chars=3\n"
+        "QE reflection LLM call 1 response:\n"
+        "ack\n"
+    )
     client.responses.create.assert_called_once_with(
         model="OPEN_AI:GPT5_LATEST",
         input="Just say ack",
@@ -63,3 +71,35 @@ def test_reflection_lm_uses_qe_responses_auth_body() -> None:
             "authenticated_email": "cathy.chen@glean.com",
         },
     )
+
+
+def test_reflection_lm_raises_for_an_empty_qe_response() -> None:
+    client = Mock()
+    client.responses.create.return_value = Mock(output_text="   ")
+
+    with patch("glean_gepa.runner.create_qe_openai_client", return_value=client):
+        reflection_lm = _make_reflection_lm(
+            "OPEN_AI:GPT5_LATEST",
+            qe_project="dev-sandbox-334901",
+            qe_instance="glean-dev",
+            authenticated_email="cathy.chen@glean.com",
+        )
+
+    with pytest.raises(RuntimeError, match="QE reflection LLM returned an empty response"):
+        reflection_lm("Just say ack")
+
+
+def test_reflection_lm_surfaces_qe_request_errors() -> None:
+    client = Mock()
+    client.responses.create.side_effect = ConnectionError("proxy unavailable")
+
+    with patch("glean_gepa.runner.create_qe_openai_client", return_value=client):
+        reflection_lm = _make_reflection_lm(
+            "OPEN_AI:GPT5_LATEST",
+            qe_project="dev-sandbox-334901",
+            qe_instance="glean-dev",
+            authenticated_email="cathy.chen@glean.com",
+        )
+
+    with pytest.raises(RuntimeError, match="ConnectionError: proxy unavailable"):
+        reflection_lm("Just say ack")
