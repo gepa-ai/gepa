@@ -10,53 +10,23 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as datetime_time
-from typing import Any, Callable, Literal, NotRequired, TypedDict, cast
+from typing import Any, Callable, NotRequired, TypedDict
 
 from gepa.core.adapter import EvaluationBatch
 from glean_gepa.adapter_types import (
     ALDataInst,
     ALRolloutOutput,
     ALTrajectory,
-    SingleModelALDataInst,
-    SingleModelALRolloutOutput,
-    SingleModelALTrajectory,
-    TeacherStudentALDataInst,
-    TeacherStudentALRolloutOutput,
-    TeacherStudentALTrajectory,
 )
 from glean_gepa.batch import GleanEvaluationBatch
 from glean_gepa.evalcli_client import EvalCliClient
-from glean_gepa.prompt import compile_encoded_prompt
 from glean_gepa.shell_tool_error_util import (
-    SHELL_SUCCESS_OBJECTIVE,
     EvalRunShellToolErrorAnalysis,
-    fetch_eval_run_shell_tool_error_analysis,
     parse_shell_tool_error_entry_metrics,
     parse_shell_tool_error_metrics,
 )
 
 EVAL_ANALYSIS_CACHE_SCHEMA_VERSION = 6
-
-JudgingMode = Literal["teacher_student", "single_model"]
-TEACHER_STUDENT_PRIMARY_OBJECTIVE = "correctness"
-
-PRIMARY_OBJECTIVE_BY_MODE: dict[JudgingMode, str] = {
-    "single_model": SHELL_SUCCESS_OBJECTIVE,
-    "teacher_student": TEACHER_STUDENT_PRIMARY_OBJECTIVE,
-}
-
-DEFAULT_FRONTIER_TYPE_BY_MODE: dict[JudgingMode, str] = {
-    "single_model": "objective",
-    "teacher_student": "hybrid",
-}
-
-
-def get_screening_score(eval_batch: GleanEvaluationBatch, judging_mode: JudgingMode) -> float:
-    """Return the primary score used to screen offspring and compare parent/child."""
-    if eval_batch.summary is None:
-        return float("-inf")
-    objective = PRIMARY_OBJECTIVE_BY_MODE[judging_mode]
-    return eval_batch.summary.get(objective, float("-inf"))
 
 
 def log_shell_tool_error_analysis(analysis: EvalRunShellToolErrorAnalysis) -> None:
@@ -202,6 +172,12 @@ ReflectiveExample = TypedDict(
         "Metrics": ReflectiveExampleMetrics,
     },
 )
+
+EvaluateFn = Callable[[list[ALDataInst], dict[str, str], bool], GleanEvaluationBatch]
+FailurePatternFn = Callable[[str, Any], tuple[Any, ...]]
+ReflectiveExampleFn = Callable[[str, Any, dict[str, str]], ReflectiveExample]
+ReflectionPromptFn = Callable[[str], str]
+ReflectiveMetricsFn = Callable[[ReflectiveExampleMetrics], str | None]
 
 
 @dataclass
@@ -863,30 +839,31 @@ class GleanAdapterBase:
     def __init__(
         self,
         runner: ALRunner,
-        teacher_model: str,
         thresholds: Thresholds,
         student_model: str,
         *,
-        judging_mode: JudgingMode = "single_model",
-        judge: Judge | None = None,
-        bigquery_client: Any | None = None,
-        shell_error_lookback_days: int = 7,
+        evaluate_fn: EvaluateFn,
+        failure_pattern_fn: FailurePatternFn,
+        reflective_example_fn: ReflectiveExampleFn,
+        reflection_prompt_fn: ReflectionPromptFn,
+        reflective_metrics_fn: ReflectiveMetricsFn,
+        failure_label: str,
+        primary_objective: str,
+        default_frontier_type: str,
         cache_file: str | None = None,
     ):
-        if judging_mode == "teacher_student" and judge is None:
-            raise ValueError("judge is required for teacher_student judging mode")
-        if judging_mode == "single_model" and bigquery_client is None:
-            raise ValueError("bigquery_client is required for single_model judging mode")
-
         self.runner = runner
-        self.judging_mode = judging_mode
-        self.judge = judge
-        self.bigquery_client = bigquery_client
-        self.shell_error_lookback_days = shell_error_lookback_days
-        self.teacher_model = teacher_model
         self.thresholds = thresholds
         self.student_model = student_model
+        self.primary_objective = primary_objective
+        self.default_frontier_type = default_frontier_type
         self.cache_file = os.path.expanduser(cache_file) if cache_file else None
+        self._evaluate_fn = evaluate_fn
+        self._failure_pattern_fn = failure_pattern_fn
+        self._reflective_example_fn = reflective_example_fn
+        self._reflection_prompt_fn = reflection_prompt_fn
+        self._reflective_metrics_fn = reflective_metrics_fn
+        self._failure_label = failure_label
 
         # module freezing memory: module -> count of "not relevant" in consecutive generations
         self._module_irrelevant_streak: dict[tuple[str, str], int] = defaultdict(
@@ -898,7 +875,7 @@ class GleanAdapterBase:
         self.good_module_options: dict[str, list[str]] = defaultdict(list)
 
         # Eval ID cache: (eval_set_name, eval_set_version, model, prompt_hash) -> eval_id
-        self._eval_cache: dict[tuple[str, str, str, str], str] = {}
+        self._eval_cache: dict[tuple[str, ...], str] = {}
 
         # These caches are keyed by the immutable eval run ID so they remain useful
         # when the prompt/eval cache is loaded in a later process.
@@ -1029,90 +1006,20 @@ class GleanAdapterBase:
             except (KeyError, TypeError, ValueError):
                 continue
 
-    def _get_or_fetch_shell_error_analysis(self, eval_id: str) -> EvalRunShellToolErrorAnalysis:
-        cached = self._eval_analysis_cache.get(eval_id)
-        if cached is not None:
-            print(f"[Cache HIT] Using cached shell error analysis for eval_id: {eval_id}")
-            return cached
-        analysis = fetch_eval_run_shell_tool_error_analysis(
-            self.bigquery_client,
-            eval_id=eval_id,
-            lookback_days=self.shell_error_lookback_days,
-        )
-        analysis = enrich_shell_error_action_inputs(self.runner.evalcli, analysis)
-        self._eval_analysis_cache[eval_id] = analysis
-        self._save_cache()
-        return analysis
-
-    def _extract_per_entry_metrics(
-        self, judge_result: JudgeResult, student_eval_id: str, teacher_eval_id: str
-    ) -> dict[str, dict[str, float]]:
-        """Extract per-entry metrics from judge result traces.
-
-        Returns:
-            Dict mapping entry_id -> {correctness, tool_alignment, grounding}
-        """
-        per_entry_metrics = {}
-
-        if not judge_result.traces:
-            return per_entry_metrics
-
-        # Process each entry's traces
-        for entry_id, trace_infos in judge_result.traces.items():
-            student_trace_info = None
-            teacher_trace_info = None
-
-            # Find student and teacher trace infos for this entry
-            for trace_info in trace_infos:
-                eval_id = trace_info.get("eval_id")
-                if eval_id == student_eval_id:
-                    student_trace_info = trace_info
-                elif eval_id == teacher_eval_id:
-                    teacher_trace_info = trace_info
-
-            if not student_trace_info:
-                continue
-
-            # Extract correctness from student trace
-            correctness = student_trace_info.get("correctness_score", 0.0)
-
-            # Compute tool alignment from spans if available
-            tool_alignment = get_tool_alignment_from_traces(student_trace_info["spans"], teacher_trace_info["spans"])
-
-            # Use correctness as proxy for grounding (could be improved with actual grounding metric)
-            grounding = correctness
-
-            per_entry_metrics[entry_id] = {
-                "correctness": correctness,
-                "tool_alignment": tool_alignment,
-                "grounding": grounding,
-            }
-
-        return per_entry_metrics
-
     def evaluate(
         self,
         batch: list[ALDataInst],
         candidate: dict[str, str],
         capture_traces: bool = False,
-    ) -> EvaluationBatch:
+    ) -> GleanEvaluationBatch:
         """Evaluate candidate on eval set(s)."""
-        if self.judging_mode == "single_model":
-            # Retrieval is independent of capture_traces: always build and cache
-            # the same minimal error trajectories, then hide them when the caller
-            # only wants scores. A later trace request reuses the cached eval run
-            # and persisted shell-error analysis rather than calling Cortex again.
-            result = self._evaluate_with_shell_error_rate(cast(list[SingleModelALDataInst], batch), candidate)
-            if capture_traces:
-                return result
-            return GleanEvaluationBatch(
-                outputs=result.outputs,
-                scores=result.scores,
-                trajectories=None,
-                objective_scores=result.objective_scores,
-                summary=result.summary,
-            )
-        return self._evaluate_with_judge(cast(list[TeacherStudentALDataInst], batch), candidate, capture_traces)
+        return self._evaluate_fn(batch, candidate, capture_traces)
+
+    def get_screening_score(self, eval_batch: GleanEvaluationBatch) -> float:
+        """Return the objective selected by the concrete adapter for screening."""
+        if eval_batch.summary is None:
+            return float("-inf")
+        return eval_batch.summary.get(self.primary_objective, float("-inf"))
 
     def _get_or_run_student_eval(
         self,
@@ -1149,339 +1056,6 @@ class GleanAdapterBase:
         self._save_cache()
         print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id} ({run_label})")
         return student_eval_id
-
-    def _evaluate_with_shell_error_rate(
-        self,
-        batch: list[SingleModelALDataInst],
-        candidate: dict[str, str],
-    ) -> GleanEvaluationBatch[SingleModelALTrajectory, SingleModelALRolloutOutput]:
-        if not batch:
-            return GleanEvaluationBatch(
-                outputs=[],
-                scores=[],
-                trajectories=None,
-                objective_scores=[],
-                summary=None,
-            )
-
-        system_prompt = compile_encoded_prompt(candidate)
-        all_outputs: list[SingleModelALRolloutOutput] = []
-        all_scores: list[float] = []
-        all_trajectories: list[SingleModelALTrajectory] = []
-        all_objective_scores: list[dict[str, float]] = []
-        summary_shell_rates: list[float] = []
-        total_high_signal_entries = 0
-
-        for al_data_inst in batch:
-            eval_set_version = al_data_inst.get("eval_set_version", "")
-            eval_set_name = al_data_inst.get("eval_set_name", "")
-            deployment_ids = al_data_inst.get("deployment_ids", [])
-
-            student_eval_id = self._get_or_run_student_eval(
-                eval_set_name=eval_set_name,
-                eval_set_version=eval_set_version,
-                deployment_ids=deployment_ids,
-                system_prompt=system_prompt,
-            )
-
-            analysis = self._get_or_fetch_shell_error_analysis(student_eval_id)
-            log_shell_tool_error_analysis(analysis)
-            high_signal_entry_ids = analysis.high_signal_entry_ids
-
-            summary_shell_rates.append(analysis.aggregate.shell_success_rate)
-            total_high_signal_entries += len(high_signal_entry_ids)
-
-            if not high_signal_entry_ids:
-                shell_error_messages = [
-                    example.error_str for example in analysis.aggregate.recent_error_examples if example.error_str
-                ]
-                shell_action_inputs = [
-                    example.action_input for example in analysis.aggregate.recent_error_examples if example.action_input
-                ]
-                output: SingleModelALRolloutOutput = {
-                    "deployment_id": deployment_ids[0] if deployment_ids else "",
-                    "query": f"{eval_set_name}:{eval_set_version}",
-                    "student_tool_calls": analysis.aggregate.shell_executions,
-                    "student_tool_errors": analysis.aggregate.shell_errors,
-                    "entry_id": f"{eval_set_name}:{eval_set_version}",
-                    "shell_error_messages": shell_error_messages,
-                    "student_eval_run_id": student_eval_id,
-                }
-                if shell_action_inputs:
-                    output["shell_action_inputs"] = shell_action_inputs
-                all_outputs.append(output)
-                all_scores.append(analysis.aggregate.shell_success_rate)
-                objective_score = {
-                    SHELL_SUCCESS_OBJECTIVE: analysis.aggregate.shell_success_rate,
-                }
-                all_objective_scores.append(objective_score)
-                all_trajectories.append(
-                    {
-                        "data": al_data_inst,
-                        "output": output,
-                        "score": analysis.aggregate.shell_success_rate,
-                        "objective_scores": objective_score,
-                    }
-                )
-                continue
-
-            for entry_id in high_signal_entry_ids:
-                entry_metrics = analysis.per_entry[entry_id]
-                failed_eval_example = next(
-                    (example for example in entry_metrics.recent_error_examples if example.trace_id),
-                    None,
-                )
-                eval_trace_id = failed_eval_example.trace_id if failed_eval_example else None
-                eval_trace_examples = [
-                    example
-                    for example in entry_metrics.recent_error_examples
-                    if eval_trace_id is None or example.trace_id == eval_trace_id
-                ]
-                shell_error_messages = [example.error_str for example in eval_trace_examples if example.error_str]
-                shell_action_inputs = [example.action_input for example in eval_trace_examples if example.action_input]
-                entry_output: SingleModelALRolloutOutput = {
-                    "deployment_id": deployment_ids[0] if deployment_ids else "",
-                    "query": f"{eval_set_name}:{eval_set_version} entry={entry_id}",
-                    "student_tool_calls": entry_metrics.shell_executions,
-                    "student_tool_errors": entry_metrics.shell_errors,
-                    "entry_id": entry_id,
-                    "shell_error_messages": shell_error_messages,
-                    "student_eval_run_id": student_eval_id,
-                }
-                if shell_action_inputs:
-                    entry_output["shell_action_inputs"] = shell_action_inputs
-                if eval_trace_id:
-                    entry_output["eval_trace_id"] = eval_trace_id
-                entry_data: SingleModelALDataInst = {
-                    **al_data_inst,
-                    "eval_entry_id": entry_id,
-                    "eval_run_id": student_eval_id,
-                }
-                if eval_trace_id:
-                    entry_data["eval_trace_id"] = eval_trace_id
-                all_outputs.append(entry_output)
-                entry_score = entry_metrics.shell_success_rate
-                all_scores.append(entry_score)
-                entry_objective_score = {
-                    SHELL_SUCCESS_OBJECTIVE: entry_metrics.shell_success_rate,
-                }
-                all_objective_scores.append(entry_objective_score)
-                all_trajectories.append(
-                    {
-                        "data": entry_data,
-                        "output": entry_output,
-                        "score": entry_score,
-                        "objective_scores": entry_objective_score,
-                    }
-                )
-
-        summary = None
-        if summary_shell_rates:
-            summary = {
-                SHELL_SUCCESS_OBJECTIVE: sum(summary_shell_rates) / len(summary_shell_rates),
-                "high_signal_entry_count": float(total_high_signal_entries),
-            }
-
-        return GleanEvaluationBatch(
-            outputs=all_outputs,
-            scores=all_scores,
-            trajectories=all_trajectories,
-            objective_scores=all_objective_scores,
-            summary=summary,
-        )
-
-    def _evaluate_with_judge(
-        self,
-        batch: list[TeacherStudentALDataInst],
-        candidate: dict[str, str],
-        capture_traces: bool,
-    ) -> GleanEvaluationBatch[TeacherStudentALTrajectory, TeacherStudentALRolloutOutput]:
-        if self.judge is None:
-            raise RuntimeError("Judge is required for judge-based evaluation")
-
-        # Handle empty batch
-        if not batch:
-            return GleanEvaluationBatch(outputs=[], scores=[], trajectories=None, objective_scores=[], summary=None)
-
-        # Compile system prompt from candidate
-        system_prompt = compile_encoded_prompt(candidate)
-
-        # Collect results across all eval sets
-        all_outputs: list[TeacherStudentALRolloutOutput] = []
-        all_scores: list[float] = []
-        all_trajectories: list[TeacherStudentALTrajectory] | None = [] if capture_traces else None
-        all_objective_scores: list[dict[str, float]] = []
-
-        for al_data_inst in batch:
-            eval_set_version = al_data_inst.get("eval_set_version", "")
-            eval_set_name = al_data_inst.get("eval_set_name", "")
-            deployment_ids = al_data_inst.get("deployment_ids", [])
-
-            # Create cache keys for teacher and student
-            teacher_prompt_hash = hashlib.md5(b"<<TEACHER_PROD_PROMPT>>").hexdigest()[:16]
-            student_prompt_hash = hashlib.md5(system_prompt.encode()).hexdigest()[:16]
-
-            teacher_cache_key = (eval_set_name, eval_set_version, self.teacher_model, teacher_prompt_hash)
-            student_cache_key = (eval_set_name, eval_set_version, self.student_model, student_prompt_hash)
-
-            # Check cache for teacher eval
-            teacher_eval_id = self._eval_cache.get(teacher_cache_key)
-            if teacher_eval_id:
-                print(f"[Cache HIT] Using cached teacher eval_id: {teacher_eval_id}")
-            else:
-                # Trigger teacher eval run
-                teacher_eval_id = self.runner.run(
-                    self.teacher_model,
-                    system_prompt="<<TEACHER_PROD_PROMPT>>",
-                    eval_set_name=eval_set_name,
-                    eval_set_version=eval_set_version,
-                    deployment_ids=deployment_ids,
-                )
-                # Cache and save immediately
-                self._eval_cache[teacher_cache_key] = teacher_eval_id
-                self._save_cache()
-                print(f"[Cache MISS] Started and cached teacher eval_id: {teacher_eval_id}")
-
-            # Check cache for student eval
-            student_eval_id = self._eval_cache.get(student_cache_key)
-            if student_eval_id:
-                print(f"[Cache HIT] Using cached student eval_id: {student_eval_id}")
-            else:
-                # Trigger student eval run
-                student_eval_id = self.runner.run(
-                    self.student_model,
-                    system_prompt=system_prompt,
-                    eval_set_name=eval_set_name,
-                    eval_set_version=eval_set_version,
-                    deployment_ids=deployment_ids,
-                )
-                # Cache and save immediately
-                self._eval_cache[student_cache_key] = student_eval_id
-                self._save_cache()
-                print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id}")
-            # teacher_eval_id = "gepa_gpt_3070257bbe5f1340_1774652253"
-            # student_eval_id = "gepa_fast_1ad33e85e6067b04_1774652258"
-
-            # Check if judge has been triggered for this pair
-            judge_cache_key = (teacher_eval_id, student_eval_id)
-            skip_trigger = judge_cache_key in self._judge_triggered
-
-            if skip_trigger:
-                print(f"[Judge Cache HIT] Judge already triggered for {teacher_eval_id} vs {student_eval_id}")
-            else:
-                print(f"[Judge Cache MISS] Will trigger judge for {teacher_eval_id} vs {student_eval_id}")
-                # Mark as triggered and save immediately
-                self._judge_triggered.add(judge_cache_key)
-                self._save_cache()
-
-            # Run judge to compare teacher vs student
-            judge_result = self.judge.judge(teacher_eval_id, student_eval_id, skip_trigger=skip_trigger)
-
-            # Build per-entry metrics map from judge traces
-            per_entry_metrics = self._extract_per_entry_metrics(judge_result, student_eval_id, teacher_eval_id)
-
-            # Process each entry in the eval set (from judge traces)
-            if not judge_result.traces:
-                continue
-
-            for entry_id, trace_infos in judge_result.traces.items():
-                # Find student and teacher traces for this entry
-                student_trace = None
-                teacher_trace = None
-                for trace_info in trace_infos:
-                    if trace_info["eval_id"] == student_eval_id:
-                        student_trace = trace_info
-                    elif trace_info["eval_id"] == teacher_eval_id:
-                        teacher_trace = trace_info
-
-                if student_trace is None or teacher_trace is None:
-                    continue
-
-                # Get per-entry metrics or fall back to aggregate
-                entry_metrics = per_entry_metrics.get(
-                    entry_id,
-                    {
-                        "correctness": judge_result.correctness,
-                        "tool_alignment": judge_result.tool_alignment,
-                        "grounding": judge_result.grounding,
-                    },
-                )
-
-                # Create comprehensive output with full execution details
-                output: TeacherStudentALRolloutOutput = {
-                    # Student execution
-                    "deployment_id": student_trace["deployment_id"],
-                    "query": student_trace["query"],
-                    "student_answer": student_trace["answer"],
-                    "student_tool_events": extract_tool_names_from_spans(student_trace.get("spans")),
-                    "student_loops": student_trace["num_loops"],
-                    "student_tool_calls": len(extract_tool_names_from_spans(student_trace.get("spans"))),
-                    "student_tool_errors": student_trace["num_tool_errors"],
-                    "student_input_tokens": student_trace["input_tokens"],
-                    "student_output_tokens": student_trace["output_tokens"],
-                    "student_latency_ms": student_trace.get("latency_ms"),
-                    # Teacher execution
-                    "teacher_answer": teacher_trace["answer"],
-                    "teacher_tool_events": extract_tool_names_from_spans(teacher_trace.get("spans")),
-                    "teacher_loops": teacher_trace["num_loops"],
-                    "teacher_tool_calls": teacher_trace["num_tool_calls"],
-                    "teacher_input_tokens": teacher_trace["input_tokens"],
-                    "teacher_output_tokens": teacher_trace["output_tokens"],
-                    # Metadata
-                    "entry_id": entry_id,
-                }
-                all_outputs.append(output)
-
-                # Create score (weighted combination of metrics)
-                score = (
-                    0.5 * entry_metrics["correctness"]
-                    + 0.3 * entry_metrics["tool_alignment"]
-                    + 0.2 * entry_metrics["grounding"]
-                )
-                all_scores.append(score)
-
-                # Create objective scores for multi-objective optimization
-                objective_score = {
-                    "correctness": entry_metrics["correctness"],
-                    "tool_alignment": entry_metrics["tool_alignment"],
-                    "grounding": entry_metrics["grounding"],
-                    "tokens": float(student_trace["input_tokens"] + student_trace["output_tokens"]),
-                    "loops": float(student_trace["num_loops"]),
-                    "tool_errors": float(student_trace["num_tool_errors"]),
-                }
-                all_objective_scores.append(objective_score)
-
-                # Create trajectory if requested
-                if capture_traces and all_trajectories is not None:
-                    trajectory: TeacherStudentALTrajectory = {
-                        "data": al_data_inst,
-                        "output": output,
-                        "score": score,
-                        "objective_scores": objective_score,
-                    }
-                    all_trajectories.append(trajectory)
-
-        # Compute summary by averaging objective scores across all dimensions
-        summary = None
-        if all_objective_scores:
-            summary = {}
-            # Get all unique dimension names
-            all_dims = set()
-            for obj_score in all_objective_scores:
-                all_dims.update(obj_score.keys())
-
-            # Average each dimension
-            for dim in all_dims:
-                values = [obj_score.get(dim, 0.0) for obj_score in all_objective_scores if dim in obj_score]
-                summary[dim] = sum(values) / len(values) if values else 0.0
-
-        return GleanEvaluationBatch(
-            outputs=all_outputs,
-            scores=all_scores,
-            trajectories=all_trajectories,
-            objective_scores=all_objective_scores,
-            summary=summary,
-        )
 
     # ---------------------------
     # 5) High-signal reflective dataset selection (per module)
@@ -1528,7 +1102,7 @@ class GleanAdapterBase:
 
             for _relevance, _idx, trajectory in scored_trajectories:
                 # Create a pattern signature for diversity
-                pattern = self._create_failure_pattern(component_name, trajectory)
+                pattern = self._failure_pattern_fn(component_name, trajectory)
 
                 # Allow some duplicates near the end to fill quota
                 # TODO(Cathy) check with claude why it was < k-2
@@ -1536,7 +1110,7 @@ class GleanAdapterBase:
                     continue
 
                 # Build reflective example in standard format
-                example = self._build_reflective_example(component_name, trajectory, candidate)
+                example = self._reflective_example_fn(component_name, trajectory, candidate)
 
                 reflective_examples.append(example)
                 seen_patterns.add(pattern)
@@ -1552,142 +1126,6 @@ class GleanAdapterBase:
     def _compute_module_relevance(self, module_name: str, trajectory: ALTrajectory, score: float) -> float:
         """Compute how relevant this example is for improving the given module."""
         return 1.0
-
-    def _check_primary_tool_mismatch(self, output: ALRolloutOutput) -> bool:
-        """Check if student and teacher used different primary tools."""
-        student_tools = output.get("student_tool_events", [])
-        teacher_tools = output.get("teacher_tool_events", [])
-
-        if not student_tools or not teacher_tools:
-            return len(student_tools) != len(teacher_tools)
-
-        # Primary tool = first tool used
-        student_primary = student_tools[0]
-        teacher_primary = teacher_tools[0]
-
-        return student_primary != teacher_primary
-
-    def _create_failure_pattern(self, component_name: str, trajectory: ALTrajectory) -> tuple:
-        """Create a signature for clustering similar failures."""
-        output = trajectory["output"]
-        objective_scores = trajectory.get("objective_scores", {})
-
-        if self.judging_mode == "single_model":
-            shell_success_rate = objective_scores.get(SHELL_SUCCESS_OBJECTIVE, 1.0)
-            shell_error_messages = output.get("shell_error_messages", [])
-            return (
-                int(shell_success_rate < 0.9),
-                int(output.get("student_tool_errors", 0) > 0),
-                len(shell_error_messages),
-            )
-
-        correctness = objective_scores.get("correctness", 1.0)
-        tool_mismatch = self._check_primary_tool_mismatch(output)
-        return (
-            int(correctness < 0.7),
-            int(tool_mismatch),
-            int(output.get("student_tool_errors", 0) > 0),
-        )
-
-    def _build_reflective_example(
-        self, component_name: str, trajectory: ALTrajectory, candidate: dict[str, str]
-    ) -> ReflectiveExample:
-        """Build a reflective example in the standard format for instruction proposal."""
-        output = trajectory["output"]
-
-        # Determine which tool types were used
-        student_tools = output.get("student_tool_events", [])
-        teacher_tools = output.get("teacher_tool_events", [])
-
-        feedback_parts = []
-        execution_errors: list[str] = []
-        action_inputs: list[str] = []
-        objective_scores = trajectory.get("objective_scores", {})
-        metrics: ReflectiveExampleMetrics = {"score": trajectory["score"]}
-
-        if self.judging_mode == "single_model":
-            shell_success_rate = objective_scores.get(SHELL_SUCCESS_OBJECTIVE, 1.0)
-            metrics["shell_success_rate"] = shell_success_rate
-
-            if shell_success_rate < 0.9:
-                feedback_parts.append(
-                    f"Shell success rate issue: Student scored {shell_success_rate:.2f} "
-                    f"({output.get('student_tool_errors', 0)} shell errors out of "
-                    f"{output.get('student_tool_calls', 0)} executions)."
-                )
-
-            shell_error_messages = output.get("shell_error_messages", [])
-            action_inputs = output.get("shell_action_inputs", [])[:5]
-            if shell_error_messages:
-                execution_errors = shell_error_messages[:5]
-                feedback_parts.append("Recent shell errors: " + "; ".join(shell_error_messages[:5]))
-            elif output.get("student_tool_errors", 0) > 0:
-                feedback_parts.append(
-                    f"Tool errors: Student encountered {output.get('student_tool_errors', 0)} shell tool errors."
-                )
-
-            default_feedback = "General shell tool reliability issue."
-        else:
-            correctness = objective_scores.get("correctness", trajectory["score"])
-            tool_alignment = objective_scores.get("tool_alignment", 0.0)
-            metrics["correctness"] = correctness
-
-            if correctness < 0.7:
-                feedback_parts.append(f"Correctness issue: Student scored {correctness:.2f} vs teacher baseline.")
-            if self._check_primary_tool_mismatch(output):
-                feedback_parts.append(
-                    f"Tool mismatch: student used {student_tools[:3]} vs teacher {teacher_tools[:3]}."
-                )
-            if tool_alignment < 0.7:
-                feedback_parts.append(f"Tool alignment issue: score={tool_alignment:.2f}.")
-
-            default_feedback = "General teacher/student divergence."
-
-        feedback = " ".join(feedback_parts) if feedback_parts else default_feedback
-
-        inputs: ReflectiveExampleInputs = {
-            "eval_set": trajectory["data"]["eval_set_name"],
-            "entry_id": output["entry_id"],
-            "deployment_id": output["deployment_id"],
-            "query": output["query"],
-        }
-        if eval_run_id := trajectory["data"].get("eval_run_id"):
-            inputs["eval_run_id"] = eval_run_id
-        if eval_trace_id := trajectory["data"].get("eval_trace_id"):
-            inputs["eval_trace_id"] = eval_trace_id
-
-        return {
-            "Inputs": inputs,
-            "Generated Outputs": {
-                "student_answer": output.get("student_answer", ""),
-                "teacher_answer": output.get("teacher_answer", ""),
-                "student_tools": student_tools,
-                "teacher_tools": teacher_tools,
-            },
-            "Action Inputs": action_inputs,
-            "Execution Errors": execution_errors,
-            "Feedback": feedback,
-            "Metrics": metrics,
-        }
-
-    # ---------------------------
-    # 6) Reflection prompt templates (module-aware)
-    # ---------------------------
-
-    def reflection_prompt(self, module_name: str) -> str:
-        if module_name == "WRITING_CODE":
-            if self.judging_mode == "single_model":
-                return (
-                    "Focus ONLY on coding instructions that affect shell tool reliability: SDK call patterns, "
-                    "ToolResult handling, parallelism via asyncio.gather, sandbox rules, and when to print vs extract. "
-                    "Use shell error examples as evidence. Propose minimal deltas."
-                )
-            return (
-                "Focus ONLY on coding instructions: SDK call patterns, ToolResult handling, "
-                "parallelism via asyncio.gather, sandbox rules, and when to print vs extract. "
-                "Use teacher/student tool divergences as evidence. Propose minimal deltas."
-            )
-        return "Focus only on this module's responsibilities."
 
     # ---------------------------
     # 7) propose_new_texts: merge + patch deltas
@@ -1714,13 +1152,8 @@ class GleanAdapterBase:
 
         ex_blocks = []
         for r in reflective_examples:
-            metrics = r["Metrics"]
-            if self.judging_mode == "single_model":
-                metric_line = f"shell_success_rate={metrics.get('shell_success_rate', metrics['score']):.2f}"
-            else:
-                metric_line = (
-                    f"score={metrics['score']:.2f}, correctness={metrics.get('correctness', metrics['score']):.2f}"
-                )
+            metric_line = self._reflective_metrics_fn(r["Metrics"])
+            metric_section = f"METRICS: {metric_line}\n" if metric_line else ""
             generated_outputs = r["Generated Outputs"]
             output_lines = []
             if eval_trace_id := r["Inputs"].get("eval_trace_id"):
@@ -1740,22 +1173,17 @@ class GleanAdapterBase:
                 f"QUERY: {r['Inputs']['query']}\n"
                 f"{''.join(output_lines)}"
                 f"EXECUTION_ERRORS: {r['Execution Errors']}\n"
-                f"METRICS: {metric_line}\n"
+                f"{metric_section}"
                 f"FEEDBACK: {r['Feedback']}\n"
             )
         if len(components_to_update) != 1:
             return [], False
         module_name = components_to_update[0]
-        failure_label = (
-            "HIGH-SIGNAL FAILURES"
-            if self.judging_mode == "single_model"
-            else "HIGH-SIGNAL FAILURES (teacher vs student)"
-        )
         prompt = (
             f"You are optimizing ONLY the module {module_name}.\n"
-            f"MODULE RESPONSIBILITY:\n{self.reflection_prompt(module_name)}\n\n"
+            f"MODULE RESPONSIBILITY:\n{self._reflection_prompt_fn(module_name)}\n\n"
             f"CURRENT MODULE TEXT:\n<<<\n{current}\n>>>\n\n"
-            f"{failure_label}:\n{''.join(ex_blocks)}\n\n"
+            f"{self._failure_label}:\n{''.join(ex_blocks)}\n\n"
             f"Task:\n"
             f"1) Identify recurring failure modes that are plausibly caused by {module_name}.\n"
             f"2) Propose 1-2 SMALL patches (delta edits), each with:\n"

@@ -2,12 +2,12 @@
 
 from glean_gepa.adapter_types import (
     ALDataInst,
+    JudgingMode,
     SingleModelALDataInst,
     SingleModelALRolloutOutput,
     TeacherStudentALDataInst,
     TeacherStudentALRolloutOutput,
 )
-from glean_gepa.al_adapter import JudgingMode
 from glean_gepa.api import optimize
 from glean_gepa.evalcli_client import EvalCliClient
 from glean_gepa.single_model_adapter import SingleModelAdapter

@@ -110,7 +110,7 @@ def test_evaluate_uses_shell_error_rate_objective():
             },
         ) as get_trace,
         patch(
-            "glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis",
+            "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis",
             return_value=analysis,
         ),
     ):
@@ -165,6 +165,9 @@ def test_evaluate_uses_shell_error_rate_objective():
     assert "STUDENT_TOOLS:" not in captured_prompts[0]
     assert 'ACTION_INPUT: {"command": "python3 broken.py"}' in captured_prompts[0]
     assert "EVAL_TRACE_ID: trace-student-1" in captured_prompts[0]
+    assert "METRICS:" not in captured_prompts[0]
+    assert "Shell success rate issue:" not in captured_prompts[0]
+    assert "Recent shell errors: command exited with status 1" in captured_prompts[0]
     assert "EXECUTION_ERRORS: ['command exited with status 1']" in captured_prompts[1]
 
 
@@ -230,7 +233,7 @@ def test_evaluate_logs_fetched_shell_error_rate_and_error(capsys):
     with (
         patch.object(adapter, "_get_or_run_student_eval", return_value="run_123"),
         patch(
-            "glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis",
+            "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis",
             return_value=analysis,
         ),
     ):
@@ -312,7 +315,9 @@ def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):
     )
     with (
         patch.object(first_runner, "run", return_value="run_123") as run,
-        patch("glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=analysis) as fetch,
+        patch(
+            "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=analysis
+        ) as fetch,
     ):
         without_traces = first.evaluate(batch, {"WRITING_CODE": "prompt"}, capture_traces=False)
     assert without_traces.trajectories is None
@@ -329,7 +334,7 @@ def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):
     )
     with (
         patch.object(second_runner, "run") as run,
-        patch("glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis") as fetch,
+        patch("glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis") as fetch,
     ):
         with_traces = second.evaluate(batch, {"WRITING_CODE": "prompt"}, capture_traces=True)
 
@@ -386,7 +391,9 @@ def test_shell_error_analysis_cache_round_trip(tmp_path):
         cache_file=str(cache_file),
     )
 
-    with patch("glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=analysis) as fetch:
+    with patch(
+        "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=analysis
+    ) as fetch:
         assert adapter._get_or_fetch_shell_error_analysis("run_cached") is analysis
         fetch.assert_called_once()
 
@@ -399,7 +406,7 @@ def test_shell_error_analysis_cache_round_trip(tmp_path):
         thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
         cache_file=str(cache_file),
     )
-    with patch("glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis") as fetch:
+    with patch("glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis") as fetch:
         cached = reloaded._get_or_fetch_shell_error_analysis("run_cached")
 
     fetch.assert_not_called()
@@ -456,7 +463,9 @@ def test_legacy_shell_error_analysis_cache_is_refetched(tmp_path):
         cache_file=str(cache_file),
     )
 
-    with patch("glean_gepa.al_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=refreshed) as fetch:
+    with patch(
+        "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=refreshed
+    ) as fetch:
         assert adapter._get_or_fetch_shell_error_analysis("run_legacy") is refreshed
 
     fetch.assert_called_once()

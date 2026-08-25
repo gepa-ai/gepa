@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, TypeAlias, TypedDict
+from typing import Literal, NotRequired, TypeAlias, TypedDict
+
+JudgingMode: TypeAlias = Literal["teacher_student", "single_model"]
 
 
 class EvalSetALDataInst(TypedDict):
@@ -91,6 +93,7 @@ __all__ = [
     "ALRolloutOutput",
     "ALTrajectory",
     "EvalSetALDataInst",
+    "JudgingMode",
     "SingleModelALDataInst",
     "SingleModelALRolloutOutput",
     "SingleModelALTrajectory",

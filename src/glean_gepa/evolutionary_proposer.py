@@ -18,16 +18,13 @@ from gepa.proposer.base import CandidateProposal
 from glean_gepa.al_adapter import (
     MODULES,
     Candidate,
-    JudgingMode,
+    GleanAdapterBase,
     ModuleSpec,
-    get_screening_score,
     within_prompt_budget,
 )
 from glean_gepa.batch import GleanEvaluationBatch
 from glean_gepa.evalset_policy import UnseenEvalSetPolicy
 from glean_gepa.prompt import WRITING_CODE_KEY, default_writing_code
-from glean_gepa.single_model_adapter import SingleModelAdapter
-from glean_gepa.teacher_student_adapter import TeacherStudentAdapter
 from glean_gepa.utils import apply_single_module_edit
 
 
@@ -37,11 +34,10 @@ def pick_modules_to_edit() -> list[str]:
 
 
 def make_children_for_generation(
-    adapter: SingleModelAdapter | TeacherStudentAdapter,
+    adapter: GleanAdapterBase,
     frontier_candidates: list[Candidate],
     frontier_evals: dict[str, GleanEvaluationBatch],
     reflection_llm: Any,
-    judging_mode: JudgingMode,
     offspring_count: int = 24,
     reflect_k: int = 8,
     max_attempts: int = 200,
@@ -51,10 +47,10 @@ def make_children_for_generation(
     """
     children: list[Candidate] = []
 
-    # pick a "main parent" biased to best primary objective for this judging mode
+    # Pick a main parent using the concrete adapter's primary objective.
     best_quality_parent = max(
         frontier_candidates,
-        key=lambda c: get_screening_score(frontier_evals[c.candidate_id], judging_mode),
+        key=lambda c: adapter.get_screening_score(frontier_evals[c.candidate_id]),
     )
     print(f"Best quality parent: {best_quality_parent}")
 
@@ -111,7 +107,7 @@ class EvolutionaryProposer:
         self,
         logger: LoggerProtocol,
         trainset: list[DataInst] | DataLoader[DataId, DataInst],
-        al_adapter: SingleModelAdapter | TeacherStudentAdapter,
+        al_adapter: GleanAdapterBase,
         reflection_llm: Any,
         experiment_tracker: ExperimentTracker,
         # Candidate config (for converting dict[str,str] <-> Candidate)
@@ -119,7 +115,6 @@ class EvolutionaryProposer:
         module_specs: dict[str, ModuleSpec],
         global_token_cap: int,
         baseline_prompt_hash: str,
-        judging_mode: JudgingMode = "single_model",
         # Evolutionary hyperparameters
         offspring_count: int = 24,
         reflect_k: int = 8,
@@ -131,7 +126,6 @@ class EvolutionaryProposer:
         self.al_adapter = al_adapter
         self.reflection_llm = reflection_llm
         self.experiment_tracker = experiment_tracker
-        self.judging_mode = judging_mode
         self.callbacks = callbacks
         self.evalset_policy = evalset_policy
 
@@ -218,7 +212,6 @@ class EvolutionaryProposer:
             frontier_candidates=frontier_candidates,
             frontier_evals=frontier_evals,
             reflection_llm=self.reflection_llm,
-            judging_mode=self.judging_mode,
             offspring_count=self.offspring_count,
             reflect_k=self.reflect_k,
         )
@@ -245,7 +238,7 @@ class EvolutionaryProposer:
             screen_batch = self._batch_data
         for child in valid_children:
             screen_eval = self.al_adapter.evaluate(screen_batch, child.prompt_modules, capture_traces=False)
-            child_score = get_screening_score(screen_eval, self.judging_mode)
+            child_score = self.al_adapter.get_screening_score(screen_eval)
             if child_score > best_child_score:
                 best_child = child
                 best_child_eval = screen_eval
@@ -267,8 +260,8 @@ class EvolutionaryProposer:
         # Use screen eval set as "subsample" (one eval set evaluation)
         # Both parent and child evaluated on same screen eval set
         subsample_ids = screen_ids
-        parent_score = get_screening_score(parent_eval, self.judging_mode)
-        child_score = get_screening_score(best_child_eval, self.judging_mode)
+        parent_score = self.al_adapter.get_screening_score(parent_eval)
+        child_score = self.al_adapter.get_screening_score(best_child_eval)
         state.increment_evals(1)  # One eval set run
 
         self.logger.log(

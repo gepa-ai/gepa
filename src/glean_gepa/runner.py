@@ -12,13 +12,11 @@ from typing import cast
 from gepa.core.state import FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import StdOutLogger
-from glean_gepa.adapter_types import ALDataInst
+from glean_gepa.adapter_types import ALDataInst, JudgingMode
 from glean_gepa.al_adapter import (
-    DEFAULT_FRONTIER_TYPE_BY_MODE,
     MODULES,
     ALRunner,
     Judge,
-    JudgingMode,
     ModuleSpec,
     Thresholds,
 )
@@ -164,7 +162,6 @@ def main() -> None:
         module_specs=module_specs,
         global_token_cap=args.global_token_cap,
         baseline_prompt_hash=hashlib.md5(json.dumps(seed_candidate, sort_keys=True).encode()).hexdigest(),
-        judging_mode=judging_mode,
         evalset_policy=evalset_policy,
     )
     optimize(
@@ -177,7 +174,7 @@ def main() -> None:
         experiment_tracker=tracker,
         max_metric_calls=args.max_metric_calls,
         run_dir=str(args.run_dir) if args.run_dir else None,
-        frontier_type=cast(FrontierType, DEFAULT_FRONTIER_TYPE_BY_MODE[judging_mode]),
+        frontier_type=cast(FrontierType, adapter.default_frontier_type),
         val_evaluation_policy=evalset_policy,
     )
 
