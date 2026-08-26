@@ -33,13 +33,12 @@ from gepa.oa.budget import BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
-from gepa.oa.task import seed_as_text
+from gepa.oa.task import Task, seed_as_text
 from gepa.oa.utils import example_to_json
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
-    from gepa.oa.task import Task
 
 
 @dataclass
@@ -61,6 +60,11 @@ class AutoResearchConfig:
             referenced from ``program.md``).
         effort: ``claude --effort`` value (CLI flag).
         max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+        drain_quiet_seconds: After Claude exits, keep HTTP accepting this long
+            with no new admits so a curl that has not reached the server can
+            still land. Then pause.
+        drain_timeout_seconds: Give up waiting for drain after this many
+            seconds and select from work that has already completed.
     """
 
     model: str = "claude-sonnet-4-6"
@@ -69,6 +73,8 @@ class AutoResearchConfig:
     handoffs: list[dict[str, Any]] | None = None
     effort: str | None = None
     max_thinking_tokens: int | None = None
+    drain_quiet_seconds: float = 0.5
+    drain_timeout_seconds: float = 600.0
 
     def __post_init__(self) -> None:
         # yaml/CLI may pass ralph as a string ("false") and max_no_eval_seconds
@@ -76,14 +82,17 @@ class AutoResearchConfig:
         self.ralph = _config_bool(self.ralph)
         if self.max_no_eval_seconds is not None:
             self.max_no_eval_seconds = float(self.max_no_eval_seconds)
+        self.drain_quiet_seconds = max(0.0, float(self.drain_quiet_seconds))
+        self.drain_timeout_seconds = max(0.0, float(self.drain_timeout_seconds))
 
 
 # Nudge fed to claude --resume on each Ralph iteration.
 RALPH_CONTINUE_PROMPT = (
     "Continue iterating on the candidate. Re-read program.md if needed. "
     "Run ./eval.sh as appropriate. "
-    "Keep refining best_candidate.txt until you exhaust the budget "
-    "or genuinely cannot find another improvement."
+    "The engine selects the returned winner from completed eval-server scores, "
+    "not from best_candidate.txt. Keep refining the candidate until you exhaust "
+    "the budget or genuinely cannot find another improvement."
 )
 
 # Stop spawning new Ralph iterations when the LLM budget has less than this
@@ -184,6 +193,7 @@ HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
+if [ "$HTTP_CODE" = "409" ]; then echo "EVAL_SERVER_PAUSED" >&2; exit 1; fi
 """
 
 EVAL_SCRIPT_DATASET = """\
@@ -213,6 +223,7 @@ HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
+if [ "$HTTP_CODE" = "409" ]; then echo "EVAL_SERVER_PAUSED" >&2; exit 1; fi
 """
 
 
@@ -288,10 +299,21 @@ def _strategy_section(task: Task) -> str:
             "(spot-check with `./eval.sh candidate.txt --ids id1,id2` if useful), "
             "form a hypothesis, edit `candidate.txt`."
         )
+        selection = (
+            "The engine ignores `best_candidate.txt` when it picks the returned winner. "
+            "Only a completed full-pool `./eval.sh candidate.txt` (no `--ids`) counts; "
+            "a spot-check does not. Keep `best_candidate.txt` as your working copy so you "
+            "can revert."
+        )
     else:
         edit_step = (
             "2. **Hypothesize and edit.** Use the judge feedback from the prior eval, "
             "form a hypothesis, edit `candidate.txt`."
+        )
+        selection = (
+            "The engine ignores `best_candidate.txt` when it picks the returned winner. "
+            "The winner is the best completed `./eval.sh` score. Keep `best_candidate.txt` "
+            "as your working copy so you can revert."
         )
 
     return (
@@ -302,7 +324,8 @@ def _strategy_section(task: Task) -> str:
         "4. **Keep or discard.** If the score improved over the best so far, "
         "`cp candidate.txt best_candidate.txt`. "
         "Otherwise `cp best_candidate.txt candidate.txt` to revert.\n"
-        "5. Repeat from step 2"
+        "5. Repeat from step 2.\n"
+        f"{selection}"
     )
 
 
@@ -480,6 +503,8 @@ class AutoResearchEngine:
         self.handoffs = engine_config.handoffs
         self.effort = engine_config.effort
         self.max_thinking_tokens = engine_config.max_thinking_tokens
+        self.drain_quiet_seconds = engine_config.drain_quiet_seconds
+        self.drain_timeout_seconds = engine_config.drain_timeout_seconds
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.sandbox = config.sandbox
@@ -487,6 +512,7 @@ class AutoResearchEngine:
         # via --max-budget-usd; the eval server never sees proposer spend.
         self.max_token_cost = config.max_token_cost
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
+        self._drain_timed_out = False
 
     def run(self, task: Task, server: EvalServer) -> Result:
         preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
@@ -520,14 +546,14 @@ class AutoResearchEngine:
         )
 
         candidate_file = work_dir / "candidate.txt"
-        best_file = work_dir / "best_candidate.txt"
         eval_script = work_dir / "eval.sh"
 
         prompt = (
             f"Read program.md for full task instructions. "
             f"The candidate to improve is in {candidate_file}. "
-            f"Write your best candidate to {best_file}. "
-            f"Use {eval_script} to evaluate."
+            f"Keep a working copy in {work_dir / 'best_candidate.txt'}. "
+            f"Use {eval_script} to evaluate. "
+            f"The engine returns the best completed eval-server score, not the file."
         )
 
         session_id = str(uuid.uuid4())
@@ -541,80 +567,81 @@ class AutoResearchEngine:
         adapter_cost = 0.0
         ralph_iterations = 1
         invocations: list[dict[str, float | int | None]] = []
+        seed = seed_as_text(task.seed_candidate)
+        progress_mark = len(getattr(server, "progress_log", []) or [])
+        tracked_candidate, tracked_score = seed, float("-inf")
+        self._drain_timed_out = False
 
-        proc = self._run_claude(
-            work_dir=work_dir,
-            session_id=session_id,
-            prompt=prompt,
-            budget=budget,
-            adapter_cost=adapter_cost,
-            resume=False,
-            env=env,
-        )
-        if (
-            proc.returncode != 0
-            and not budget.exhausted
-            and "NO_EVAL_PROGRESS" not in proc.stderr
-            and not _saw_budget_exhausted(proc)
-        ):
-            raise RuntimeError(
-                "Claude Code subprocess failed "
-                f"(exit {proc.returncode}). "
-                f"stdout_tail={_tail_text(proc.stdout)!r} "
-                f"stderr_tail={_tail_text(proc.stderr)!r}"
+        try:
+            proc = self._run_claude(
+                work_dir=work_dir,
+                session_id=session_id,
+                prompt=prompt,
+                budget=budget,
+                adapter_cost=adapter_cost,
+                resume=False,
+                env=env,
             )
-        iter_cost = _extract_claude_cost(proc.stdout)
-        adapter_cost += iter_cost
-        invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
-
-        if self.ralph:
-            while ralph_iterations < _RALPH_SAFETY_ITERATION_CAP:
-                if _saw_budget_exhausted(proc):
-                    break
-                if not self._has_budget_headroom(server, adapter_cost):
-                    break
-                if (
-                    self.stop_at_score is not None
-                    and server.best_score is not None
-                    and server.best_score >= self.stop_at_score
-                ):
-                    break
-                if proc.returncode != 0:
-                    break
-                proc = self._run_claude(
-                    work_dir=work_dir,
-                    session_id=session_id,
-                    prompt=RALPH_CONTINUE_PROMPT,
-                    budget=budget,
-                    adapter_cost=adapter_cost,
-                    resume=True,
-                    env=env,
+            self._drain(server)
+            if (
+                proc.returncode != 0
+                and not budget.exhausted
+                and "NO_EVAL_PROGRESS" not in proc.stderr
+                and not _saw_budget_exhausted(proc)
+            ):
+                raise RuntimeError(
+                    "Claude Code subprocess failed "
+                    f"(exit {proc.returncode}). "
+                    f"stdout_tail={_tail_text(proc.stdout)!r} "
+                    f"stderr_tail={_tail_text(proc.stderr)!r}"
                 )
-                iter_cost = _extract_claude_cost(proc.stdout)
-                adapter_cost += iter_cost
-                invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
-                if _saw_budget_exhausted(proc):
-                    break
-                if proc.returncode != 0:
-                    break
-                ralph_iterations += 1
-                # Iteration produced no measurable cost — agent likely
-                # has no more progress to make. Stop spending.
-                if iter_cost < 0.001:
-                    break
+            iter_cost = _extract_claude_cost(proc.stdout)
+            adapter_cost += iter_cost
+            tracked_candidate, tracked_score = _tracked_best(task, server, seed, progress_mark)
+            self._sync_workspace_best(work_dir, tracked_candidate, tracked_score)
+            invocations.append({"cost": iter_cost, "score": tracked_score, "returncode": proc.returncode})
 
-        best_candidate = best_file.read_text() if best_file.exists() else seed_as_text(task.seed_candidate)
-        best_score = server.best_score
-        if task.has_dataset:
-            aggregate_best = _best_aggregate_candidate(server)
-            if aggregate_best is not None:
-                best_candidate, best_score = aggregate_best
-            else:
-                best_score = float("-inf")
+            if self.ralph:
+                while ralph_iterations < _RALPH_SAFETY_ITERATION_CAP:
+                    if _saw_budget_exhausted(proc):
+                        break
+                    if not self._has_budget_headroom(server, adapter_cost):
+                        break
+                    if self.stop_at_score is not None and tracked_score >= self.stop_at_score:
+                        break
+                    if proc.returncode != 0:
+                        break
+                    self._resume_http(server)
+                    proc = self._run_claude(
+                        work_dir=work_dir,
+                        session_id=session_id,
+                        prompt=RALPH_CONTINUE_PROMPT,
+                        budget=budget,
+                        adapter_cost=adapter_cost,
+                        resume=True,
+                        env=env,
+                    )
+                    self._drain(server)
+                    iter_cost = _extract_claude_cost(proc.stdout)
+                    adapter_cost += iter_cost
+                    tracked_candidate, tracked_score = _tracked_best(task, server, seed, progress_mark)
+                    self._sync_workspace_best(work_dir, tracked_candidate, tracked_score)
+                    invocations.append({"cost": iter_cost, "score": tracked_score, "returncode": proc.returncode})
+                    if _saw_budget_exhausted(proc):
+                        break
+                    if proc.returncode != 0:
+                        break
+                    ralph_iterations += 1
+                    # Iteration produced no measurable cost — agent likely
+                    # has no more progress to make. Stop spending.
+                    if iter_cost < 0.001:
+                        break
+        finally:
+            self._resume_http(server)
 
         return Result(
-            best_candidate=best_candidate,
-            best_score=best_score,
+            best_candidate=tracked_candidate,
+            best_score=tracked_score,
             total_evals=server.budget.used,
             eval_log=server.eval_log,
             metadata={
@@ -623,6 +650,7 @@ class AutoResearchEngine:
                 "work_dir": str(work_dir),
                 "ralph_iterations": ralph_iterations,
                 "invocations": invocations,
+                "drain_timed_out": self._drain_timed_out,
             },
         )
 
@@ -719,6 +747,40 @@ class AutoResearchEngine:
                 return False
         return True
 
+    def _drain(self, server: EvalServer) -> None:
+        """Wait for leftover eval.sh work, then pause HTTP."""
+        drain = getattr(server, "drain_http", None)
+        if callable(drain):
+            if not drain(timeout=self.drain_timeout_seconds, quiet=self.drain_quiet_seconds):
+                self._drain_timed_out = True
+            return
+        pause = getattr(server, "pause_http", None)
+        if callable(pause):
+            pause()
+        wait = getattr(server, "wait_idle", None)
+        if callable(wait):
+            wait()
+
+    def _resume_http(self, server: EvalServer) -> None:
+        resume = getattr(server, "resume_http", None)
+        if callable(resume):
+            resume()
+
+    def _sync_workspace_best(self, work_dir: Path, candidate: str, score: float) -> None:
+        """Write the official winner into the workspace for the next Ralph iteration.
+
+        Keep the agent's last ``best_candidate.txt`` as ``agent_best_candidate.txt``
+        when it differs. Leave both files alone when there is no completed checkpoint.
+        """
+        if score == float("-inf"):
+            return
+        best_path = work_dir / "best_candidate.txt"
+        if best_path.exists():
+            previous = best_path.read_text()
+            if previous != candidate:
+                (work_dir / "agent_best_candidate.txt").write_text(previous)
+        best_path.write_text(candidate)
+
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         # Prefer ``self.run_dir`` when the caller's server has no output_dir:
         # callers like terrarium's optimize_anything adapter set ``output_dir=None`` on
@@ -734,6 +796,10 @@ class AutoResearchEngine:
             return
         dest.mkdir(parents=True, exist_ok=True)
         work_dir = Path(result.metadata["work_dir"])
+        agent_pick = _agent_workspace_pick(work_dir, result.best_candidate)
+        if agent_pick is not None:
+            dest.joinpath("agent_best_candidate.txt").write_text(agent_pick)
+        dest.joinpath("best_candidate.txt").write_text(result.best_candidate)
         session_id = result.metadata["session_id"]
         copy_session_transcript(work_dir, session_id, dest / "sessions")
         if not _is_under(work_dir, dest):
@@ -741,6 +807,18 @@ class AutoResearchEngine:
         if self._pending_tempdir is not None:
             self._pending_tempdir.cleanup()
             self._pending_tempdir = None
+
+
+def _agent_workspace_pick(work_dir: Path, official: str) -> str | None:
+    """Return the agent's last best_candidate.txt when it differs from the winner."""
+    for name in ("agent_best_candidate.txt", "best_candidate.txt"):
+        path = work_dir / name
+        if not path.exists():
+            continue
+        text = path.read_text()
+        if text != official:
+            return text
+    return None
 
 
 def _is_under(child: Path, parent: Path) -> bool:
@@ -772,7 +850,26 @@ def _config_bool(value: object) -> bool:
     return bool(value)
 
 
-def _best_aggregate_candidate(server: EvalServer) -> tuple[str, float] | None:
+def _has_visible_pool(task: Task) -> bool:
+    """Train or val examples the agent can score. ``test_set`` is reporting-only."""
+    return bool(task.train_set) or bool(task.val_set)
+
+
+def _tracked_best(task: Task, server: EvalServer, seed: str, progress_mark: int) -> tuple[str, float]:
+    """Pick the winner from completed eval-server state, not ``best_candidate.txt``."""
+    if _has_visible_pool(task):
+        aggregate = _best_aggregate_candidate(server, after=progress_mark)
+        if aggregate is None:
+            return seed, float("-inf")
+        return aggregate
+    candidate = getattr(server, "best_candidate", seed)
+    score = float(getattr(server, "best_score", float("-inf")))
+    if isinstance(candidate, dict):
+        return seed, float("-inf")
+    return str(candidate or seed), score
+
+
+def _best_aggregate_candidate(server: EvalServer, *, after: int = 0) -> tuple[str, float] | None:
     """Return the best candidate from aggregate ``evaluate_examples`` calls.
 
     Dataset ``EvalServer.best_score`` is the best per-example score, not a
@@ -780,11 +877,13 @@ def _best_aggregate_candidate(server: EvalServer) -> tuple[str, float] | None:
     aggregate checkpoints with candidate ids; use those for agentic engines
     that evaluate through shell scripts.
     """
-    progress = list(getattr(server, "progress_log", []) or [])
+    progress = list(getattr(server, "progress_log", []) or [])[after:]
     registry = getattr(server, "_candidate_registry", {}) or {}
     candidates_by_id = {cid: candidate for candidate, cid in registry.items()}
     best_entry = None
     for entry in progress:
+        if not entry.get("selectable", True):
+            continue
         candidate_id = entry.get("candidate_id")
         if candidate_id not in candidates_by_id:
             continue
