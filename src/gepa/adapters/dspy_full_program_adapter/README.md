@@ -97,3 +97,14 @@ program = MathQAModule()
 ```
 
 A fully executable notebook to run this example is in [src/gepa/examples/dspy_full_program_evolution/example.ipynb](../../examples/dspy_full_program_evolution/example.ipynb)
+
+## Reflective traces
+
+`make_reflective_dataset` builds the examples that the reflection LM sees. Each example includes the program-level inputs and outputs, plus a `Program Trace` of selected predictor calls, in execution order.
+
+- Consecutive calls to the same predictor are collapsed to the last call only when ReAct's `trajectory` string grew as a prefix. Independent repeats are kept, including History inputs (empty, shared-prefix, growing conversations, and unrelated sessions of different lengths) and prefix-related or newline-appended strings on other fields such as `context` or `document`.
+- Interleaved calls such as generate, critique, generate-again are kept in that order. The first generation is not dropped, and the critique is not moved after the revision.
+- A `FailedPrediction` (format parse error) stays in the trace so the raw completion is visible. Calls before and after it are still selected.
+
+That removes the repeated ReAct prefixes that previously sent the same trajectory into reflection many times. It does not drop a later module in a pipeline (for example the reasoner and extractor in the MATH program above). A later call does not always contain the earlier module's inputs and outputs, so both stay in the trace.
+
