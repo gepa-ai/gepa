@@ -127,7 +127,8 @@ class ComBEEReflectionLM:
             this argument is omitted.
         batch_reflection: When True (default), iterations batch all Level-1
             calls into one wave and all Level-2 calls into a second when the
-            underlying LM provides ``batch_complete``. Without
+            underlying LM provides ``batch_complete``. A wave of one (the
+            usual singleton reduce) still uses a plain completion. Without
             that capability, it automatically preserves #307's strict
             sequential per-proposal order. Set False to enforce that order
             even for batch-capable, order-dependent callables. The strategy
@@ -451,10 +452,13 @@ class ComBEEReflectionLM:
     ) -> tuple[ReflectionProposal, ComBEEReflectionLM]:
         """Reflect one job.
 
-        Outside a failed ``reflect_many`` attempt this is a plain, uncached
-        call. During the engine's per-job recovery path it replays the matching
-        logical call slots, so completed work is reused without treating equal
-        prompts from different jobs as the same completion.
+        Outside a failed batched attempt this is uncached. With
+        ``batch_reflection=True`` and a batch-capable LM it uses the two-wave
+        path (the job's maps as one wave; a singleton reduce as a plain call).
+        Otherwise it is the sequential #307 pass. During the engine's per-job
+        recovery path it replays the matching logical call slots, so completed
+        work is reused without treating equal prompts from different jobs as
+        the same completion.
         """
         if self._active_job_idx is not None:
             return self._reflect(candidate, reflective_dataset, components_to_update, self._active_job_idx)
@@ -532,10 +536,12 @@ class ComBEEReflectionLM:
     def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
         """Reflect all jobs as one failure-atomic attempt.
 
-        With ``batch_reflection=True``, map calls form one wave and reduce calls
-        form another. With ``False``, each job's full map/reduce pass completes
-        before the next one starts, matching #307 call order. Both forms retain
-        a logical-call retry cache and restore the shuffle stream on failure.
+        With ``batch_reflection=True``, map calls form one wave (including a
+        single job's ``k`` maps) and reduce calls form another. A wave of one
+        still uses a plain completion. With ``False``, each job's full
+        map/reduce pass completes before the next one starts, matching #307
+        call order. Both forms retain a logical-call retry cache and restore
+        the shuffle stream on failure.
         """
         batch_fingerprint = self._batch_fingerprint(jobs)
         if self._attempt is None or self._attempt.batch_fingerprint != batch_fingerprint:
