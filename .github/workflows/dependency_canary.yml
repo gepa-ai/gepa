@@ -43,7 +43,7 @@ jobs:
           uv pip install -p .venv --no-deps -e .
       - name: Assert GEPA is loaded from this checkout
         run: |
-          .venv/bin/python - <<'PY'
+          uv run --no-sync -p .venv python - <<'PY'
           from pathlib import Path
           import gepa
 
@@ -53,7 +53,7 @@ jobs:
           PY
       - name: Run DSPy consumer-contract tests
         run: |
-          .venv/bin/python -m pytest -vv \
+          uv run --no-sync -p .venv python -m pytest -vv \
             tests/test_dspy_compatibility.py \
             tests/test_dspy_full_program_adapter.py
 

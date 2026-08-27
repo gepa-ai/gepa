@@ -143,7 +143,7 @@ jobs:
           uv pip install -p .venv --no-deps -e .
       - name: Assert GEPA is loaded from this checkout
         run: |
-          .venv/bin/python - <<'PY'
+          uv run --no-sync -p .venv python - <<'PY'
           from pathlib import Path
           import gepa
 
@@ -152,10 +152,10 @@ jobs:
           assert root in module.parents, f"Loaded {module}, expected a module under {root}"
           PY
       - name: Run DSPy consumer-contract tests
-        # Do not use `uv run`: it would sync this intentionally overridden
-        # compatibility environment back to the lockfile.
+        # --no-sync preserves this intentionally overridden compatibility
+        # environment instead of syncing it back to the lockfile.
         run: |
-          .venv/bin/python -m pytest -vv \
+          uv run --no-sync -p .venv python -m pytest -vv \
             tests/test_dspy_compatibility.py \
             tests/test_dspy_full_program_adapter.py
 
