@@ -84,7 +84,8 @@ jobs:
           # Install the locally built wheel and testing dependencies
           WHEEL_FILE=$(ls dist/*.whl | head -1)
           uv pip install --python test_before_testpypi/bin/python "$WHEEL_FILE[dev]" pytest
-          test_before_testpypi/bin/python -m pytest tests/
+          # Use the wheel environment without syncing the source checkout into it
+          VIRTUAL_ENV="$PWD/test_before_testpypi" uv run --active --no-sync pytest tests/
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
@@ -170,7 +171,8 @@ jobs:
           # Install the locally built wheel and testing dependencies
           WHEEL_FILE=$(ls dist/*.whl | head -1)
           uv pip install --python test_before_pypi/bin/python "$WHEEL_FILE[dev]" pytest
-          test_before_pypi/bin/python -m pytest tests/
+          # Use the wheel environment without syncing the source checkout into it
+          VIRTUAL_ENV="$PWD/test_before_pypi" uv run --active --no-sync pytest tests/
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (gepa)
         uses: pypa/gh-action-pypi-publish@release/v1
