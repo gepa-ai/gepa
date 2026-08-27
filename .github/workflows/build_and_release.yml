@@ -25,49 +25,11 @@ jobs:
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
 
   verify-ci:
-    name: Require successful CI
-    runs-on: ubuntu-latest
-    timeout-minutes: 22
+    name: Run CI for release
     if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
     permissions:
-      actions: read
       contents: read
-    steps:
-      - name: Wait for CI on the tagged commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          WORKFLOW_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/run_tests.yml" --jq .id)
-
-          for ATTEMPT in $(seq 1 40); do
-            # Select only the normal CI workflow's main-branch run so this
-            # release workflow cannot accidentally satisfy its own gate.
-            RUN=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW_ID/runs" \
-              -f branch=main \
-              -f event=push \
-              -f head_sha="$GITHUB_SHA" \
-              -f per_page=20 \
-              --jq '(.workflow_runs | sort_by(.run_number) | last) as $run | if $run == null then empty else [$run.status, ($run.conclusion // ""), $run.html_url] | @tsv end')
-            IFS=$'\t' read -r STATUS CONCLUSION RUN_URL <<< "$RUN"
-
-            if [[ "$STATUS" == "completed" && "$CONCLUSION" == "success" ]]; then
-              echo "CI passed for $GITHUB_SHA: $RUN_URL"
-              exit 0
-            fi
-
-            if [[ "$STATUS" == "completed" ]]; then
-              echo "::error::CI concluded with $CONCLUSION for $GITHUB_SHA: $RUN_URL"
-              exit 1
-            fi
-
-            echo "Waiting for CI on $GITHUB_SHA ($ATTEMPT/40)"
-            if [[ "$ATTEMPT" -lt 40 ]]; then
-              sleep 30
-            fi
-          done
-
-          echo "::error::Timed out waiting for CI on $GITHUB_SHA"
-          exit 1
+    uses: ./.github/workflows/run_tests.yml
 
   build-and-publish-test-pypi:
     needs: [extract-tag, verify-ci]
