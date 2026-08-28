@@ -14,12 +14,16 @@ from concurrent import futures
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import grpc
 import pytest
 
-from gepa.rpc.generated import gepa_pb2 as pb
-from gepa.rpc.generated import gepa_pb2_grpc as pb_grpc
-from gepa.rpc.servicer import GEPAServicer
+# The rpc extra (grpcio) isn't part of gepa's default dev/test dependency
+# closure, so skip this whole module rather than error out when it's absent
+# (CI runs an rpc-specific job separately, with the extra installed).
+grpc = pytest.importorskip("grpc")
+
+from gepa.rpc.generated import gepa_pb2 as pb  # noqa: E402
+from gepa.rpc.generated import gepa_pb2_grpc as pb_grpc  # noqa: E402
+from gepa.rpc.servicer import GEPAServicer  # noqa: E402
 
 # ------------------------------------------------------------------ fixtures
 
