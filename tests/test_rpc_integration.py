@@ -759,3 +759,170 @@ def test_optimize_reflective_dataset_proxied(stub):
     assert entries[0]["Inputs"] == {"q": "2+2"}
     assert entries[0]["Generated Outputs"] == "4"
     assert entries[0]["Feedback"] == "correct"
+
+# ------------------------------------------------------------------ more edge cases
+
+
+def test_optimize_malformed_response_mismatched_scores(stub):
+    """Client returning the wrong number of scores/outputs surfaces as a sanitized error."""
+    def fake_optimize(*, seed_candidate, trainset, adapter, **_):
+        batch = list(trainset)
+        adapter.evaluate(batch, dict(seed_candidate), capture_traces=False)
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(
+        start_request=pb.StartRequest(
+            run_id="malformed-response",
+            seed_candidate=_SEED,
+            trainset=_TRAINSET,
+            max_metric_calls=5,
+        )
+    ))
+
+    def gen():
+        while True:
+            msg = req_q.get()
+            if msg is None:
+                return
+            yield msg
+
+    final = None
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        call = stub.RunOptimization(gen())
+        for msg in call:
+            if msg.HasField("evaluate_batch_request"):
+                req = msg.evaluate_batch_request
+                # Batch has 2 examples; return only 1 score/output -> mismatch.
+                req_q.put(pb.ClientMessage(
+                    evaluate_batch_response=pb.EvaluateBatchResponse(
+                        request_id=req.request_id,
+                        outputs=["ok"],
+                        scores=[1.0],
+                    )
+                ))
+            elif msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                final = msg
+                req_q.put(None)
+                break
+
+    assert final is not None
+    assert final.HasField("optimization_error")
+    assert "mismatched" not in final.optimization_error.message
+    assert final.optimization_error.message == "optimization failed"
+
+
+def test_concurrent_runs_different_ids_succeed(stub):
+    """Two different run_ids running concurrently both complete correctly, independently."""
+    import threading
+    import time
+
+    def fake_optimize(*, seed_candidate, **_):
+        time.sleep(0.05)
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    results: dict = {}
+
+    def run_one(run_id):
+        with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+            results[run_id] = _run_optimize(stub, run_id=run_id, fake_optimize=fake_optimize)
+
+    threads = [threading.Thread(target=run_one, args=(f"concurrent-{i}",)) for i in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert len(results) == 3
+    for run_id, msg in results.items():
+        assert msg is not None
+        assert msg.HasField("optimization_complete")
+        assert msg.optimization_complete.run_id == run_id
+
+
+def test_optimize_max_metric_calls_omitted_passes_none(stub):
+    """Omitting max_metric_calls (proto default 0) passes max_metric_calls=None (unbounded) to gepa.optimize."""
+    captured: dict = {}
+
+    def fake_optimize(*, seed_candidate, max_metric_calls, **_):
+        captured["max_metric_calls"] = max_metric_calls
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(
+        start_request=pb.StartRequest(
+            run_id="unbounded-metric-calls",
+            seed_candidate=_SEED,
+            trainset=_TRAINSET,
+        )
+    ))
+
+    def gen():
+        while True:
+            msg = req_q.get()
+            if msg is None:
+                return
+            yield msg
+
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        call = stub.RunOptimization(gen())
+        for msg in call:
+            if msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                req_q.put(None)
+                break
+
+    assert captured["max_metric_calls"] is None
+
+
+def test_optimize_omni_max_evals_omitted_passes_none(stub):
+    """Omitting max_evals passes max_evals=None (unbounded) to OptimizeAnythingConfig."""
+    from gepa.optimize_anything import Result
+
+    captured: dict = {}
+
+    def fake_optimize_anything(*, seed_candidate, config, **_):
+        captured["max_evals"] = config.max_evals
+        return Result(best_candidate=seed_candidate or "", best_score=0.0, total_evals=0)
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.OmniClientMessage(
+        start_request=pb.OmniStartRequest(
+            run_id="omni-unbounded-evals",
+            seed_candidate="test",
+        )
+    ))
+
+    def gen():
+        while True:
+            msg = req_q.get()
+            if msg is None:
+                return
+            yield msg
+
+    with patch("gepa.rpc.servicer.optimize_anything", side_effect=fake_optimize_anything):
+        call = stub.RunOptimizationOmni(gen())
+        for msg in call:
+            if msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                req_q.put(None)
+                break
+
+    assert captured["max_evals"] is None
+
+
+def test_max_runs_eviction_prefers_finished(stub):
+    """When _MAX_RUNS is reached, a finished run is evicted before a running one."""
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    with patch("gepa.rpc.servicer._MAX_RUNS", 2):
+        _run_optimize(stub, run_id="evict-1", fake_optimize=fake_optimize)
+        _run_optimize(stub, run_id="evict-2", fake_optimize=fake_optimize)
+
+        assert stub.GetStatus(pb.StatusRequest(run_id="evict-1")).status == pb.StatusResponse.COMPLETE
+        assert stub.GetStatus(pb.StatusRequest(run_id="evict-2")).status == pb.StatusResponse.COMPLETE
+
+        # A third run should evict the oldest finished entry (evict-1), not error out.
+        _run_optimize(stub, run_id="evict-3", fake_optimize=fake_optimize)
+
+        assert stub.GetStatus(pb.StatusRequest(run_id="evict-1")).status == pb.StatusResponse.UNKNOWN
+        assert stub.GetStatus(pb.StatusRequest(run_id="evict-3")).status == pb.StatusResponse.COMPLETE
