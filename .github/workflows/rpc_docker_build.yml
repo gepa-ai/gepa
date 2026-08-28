@@ -1,0 +1,23 @@
+name: gepa.rpc - Build Docker image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/gepa/rpc/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/gepa/rpc/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f src/gepa/rpc/Dockerfile -t gepa-rpc:latest .

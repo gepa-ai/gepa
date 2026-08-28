@@ -131,6 +131,34 @@ jobs:
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/test_rpc_integration.py
 
+  rpc_typescript_test:
+    name: Run RPC TypeScript SDK Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/gepa/rpc/sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+
+  rpc_rust_test:
+    name: Run RPC Rust SDK Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/gepa/rpc/sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.75'
+      - run: cargo check --all-targets
+
   # llm_call_test:
   #   name: Run Tests with Real LM
   #   runs-on: ubuntu-latest

@@ -221,3 +221,7 @@ archive/
 # Local MLflow tracking artifacts (TrackingConfig(use_mlflow=True))
 mlflow.db
 mlruns/
+
+# gepa.rpc SDKs (src/gepa/rpc/sdk/{typescript,rust})
+node_modules/
+Cargo.lock

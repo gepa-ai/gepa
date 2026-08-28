@@ -1,0 +1,17 @@
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.git
+.github
+.env
+*.egg-info
+.venv
+runs/
+outputs/
+tests/
+docs/
+examples/
+assets/
+src/gepa/rpc/sdk/typescript/node_modules
+src/gepa/rpc/sdk/typescript/dist
+src/gepa/rpc/sdk/rust/target

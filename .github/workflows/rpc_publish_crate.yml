@@ -1,0 +1,23 @@
+name: gepa.rpc - Publish gepa-sdk to crates.io
+
+on:
+  push:
+    tags:
+      - 'rpc-sdk-rust-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/gepa/rpc/sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.75'
+      - run: cargo check
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

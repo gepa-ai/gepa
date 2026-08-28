@@ -1,0 +1,160 @@
+syntax = "proto3";
+package gepa_rpc;
+service GEPAService {
+  rpc RunOptimization(stream ClientMessage) returns (stream ServerMessage);
+  rpc RunOptimizationOmni(stream OmniClientMessage) returns (stream OmniServerMessage);
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+message OmniClientMessage {
+  oneof payload {
+    OmniStartRequest start_request = 1;
+    OmniEvaluateBatchResponse evaluate_batch_response = 2;
+  }
+}
+message OmniServerMessage {
+  oneof payload {
+    OmniEvaluateBatchRequest evaluate_batch_request = 1;
+    OmniProgressUpdate progress_update = 2;
+    OmniOptimizationComplete optimization_complete = 3;
+    OptimizationError optimization_error = 4;
+  }
+}
+message ClientMessage {
+  oneof payload {
+    StartRequest start_request = 1;
+    EvaluateBatchResponse evaluate_batch_response = 2;
+    ReflectiveDatasetResponse reflective_dataset_response = 3;
+  }
+}
+message ServerMessage {
+  oneof payload {
+    EvaluateBatchRequest evaluate_batch_request = 1;
+    ReflectiveDatasetRequest reflective_dataset_request = 2;
+    ProgressUpdate progress_update = 3;
+    OptimizationComplete optimization_complete = 4;
+    OptimizationError optimization_error = 5;
+  }
+}
+message OmniStartRequest {
+  string run_id = 1;
+  string seed_candidate = 2;
+  string objective = 3;
+  repeated Example dataset = 4;
+  repeated Example valset = 5;
+  int32 max_evals = 6;
+  string reflection_lm = 7;
+  // Optimize Anything backend to run: "gepa" (default), "autoresearch",
+  // "best_of_n", or "meta_harness". Empty defaults to "gepa". Only "gepa"
+  // currently gets reflection_lm applied and streams OmniProgressUpdate;
+  // other engines run to completion and report OmniOptimizationComplete only.
+  string engine = 8;
+}
+message StartRequest {
+  string run_id = 1;
+  map<string, string> seed_candidate = 2;
+  repeated Example trainset = 3;
+  repeated Example valset = 4;
+  string reflection_lm = 5;
+  int32 max_metric_calls = 6;
+}
+message OmniEvaluateBatchRequest {
+  string request_id = 1;
+  string candidate = 2;
+  repeated Example batch = 3;
+  // Per-example warm-start history, aligned 1:1 with batch. Empty when
+  // the engine has no prior evaluations for an example yet.
+  repeated OmniOptimizationState opt_states = 4;
+}
+message OmniOptimizationState {
+  repeated OmniBestEval best_example_evals = 1;
+}
+message OmniBestEval {
+  float score = 1;
+  string side_info = 2;
+}
+message OmniEvaluateBatchResponse {
+  string request_id = 1;
+  repeated float scores = 2;
+  repeated string side_infos = 3;
+}
+message EvaluateBatchRequest {
+  string request_id = 1;
+  map<string, string> candidate = 2;
+  repeated Example batch = 3;
+  bool capture_traces = 4;
+}
+message EvaluateBatchResponse {
+  string request_id = 1;
+  repeated string outputs = 2;
+  repeated float scores = 3;
+  repeated Trajectory trajectories = 4;
+}
+message ReflectiveDatasetRequest {
+  string request_id = 1;
+  map<string, string> candidate = 2;
+  repeated string components_to_update = 3;
+  repeated Trajectory trajectories = 4;
+}
+message ReflectiveDatasetResponse {
+  string request_id = 1;
+  map<string, ReflectiveComponentData> reflective_data = 2;
+}
+message OmniProgressUpdate {
+  int32 evals_used = 1;
+  int32 max_evals = 2;
+  float best_score = 3;
+  string best_candidate = 4;
+}
+message OmniOptimizationComplete {
+  string run_id = 1;
+  string best_candidate = 2;
+  float best_score = 3;
+  int32 total_evals = 4;
+}
+message ProgressUpdate {
+  int32 metric_calls_used = 1;
+  int32 max_metric_calls = 2;
+  float best_score = 3;
+  map<string, string> best_candidate = 4;
+}
+message OptimizationComplete {
+  string run_id = 1;
+  map<string, string> best_candidate = 2;
+  float best_score = 3;
+}
+message OptimizationError {
+  string run_id = 1;
+  string message = 2;
+}
+message StatusRequest {
+  string run_id = 1;
+}
+message StatusResponse {
+  enum Status {
+    UNKNOWN = 0;
+    RUNNING = 1;
+    COMPLETE = 2;
+    FAILED = 3;
+  }
+  string run_id = 1;
+  Status status = 2;
+  string message = 3;
+  int32 metric_calls_used = 4;
+}
+message Example {
+  string id = 1;
+  map<string, string> fields = 2;
+}
+message Trajectory {
+  map<string, string> input_fields = 1;
+  string output = 2;
+  string feedback = 3;
+}
+message ReflectiveComponentData {
+  repeated ReflectiveEntry entries = 1;
+}
+message ReflectiveEntry {
+  map<string, string> inputs = 1;
+  string generated_output = 2;
+  string feedback = 3;
+}
