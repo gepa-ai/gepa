@@ -12,6 +12,7 @@ from glean_gepa.al_adapter import (
     extract_shell_action_inputs,
 )
 from glean_gepa.evalcli_client import EvalCliClient
+from glean_gepa.focused_evalset import FocusedEvalSet
 from glean_gepa.shell_tool_error_util import (
     SHELL_SUCCESS_OBJECTIVE,
     EvalRunShellToolErrorAnalysis,
@@ -128,6 +129,7 @@ def test_evaluate_uses_shell_error_rate_objective():
     assert result.outputs[0]["shell_action_inputs"] == ['{"command": "python3 broken.py"}']
     assert result.trajectories is not None
     assert len(result.trajectories) == 1
+
     assert result.trajectories[0]["data"]["eval_entry_id"] == "entry-1"
     assert result.trajectories[0]["data"]["eval_run_id"] == "run_123"
     assert result.trajectories[0]["data"]["eval_trace_id"] == "trace-student-1"
@@ -137,7 +139,7 @@ def test_evaluate_uses_shell_error_rate_objective():
     assert reflective["Inputs"]["eval_trace_id"] == "trace-student-1"
     assert reflective["Execution Errors"] == ["command exited with status 1"]
     assert reflective["Action Inputs"] == ['{"command": "python3 broken.py"}']
-    assert "command exited with status 1" in reflective["Feedback"]
+    assert reflective["Feedback"] == "Resolve the shell execution failures shown above."
     captured_prompts = []
 
     def reflection_lm(prompt: str) -> str:
@@ -167,8 +169,112 @@ def test_evaluate_uses_shell_error_rate_objective():
     assert "EVAL_TRACE_ID: trace-student-1" in captured_prompts[0]
     assert "METRICS:" not in captured_prompts[0]
     assert "Shell success rate issue:" not in captured_prompts[0]
-    assert "Recent shell errors: command exited with status 1" in captured_prompts[0]
+    assert "FEEDBACK: Resolve the shell execution failures shown above." in captured_prompts[0]
     assert "EXECUTION_ERRORS: ['command exited with status 1']" in captured_prompts[1]
+
+
+def test_high_signal_evaluation_runs_the_uploaded_focused_eval_set():
+    evalcli = EvalCliClient(binary="/fake/evalcli")
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=evalcli),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+    )
+    passing_entry = MagicMock(
+        shell_executions=1,
+        shell_errors=0,
+        shell_success_rate=1.0,
+        shell_error_pct=0.0,
+        recent_error_examples=(),
+    )
+    analysis = MagicMock(
+        eval_id="focused-run",
+        aggregate=passing_entry,
+        per_entry={"fresh-entry": passing_entry},
+        high_signal_entry_ids=(),
+    )
+    with (
+        patch(
+            "glean_gepa.single_model_adapter.ensure_focused_eval_set",
+            return_value=FocusedEvalSet("gepa-high-signal-source", "v1_hs_abc", 1),
+        ) as ensure,
+        patch.object(adapter, "_get_or_run_student_eval", return_value="focused-run") as run_eval,
+        patch.object(adapter, "_get_or_fetch_shell_error_analysis", return_value=analysis) as get_analysis,
+    ):
+        result = adapter.evaluate(
+            [
+                {
+                    "eval_set_name": "Source",
+                    "eval_set_version": "v1",
+                    "deployment_ids": ["prod"],
+                    "status": "active",
+                    "eval_entry_ids": ["source-entry"],
+                }
+            ],
+            {"WRITING_CODE": "prompt"},
+            capture_traces=True,
+        )
+
+    ensure.assert_called_once()
+    assert get_analysis.call_args.kwargs["include_error_examples"] is False
+    assert run_eval.call_args.kwargs["eval_set_name"] == "gepa-high-signal-source"
+    assert run_eval.call_args.kwargs["eval_set_version"] == "v1_hs_abc"
+    assert run_eval.call_args.kwargs["run_label"] == "gepa_high_signal"
+    assert result.scores == [1.0]
+
+
+def test_high_signal_evaluation_scores_entries_not_shell_calls():
+    evalcli = EvalCliClient(binary="/fake/evalcli")
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=evalcli),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+    )
+    passing = ShellToolErrorEntryMetrics(
+        entry_id="fresh-passing",
+        shell_executions=1,
+        shell_errors=0,
+        shell_error_rate=0.0,
+        shell_error_pct=0.0,
+        recent_error_examples=(),
+    )
+    failing = ShellToolErrorEntryMetrics(
+        entry_id="fresh-failing",
+        shell_executions=100,
+        shell_errors=1,
+        shell_error_rate=0.01,
+        shell_error_pct=1.0,
+        recent_error_examples=(),
+    )
+    analysis = MagicMock(
+        aggregate=MagicMock(shell_success_rate=99 / 101),
+        per_entry={passing.entry_id: passing, failing.entry_id: failing},
+        high_signal_entry_ids=(),
+    )
+    with (
+        patch.object(adapter, "_get_or_run_student_eval", return_value="focused-run"),
+        patch.object(adapter, "_get_or_fetch_shell_error_analysis", return_value=analysis),
+    ):
+        result = adapter.evaluate(
+            [
+                {
+                    "eval_set_name": "Source",
+                    "eval_set_version": "v1",
+                    "deployment_ids": ["prod"],
+                    "status": "active",
+                    "eval_entry_ids": ["source-1", "source-2"],
+                    "focused_eval_set_name": "focused",
+                    "focused_eval_set_version": "v1_hs",
+                }
+            ],
+            {"WRITING_CODE": "prompt"},
+            capture_traces=True,
+        )
+
+    assert result.scores == [1.0, 0.0]
+    assert result.summary[SHELL_SUCCESS_OBJECTIVE] == 0.5
 
 
 def test_extract_shell_action_inputs_matches_action_run_id():

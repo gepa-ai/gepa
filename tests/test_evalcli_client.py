@@ -4,7 +4,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from glean_gepa.al_adapter import CODING_HARNESS_SC_PARAMS, ALRunner
 from glean_gepa.evalcli_client import EvalCliClient, EvalCliError, _subprocess_env
+
+
+def test_coding_harness_sc_params_selects_coding_agent_loop():
+    runner = ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli"))
+
+    params = runner._build_sc_params("gpt", "")
+
+    assert params.startswith(CODING_HARNESS_SC_PARAMS)
+    assert "co.internal_looping_pyagent_default_route_override=coding_agent_loop" in params
+    assert "co.py_agent_route_override=o3_agentic_loop" not in params
+    assert "co.lo.cao.agentic_loop_sc_params=co.so.enable_for_agentic_loop%3D1%2C" in params
+    assert "co.so.ptc_only_tools%3Dglean_search%253Bglean_document_reader" in params
 
 
 def test_create_eval_run_invokes_evalcli_with_expected_args():
@@ -36,6 +49,22 @@ def test_create_judge_run_parses_response_list():
         judge_id = client.create_judge_run(student_eval_id="student", teacher_eval_id="teacher")
 
     assert judge_id == "judge_456"
+
+
+def test_list_eval_set_versions_returns_version_rows():
+    client = EvalCliClient(binary="/fake/evalcli")
+    with patch.object(client, "_invoke_json", return_value={"evalSetVersions": [{"version": "20260827"}]}) as mock_invoke:
+        rows = client.list_eval_set_versions(eval_set_name="Glean Chat V2 Medium", deployment_ids=["scio-prod"])
+
+    assert rows == [{"version": "20260827"}]
+    assert mock_invoke.call_args[0] == (
+        "evalsets",
+        "list",
+        "--name",
+        "Glean Chat V2 Medium",
+        "--deployment-ids",
+        "scio-prod",
+    )
 
 
 def test_wait_for_judge_run_raises_on_failure():

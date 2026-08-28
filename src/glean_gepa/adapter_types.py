@@ -22,6 +22,9 @@ class SingleModelALDataInst(EvalSetALDataInst):
     eval_entry_id: NotRequired[str]
     eval_run_id: NotRequired[str]
     eval_trace_id: NotRequired[str]
+    eval_entry_ids: NotRequired[list[str]]
+    focused_eval_set_name: NotRequired[str]
+    focused_eval_set_version: NotRequired[str]
 
 
 class TeacherStudentALDataInst(EvalSetALDataInst):

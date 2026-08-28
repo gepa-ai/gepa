@@ -183,49 +183,15 @@ def build_shell_tool_error_per_entry_query(
     *,
     agentspan_table: str = DEFAULT_AGENTS_SPAN_TABLE,
     entry_ids: Sequence[str] | None = None,
+    include_error_examples: bool = True,
 ) -> str:
     """Build SQL for per-entry shell tool error metrics scoped to one eval run."""
     entry_filter = ""
     if entry_ids:
         entry_filter = "AND COALESCE(entry_id, entry_uuid) IN UNNEST(@entry_ids)"
     shell_spans = _shell_spans_select_sql().format(agentspan_table=agentspan_table)
-    return f"""
-WITH shell_spans AS (
-{shell_spans}
-),
-classified AS (
-  SELECT
-    -- Prefer the explicit eval entry ID when present, otherwise use the
-    -- trace-side eval entry UUID. Current eval runs populate entry_uuid.
-    COALESCE(entry_id, entry_uuid) AS entry_key,
-    *,
-    (
-      action_status = 'ERROR'
-      OR span_status = 'ERROR'
-      OR output_status_code = 'ERROR'
-      OR LOWER(provider_status) IN ('failed', 'error')
-    ) AS is_error
-  FROM shell_spans
-  WHERE COALESCE(entry_id, entry_uuid) IS NOT NULL
-  {entry_filter}
-),
-per_entry AS (
-  SELECT
-    entry_key AS entry_id,
-    COUNT(DISTINCT shell_execution_id) AS shell_executions,
-    COUNT(DISTINCT IF(is_error, shell_execution_id, NULL)) AS shell_errors,
-    SAFE_DIVIDE(
-      COUNT(DISTINCT IF(is_error, shell_execution_id, NULL)),
-      COUNT(DISTINCT shell_execution_id)
-    ) AS shell_error_rate,
-    ROUND(
-      100 * SAFE_DIVIDE(
-        COUNT(DISTINCT IF(is_error, shell_execution_id, NULL)),
-        COUNT(DISTINCT shell_execution_id)
-      ),
-      2
-    ) AS shell_error_pct,
-    ARRAY_AGG(
+    error_detail_columns = """
+    , ARRAY_AGG(
       IF(
         is_error,
         STRUCT(
@@ -264,6 +230,43 @@ per_entry AS (
       ORDER BY start_ms DESC
       LIMIT 10
     ) AS session_tracking_tokens
+""" if include_error_examples else ""
+    return f"""
+WITH shell_spans AS (
+{shell_spans}
+),
+classified AS (
+  SELECT
+    -- Prefer the explicit eval entry ID when present, otherwise use the
+    -- trace-side eval entry UUID. Current eval runs populate entry_uuid.
+    COALESCE(entry_id, entry_uuid) AS entry_key,
+    *,
+    (
+      action_status = 'ERROR'
+      OR span_status = 'ERROR'
+      OR output_status_code = 'ERROR'
+      OR LOWER(provider_status) IN ('failed', 'error')
+    ) AS is_error
+  FROM shell_spans
+  WHERE COALESCE(entry_id, entry_uuid) IS NOT NULL
+  {entry_filter}
+),
+per_entry AS (
+  SELECT
+    entry_key AS entry_id,
+    COUNT(DISTINCT shell_execution_id) AS shell_executions,
+    COUNT(DISTINCT IF(is_error, shell_execution_id, NULL)) AS shell_errors,
+    SAFE_DIVIDE(
+      COUNT(DISTINCT IF(is_error, shell_execution_id, NULL)),
+      COUNT(DISTINCT shell_execution_id)
+    ) AS shell_error_rate,
+    ROUND(
+      100 * SAFE_DIVIDE(
+        COUNT(DISTINCT IF(is_error, shell_execution_id, NULL)),
+        COUNT(DISTINCT shell_execution_id)
+      ),
+      2
+    ) AS shell_error_pct{error_detail_columns}
   FROM classified
   GROUP BY entry_key
 )
@@ -665,6 +668,7 @@ def fetch_eval_run_shell_tool_error_analysis(
     lookback_days: int = 7,
     end_date: date | None = None,
     agentspan_table: str = DEFAULT_AGENTS_SPAN_TABLE,
+    include_error_examples: bool = True,
 ) -> EvalRunShellToolErrorAnalysis:
     bounds_rows = client.query(
         build_eval_run_time_bounds_query(agentspan_table=agentspan_table),
@@ -692,7 +696,10 @@ def fetch_eval_run_shell_tool_error_analysis(
 
     start_date, resolved_end = date_range
     per_entry_rows = client.query(
-        build_shell_tool_error_per_entry_query(agentspan_table=agentspan_table),
+        build_shell_tool_error_per_entry_query(
+            agentspan_table=agentspan_table,
+            include_error_examples=include_error_examples,
+        ),
         params=build_shell_tool_error_query_params(
             eval_id=eval_id,
             start_date=start_date,

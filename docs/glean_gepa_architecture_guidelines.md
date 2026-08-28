@@ -66,6 +66,24 @@ Both adapters satisfy the same GEPA-facing contract: candidates are `dict[str, s
 
 Keep evaluation behavior stable while changing the surrounding code. Do not simultaneously change scoring, candidate selection, or remote-evaluation semantics.
 
+## Reflection sampling CLI
+
+Use all available reflective examples when each iteration's example set is
+small enough to fit in one reflection prompt. Glean-specific near-duplicate
+filtering isolates each example's `Execution Errors` and drops later examples
+whose errors are within the configured Hamming distance of an earlier error:
+
+```bash
+uv run python -m glean_gepa.runner \
+  --seed_candidate data/seed_candidate.json \
+  --run_dir gepa_runs/run-002 \
+  --max_metric_calls 10 \
+  --judging_mode single_model \
+  --eval_versions 20260806,20260824,20260820,20260815 \
+  --reflection_samples all \
+  --reflection_hamming_distance_k 10
+```
+
 ## Implementation rules
 
 1. Select the concrete adapter explicitly in `runner.py`; keep each adapter free of branches for the other evaluation path.

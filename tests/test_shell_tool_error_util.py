@@ -77,6 +77,14 @@ def test_per_entry_query_collects_only_error_trace_ids_newest_first():
     assert "AS trace_ids" in sql
 
 
+def test_per_entry_query_can_skip_error_examples_for_high_signal_screening():
+    sql = build_shell_tool_error_per_entry_query(include_error_examples=False)
+
+    assert "shell_errors" in sql
+    assert "recent_error_examples" not in sql
+    assert "AS trace_ids" not in sql
+
+
 def test_build_shell_tool_error_query_params_uses_eval_run_date_range():
     params = build_shell_tool_error_query_params(
         eval_id="run_123",

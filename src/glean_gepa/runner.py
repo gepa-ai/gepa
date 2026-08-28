@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Sequence
+from datetime import date, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -25,6 +27,7 @@ from glean_gepa.bigquery_client import BigQueryClient
 from glean_gepa.evalcli_client import EvalCliClient
 from glean_gepa.evalset_policy import UnseenEvalSetPolicy
 from glean_gepa.evolutionary_proposer import EvolutionaryProposer
+from glean_gepa.fake_flow import build_fake_flow_components
 from glean_gepa.openai_client import create_qe_openai_client, format_exception_chain, get_perfeval_secret
 from glean_gepa.prompt import WRITING_CODE_KEY
 from glean_gepa.single_model_adapter import SingleModelAdapter
@@ -89,9 +92,104 @@ def _make_reflection_lm(
     return reflection_lm
 
 
-def main() -> None:
+def _parse_reflection_samples(value: str) -> int | None:
+    if value.lower() == "all":
+        return None
+    try:
+        sample_count = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("reflection_samples must be a positive integer or 'all'") from exc
+    if sample_count <= 0:
+        raise argparse.ArgumentTypeError("reflection_samples must be a positive integer or 'all'")
+    return sample_count
+
+
+def _nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be non-negative")
+    return parsed
+
+
+def _parse_eval_versions(value: str, *, argument_name: str) -> list[str]:
+    versions = [version.strip() for version in value.split(",") if version.strip()]
+    if not versions:
+        raise SystemExit(f"{argument_name} must contain at least one eval version")
+    return versions
+
+
+def _make_evalset(versions: list[str]) -> list[ALDataInst]:
+    return [
+        {
+            "eval_set_name": "Glean Chat V2 Medium",
+            "eval_set_version": version,
+            "deployment_ids": ["scio-prod"],
+            "status": "active",
+        }
+        for version in versions
+    ]
+
+
+def _select_recent_train_and_val_versions(
+    version_rows: list[dict[str, object]], *, today: date, lookback_days: int, valset_size: int
+) -> tuple[list[str], list[str]]:
+    """Reserve the newest one or two versions for validation and schedule older ones for training."""
+    earliest = today - timedelta(days=lookback_days)
+    recent_versions: set[tuple[date, str]] = set()
+    for row in version_rows:
+        raw_version = row.get("version") or row.get("evalSetVersion")
+        if not isinstance(raw_version, str) or not re.fullmatch(r"\d{8}", raw_version):
+            continue
+        try:
+            version_date = date.fromisoformat(f"{raw_version[:4]}-{raw_version[4:6]}-{raw_version[6:]}")
+        except ValueError:
+            continue
+        if earliest <= version_date <= today:
+            recent_versions.add((version_date, raw_version))
+
+    ordered_versions = [version for _version_date, version in sorted(recent_versions)]
+    if len(ordered_versions) < 2:
+        raise SystemExit(
+            f"Need at least two scio-prod eval versions dated {earliest.isoformat()} through {today.isoformat()}; "
+            f"found {len(ordered_versions)}."
+        )
+    actual_valset_size = min(valset_size, len(ordered_versions) - 1)
+    return ordered_versions[:-actual_valset_size], ordered_versions[-actual_valset_size:]
+
+
+def _resolve_eval_version_split(args: argparse.Namespace, evalcli: EvalCliClient) -> tuple[list[str], list[str]]:
+    if bool(args.train_eval_versions) != bool(args.val_eval_versions):
+        raise SystemExit("Set both --train_eval_versions and --val_eval_versions, or neither for automatic selection.")
+    if args.train_eval_versions:
+        train_versions = _parse_eval_versions(args.train_eval_versions, argument_name="--train_eval_versions")
+        val_versions = _parse_eval_versions(args.val_eval_versions, argument_name="--val_eval_versions")
+    else:
+        rows = evalcli.list_eval_set_versions(
+            eval_set_name="Glean Chat V2 Medium", deployment_ids=["scio-prod"]
+        )
+        train_versions, val_versions = _select_recent_train_and_val_versions(
+            rows,
+            today=date.today(),
+            lookback_days=args.eval_version_lookback_days,
+            valset_size=args.val_eval_version_count,
+        )
+        print(
+            "[Eval set schedule] Auto-selected "
+            f"train versions={','.join(train_versions)} and val versions={','.join(val_versions)}"
+        )
+
+    overlapping_versions = set(train_versions) & set(val_versions)
+    if overlapping_versions:
+        overlap = ", ".join(sorted(overlapping_versions))
+        raise SystemExit(f"Train and validation eval versions must not overlap: {overlap}")
+    if not 1 <= len(val_versions) <= 2:
+        raise SystemExit("Validation must contain one or two eval versions.")
+    return train_versions, val_versions
+
+
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Optimize Glean prompts with GEPA's low-level engine.")
-    parser.add_argument("--seed_candidate", required=True, type=Path)
+    parser.add_argument("--seed_candidate", type=Path)
     parser.add_argument("--max_metric_calls", type=int, default=10)
     parser.add_argument("--run_dir", type=Path, default=None)
     parser.add_argument("--student_model", default="gpt")
@@ -101,33 +199,70 @@ def main() -> None:
     parser.add_argument("--qe_instance", default="glean-dev")
     parser.add_argument("--qe_authenticated_email", default="cathy.chen@glean.com")
     parser.add_argument("--global_token_cap", type=int, default=4096)
+    parser.add_argument(
+        "--reflection_samples",
+        type=_parse_reflection_samples,
+        default=8,
+        help="Number of reflective examples per module, or 'all' for every available example.",
+    )
+    parser.add_argument(
+        "--reflection_hamming_distance_k",
+        type=_nonnegative_int,
+        default=None,
+        help="Drop later examples whose isolated execution errors are within Hamming distance k.",
+    )
     parser.add_argument("--evalcli", default=None)
     parser.add_argument("--shell_error_lookback_days", type=int, default=7)
     parser.add_argument("--bigquery_project", default=None)
-    parser.add_argument("--eval_versions", default="20260806,20260727")
+    parser.add_argument(
+        "--train_eval_versions",
+        help="Optional comma-separated override for training versions; set with --val_eval_versions.",
+    )
+    parser.add_argument(
+        "--val_eval_versions",
+        help="Optional comma-separated override for held-out validation versions.",
+    )
+    parser.add_argument(
+        "--eval_version_lookback_days",
+        type=_nonnegative_int,
+        default=14,
+        help="Automatically select scio-prod versions from this many days ago through today.",
+    )
+    parser.add_argument(
+        "--val_eval_version_count",
+        type=int,
+        choices=[1, 2],
+        default=2,
+        help="Number of newest eligible versions reserved for validation (default: 2).",
+    )
     parser.add_argument(
         "--judging_mode",
         choices=["teacher_student", "single_model"],
         default="single_model",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--fake_flow",
+        action="store_true",
+        help="Run deterministic fake eval data and prompt iterations without external Glean services.",
+    )
+    return parser.parse_args(argv)
 
+
+def main() -> None:
+    args = _parse_args()
+
+    if args.fake_flow:
+        _run_fake_flow(args)
+        return
+
+    if args.seed_candidate is None:
+        raise SystemExit("--seed_candidate is required unless --fake_flow is set")
     seed_candidate = _load_seed_candidate(args.seed_candidate)
-    versions = [version.strip() for version in args.eval_versions.split(",") if version.strip()]
-    if not versions:
-        raise SystemExit("At least one eval version is required")
-
-    evalset: list[ALDataInst] = [
-        {
-            "eval_set_name": "Glean Chat V2 Medium",
-            "eval_set_version": version,
-            "deployment_ids": ["scio-prod"],
-            "status": "active",
-        }
-        for version in versions
-    ]
-    judging_mode = cast(JudgingMode, args.judging_mode)
     evalcli = EvalCliClient(binary=args.evalcli)
+    train_versions, val_versions = _resolve_eval_version_split(args, evalcli)
+    trainset = _make_evalset(train_versions)
+    valset = _make_evalset(val_versions)
+    judging_mode = cast(JudgingMode, args.judging_mode)
     adapter_kwargs = {
         "runner": ALRunner(evalcli=evalcli),
         "thresholds": Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
@@ -146,10 +281,9 @@ def main() -> None:
     logger = StdOutLogger()
     tracker = create_experiment_tracker()
     module_specs = {name: ModuleSpec(name, "free_text", 1024) for name in MODULES}
-    evalset_policy = UnseenEvalSetPolicy() if judging_mode == "single_model" else None
     proposer = EvolutionaryProposer(
         logger=logger,
-        trainset=evalset,
+        trainset=trainset,
         al_adapter=adapter,
         reflection_llm=_make_reflection_lm(
             args.reflection_lm_model,
@@ -161,13 +295,15 @@ def main() -> None:
         model=args.student_model,
         module_specs=module_specs,
         global_token_cap=args.global_token_cap,
+        reflect_k=args.reflection_samples,
+        reflection_hamming_distance_k=args.reflection_hamming_distance_k,
         baseline_prompt_hash=hashlib.md5(json.dumps(seed_candidate, sort_keys=True).encode()).hexdigest(),
-        evalset_policy=evalset_policy,
+        evalset_policy=UnseenEvalSetPolicy(),
     )
     optimize(
         seed_candidate=seed_candidate,
-        trainset=evalset,
-        valset=evalset,
+        trainset=trainset,
+        valset=valset,
         adapter=adapter,
         proposer=proposer,
         logger=logger,
@@ -175,7 +311,43 @@ def main() -> None:
         max_metric_calls=args.max_metric_calls,
         run_dir=str(args.run_dir) if args.run_dir else None,
         frontier_type=cast(FrontierType, adapter.default_frontier_type),
-        val_evaluation_policy=evalset_policy,
+    )
+
+
+def _run_fake_flow(args: argparse.Namespace) -> None:
+    """Execute the real GEPA lifecycle with in-memory fake evaluations."""
+    seed_candidate, trainset, valset, adapter, module_specs = build_fake_flow_components()
+    print("[FAKE FLOW] Starting offline Glean GEPA flow with separate train and val sets; no external services will be called.")
+    logger = StdOutLogger()
+    tracker = create_experiment_tracker()
+    proposer = EvolutionaryProposer(
+        logger=logger,
+        trainset=trainset,
+        al_adapter=adapter,
+        reflection_llm=lambda _prompt: "fake reflection is supplied by FakeFlowAdapter",
+        experiment_tracker=tracker,
+        model="fake-model",
+        module_specs=module_specs,
+        global_token_cap=4096,
+        reflect_k=3,
+        baseline_prompt_hash=hashlib.md5(json.dumps(seed_candidate, sort_keys=True).encode()).hexdigest(),
+        evalset_policy=UnseenEvalSetPolicy(),
+    )
+    result = optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,  # type: ignore[arg-type]
+        proposer=proposer,
+        logger=logger,
+        experiment_tracker=tracker,
+        max_metric_calls=args.max_metric_calls,
+        run_dir=str(args.run_dir) if args.run_dir else None,
+        frontier_type="objective",
+    )
+    print(
+        f"[FAKE FLOW] Complete: iterations={result.num_candidates - 1}, "
+        f"metric_calls={result.total_evals}, best_score={result.best_score:.2f}"
     )
 
 

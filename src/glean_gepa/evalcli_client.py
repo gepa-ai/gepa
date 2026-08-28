@@ -10,7 +10,8 @@ import tempfile
 import time
 from typing import Any
 
-DEFAULT_PRESET = "Coding Harness"
+CODING_HARNESS_PRESET = "Coding Harness"
+DEFAULT_PRESET = CODING_HARNESS_PRESET
 
 CORRECTNESS_INPUT_MAPPINGS = json.dumps(
     [
@@ -187,7 +188,7 @@ class EvalCliClient:
         eval_run_id: str,
         *,
         poll_interval_sec: int = 60,
-        timeout_sec: int = 3600,
+        timeout_sec: int = 7200,
     ) -> None:
         print(f"Waiting for eval run {eval_run_id} to complete...")
         elapsed = 0
@@ -228,6 +229,32 @@ class EvalCliClient:
         except EvalCliError:
             return None
         return result if isinstance(result, dict) else None
+
+    def list_eval_set_versions(self, *, eval_set_name: str, deployment_ids: list[str]) -> list[dict[str, Any]]:
+        """List the available versions of an eval set for the given deployments."""
+        result = self._invoke_json(
+            "evalsets",
+            "list",
+            "--name",
+            eval_set_name,
+            "--deployment-ids",
+            *deployment_ids,
+        )
+        if isinstance(result, list):
+            rows = result
+        elif isinstance(result, dict):
+            rows = (
+                result.get("evalSetVersions")
+                or result.get("versions")
+                or result.get("evalSets")
+                or result.get("items")
+                or []
+            )
+        else:
+            raise EvalCliError(f"Unexpected eval set versions response: {result!r}")
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise EvalCliError(f"Unexpected eval set versions response: {result!r}")
+        return rows
 
     def list_eval_set_entries(
         self,

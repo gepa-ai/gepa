@@ -226,7 +226,7 @@ def compile_encoded_prompt(candidate: dict[str, str]) -> str:
     # Use replace (not str.format) so braces inside coding instructions are preserved.
     system_prompt = prompt_format.replace("{WRITING_CODE}", writing_code)
 
-    encoded_system_prompt = str(b64encode(system_prompt.encode("utf-8")))
+    encoded_system_prompt = b64encode(system_prompt.encode("utf-8")).decode("ascii")
 
     return (
         "llmo.per_prompt_overrides.coding_agent_loop_system="
