@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Unbuffered stdout/stderr so `docker logs` shows output promptly (Python
+# fully-buffers stdout when it's not a TTY, which a container's is not).
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Build context is the repo root: docker build -f src/gepa/rpc/Dockerfile .
