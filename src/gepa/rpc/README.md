@@ -38,7 +38,8 @@ Two endpoints are available:
 ### 1. Start the server
 
 ```bash
-pip install "gepa[rpc]"
+pip install "gepa[rpc] @ git+https://github.com/gepa-ai/gepa.git@main"
+# once a release including gepa.rpc is on PyPI, this becomes: pip install "gepa[rpc]"
 gepa-rpc --port 50051 --runs-dir ./runs
 ```
 
