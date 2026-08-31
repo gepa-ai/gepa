@@ -205,6 +205,7 @@ class EvalCliClient:
                 time.sleep(poll_interval_sec)
                 continue
 
+            debug_print(f"Eval run {eval_run_id} status: {json.dumps(statuses, sort_keys=True, default=str)}")
             if isinstance(statuses, list) and statuses and _is_eval_complete(statuses[0]):
                 debug_print(f"Eval run {eval_run_id} completed successfully")
                 return

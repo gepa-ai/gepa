@@ -130,10 +130,21 @@ def test_wait_for_eval_run_retries_transient_errors():
             complete,
         ],
     ) as mock_invoke:
-        with patch("glean_gepa.evalcli_client.time.sleep"):
+        with (
+            patch("glean_gepa.evalcli_client.time.sleep"),
+            patch("glean_gepa.evalcli_client.debug_print") as debug_print,
+        ):
             client.wait_for_eval_run("run_123", poll_interval_sec=0)
 
     assert mock_invoke.call_count == 3
+    status_logs = [
+        call.args[0]
+        for call in debug_print.call_args_list
+        if call.args[0].startswith("Eval run run_123 status:")
+    ]
+    assert len(status_logs) == 2
+    assert "TASK_SUBMITTED" in status_logs[0]
+    assert "TASK_SUCCEEDED" in status_logs[1]
 
 
 def test_wait_for_eval_run_raises_on_non_transient_errors():
