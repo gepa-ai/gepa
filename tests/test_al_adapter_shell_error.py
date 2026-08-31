@@ -11,6 +11,8 @@ from glean_gepa.al_adapter import (
     Thresholds,
     extract_shell_action_inputs,
 )
+from glean_gepa.batch import GleanEvaluationBatch
+from glean_gepa.debug import set_debug
 from glean_gepa.evalcli_client import EvalCliClient
 from glean_gepa.focused_evalset import FocusedEvalSet
 from glean_gepa.shell_tool_error_util import (
@@ -224,6 +226,141 @@ def test_high_signal_evaluation_runs_the_uploaded_focused_eval_set():
     assert result.scores == [1.0]
 
 
+def test_prepare_high_signal_batch_resolves_upload_entries_from_trace_tables():
+    evalcli = EvalCliClient(binary="/fake/evalcli")
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=evalcli),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+    )
+    source_entries = [
+        {
+            "id": "source-entry",
+            "deploymentId": "prod",
+            "stt": "session-1",
+            "runId": "run-1",
+            "traceId": "trace-1",
+        }
+    ]
+    with (
+        patch(
+            "glean_gepa.single_model_adapter.fetch_high_signal_evalset_entries",
+            return_value=source_entries,
+        ) as resolve_entries,
+        patch(
+            "glean_gepa.single_model_adapter.ensure_focused_eval_set",
+            return_value=FocusedEvalSet("gepa-high-signal-source", "v1_hs_abc", 1),
+        ) as ensure,
+    ):
+        prepared = adapter.prepare_high_signal_batch(
+            [
+                {
+                    "eval_set_name": "Source",
+                    "eval_set_version": "v1",
+                    "deployment_ids": ["prod"],
+                    "status": "active",
+                    "eval_entry_ids": ["source-entry", "unresolved-entry"],
+                    "source_eval_run_id": "parent-run",
+                }
+            ]
+        )
+
+    assert prepared is not None
+    assert resolve_entries.call_args.kwargs["entry_ids"] == ["source-entry", "unresolved-entry"]
+    assert resolve_entries.call_args.kwargs["eval_run_id"] == "parent-run"
+    assert ensure.call_args.kwargs["entry_ids"] == ["source-entry"]
+    assert ensure.call_args.kwargs["source_entries"] == source_entries
+    assert prepared[0]["focused_eval_set_name"] == "gepa-high-signal-source"
+    assert prepared[0]["eval_entry_ids"] == ["source-entry"]
+
+
+def test_high_signal_batch_retains_the_parent_eval_run_id():
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli")),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+    )
+    parent_eval = GleanEvaluationBatch(
+        outputs=[],
+        scores=[0.0],
+        trajectories=[
+            {
+                "data": {
+                    "eval_set_name": "Source",
+                    "eval_set_version": "v1",
+                    "deployment_ids": ["prod"],
+                    "status": "active",
+                    "eval_run_id": "parent-run",
+                },
+                "output": {"entry_id": "source-entry", "student_eval_run_id": "parent-run"},
+                "score": 0.0,
+                "objective_scores": {},
+            }
+        ],
+        objective_scores=[{}],
+        summary={"shell_success_rate": 0.0},
+    )
+
+    focused = adapter.high_signal_batch(parent_eval)
+
+    assert focused[0]["eval_entry_ids"] == ["source-entry"]
+    assert focused[0]["source_eval_run_id"] == "parent-run"
+
+
+def test_high_signal_evaluation_reuses_child_cached_eval_id():
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli")),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+    )
+    passing_entry = MagicMock(
+        shell_executions=1,
+        shell_errors=0,
+        shell_success_rate=1.0,
+        shell_error_pct=0.0,
+        recent_error_examples=(),
+    )
+    analysis = MagicMock(
+        eval_id="focused-run",
+        aggregate=passing_entry,
+        per_entry={"fresh-entry": passing_entry},
+        high_signal_entry_ids=(),
+    )
+
+    with (
+        patch.object(adapter, "_get_or_run_student_eval") as run_eval,
+        patch.object(adapter, "_get_or_fetch_shell_error_analysis", return_value=analysis),
+    ):
+        result = adapter.evaluate(
+            [
+                {
+                    "eval_set_name": "gepa-high-signal-source",
+                    "eval_set_version": "v1_hs_abc",
+                    "deployment_ids": ["prod"],
+                    "status": "active",
+                    "eval_entry_ids": ["source-entry"],
+                    "focused_eval_set_name": "gepa-high-signal-source",
+                    "focused_eval_set_version": "v1_hs_abc",
+                    "cached_student_eval_run_id": "focused-run",
+                }
+            ],
+            {"WRITING_CODE": "prompt"},
+            capture_traces=True,
+        )
+
+    run_eval.assert_not_called()
+    assert result.eval_run_ids == [
+        {
+            "eval_set_name": "gepa-high-signal-source",
+            "eval_set_version": "v1_hs_abc",
+            "student_eval_run_id": "focused-run",
+        }
+    ]
+
+
 def test_high_signal_evaluation_scores_entries_not_shell_calls():
     evalcli = EvalCliClient(binary="/fake/evalcli")
     adapter = SingleModelAdapter(
@@ -336,28 +473,32 @@ def test_evaluate_logs_fetched_shell_error_rate_and_error(capsys):
         high_signal_entry_ids=(),
     )
 
-    with (
-        patch.object(adapter, "_get_or_run_student_eval", return_value="run_123"),
-        patch(
-            "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis",
-            return_value=analysis,
-        ),
-    ):
-        adapter.evaluate(
-            [
-                {
-                    "eval_set_name": "AI Answers Small",
-                    "eval_set_version": "20260403",
-                    "deployment_ids": ["scio-prod"],
-                    "status": "active",
-                }
-            ],
-            {"WRITING_CODE": "test prompt"},
-        )
+    set_debug(True)
+    try:
+        with (
+            patch.object(adapter, "_get_or_run_student_eval", return_value="run_123"),
+            patch(
+                "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis",
+                return_value=analysis,
+            ),
+        ):
+            adapter.evaluate(
+                [
+                    {
+                        "eval_set_name": "AI Answers Small",
+                        "eval_set_version": "20260403",
+                        "deployment_ids": ["scio-prod"],
+                        "status": "active",
+                    }
+                ],
+                {"WRITING_CODE": "test prompt"},
+            )
 
-    output = capsys.readouterr().out
-    assert "[Shell Tool] Fetched error rate for eval run_123: 25.00% (1/4)" in output
-    assert "[Shell Tool] Error for eval run_123: command exited with status 1" in output
+        output = capsys.readouterr().out
+        assert "[Shell Tool] Fetched error rate for eval run_123: 25.00% (1/4)" in output
+        assert "[Shell Tool] Error for eval run_123: command exited with status 1" in output
+    finally:
+        set_debug(False)
 
 
 def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):

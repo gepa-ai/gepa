@@ -8,6 +8,7 @@ from typing import Any, Sequence
 
 DEFAULT_AGENTS_SPAN_TABLE = "scio-apps.scrubbed_agentspan.scrubbed_agentspan_*"
 DEFAULT_EVALSET_ENTRIES_TABLE = "scio-apps.fact.evalset_entries"
+DEFAULT_EVAL_WORKFLOW_RUNS_TABLE = "scio-apps.fact.eval_workflow_runs"
 SHELL_SUCCESS_OBJECTIVE = "shell_success_rate"
 SHELL_SPAN_NAMES = ("Execute Action: Shell", "Execute Action: Shell Tool")
 SHELL_ACTION_IDS = ("Shell", "Shell Tool")
@@ -345,29 +346,39 @@ GROUP BY eval_id
 def build_high_signal_source_entries_query(
     *,
     evalset_entries_table: str = DEFAULT_EVALSET_ENTRIES_TABLE,
+    eval_workflow_runs_table: str = DEFAULT_EVAL_WORKFLOW_RUNS_TABLE,
     deployment_ids: Sequence[str] | None = None,
 ) -> str:
-    """Resolve source eval-set entries by session tracking token."""
+    """Resolve source evalset rows from an eval run's trace-side entry UUIDs."""
     deployment_filter = ""
     if deployment_ids:
         deployment_filter = "AND project_id IN UNNEST(@deployment_ids)"
     return f"""
+WITH runtime_entries AS (
+  SELECT
+    entry_uuid,
+    ARRAY_AGG(stt IGNORE NULLS ORDER BY workflow_start_timestamp DESC LIMIT 1)[SAFE_OFFSET(0)] AS stt
+  FROM `{eval_workflow_runs_table}`
+  WHERE eval_id = @eval_run_id
+    AND entry_uuid IN UNNEST(@entry_uuids)
+  GROUP BY entry_uuid
+)
 SELECT
-  entry_id AS id,
-  project_id AS deploymentId,
-  stt,
-  workflow_run_id AS runId,
-  query_ts,
-  datepartition AS source_date
-FROM `{evalset_entries_table}`
-WHERE eval_set_name = @eval_set_name
-  AND eval_set_version = @eval_set_version
-  AND stt IN UNNEST(@session_tracking_tokens)
+  runtime_entries.entry_uuid AS id,
+  evalset_entries.project_id AS deploymentId,
+  evalset_entries.stt,
+  evalset_entries.workflow_run_id AS runId,
+  evalset_entries.query_ts,
+  evalset_entries.datepartition AS source_date
+FROM runtime_entries
+JOIN `{evalset_entries_table}` AS evalset_entries USING (stt)
+WHERE evalset_entries.eval_set_name = @eval_set_name
+  AND evalset_entries.eval_set_version = @eval_set_version
   AND LENGTH(stt) > 0
-  AND LENGTH(workflow_run_id) > 0
+  AND LENGTH(evalset_entries.workflow_run_id) > 0
   {deployment_filter}
-QUALIFY ROW_NUMBER() OVER (PARTITION BY stt ORDER BY log_ts DESC) = 1
-ORDER BY stt
+QUALIFY ROW_NUMBER() OVER (PARTITION BY runtime_entries.entry_uuid ORDER BY evalset_entries.log_ts DESC) = 1
+ORDER BY id
 """.strip()
 
 
@@ -416,25 +427,29 @@ def fetch_high_signal_evalset_entries(
     *,
     eval_set_name: str,
     eval_set_version: str,
-    session_tracking_tokens: Sequence[str],
+    eval_run_id: str,
+    entry_ids: Sequence[str],
     deployment_ids: Sequence[str] | None = None,
     evalset_entries_table: str = DEFAULT_EVALSET_ENTRIES_TABLE,
+    eval_workflow_runs_table: str = DEFAULT_EVAL_WORKFLOW_RUNS_TABLE,
     agentspan_table: str = DEFAULT_AGENTS_SPAN_TABLE,
 ) -> list[dict[str, Any]]:
-    """Fetch upload-ready high-signal entries with their historical trace IDs."""
-    tokens = sorted(set(session_tracking_tokens))
-    if not tokens:
+    """Fetch upload-ready source entries from the parent eval's trace-side entry UUIDs."""
+    entry_uuids = sorted(set(entry_ids))
+    if not entry_uuids:
         return []
     params = [
         QueryParameter("eval_set_name", "STRING", eval_set_name),
         QueryParameter("eval_set_version", "STRING", eval_set_version),
-        QueryParameter("session_tracking_tokens", "STRING", tokens),
+        QueryParameter("eval_run_id", "STRING", eval_run_id),
+        QueryParameter("entry_uuids", "STRING", entry_uuids),
     ]
     if deployment_ids:
         params.append(QueryParameter("deployment_ids", "STRING", list(deployment_ids)))
     source_rows = client.query(
         build_high_signal_source_entries_query(
             evalset_entries_table=evalset_entries_table,
+            eval_workflow_runs_table=eval_workflow_runs_table,
             deployment_ids=deployment_ids,
         ),
         params=params,

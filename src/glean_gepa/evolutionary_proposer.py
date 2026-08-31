@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
-from typing import Any
+import tempfile
+from pathlib import Path
+from typing import Any, cast
 
 from gepa.core.adapter import DataInst, invoke_batch_evaluate
 from gepa.core.callbacks import GEPACallback
@@ -15,6 +18,7 @@ from gepa.core.state import GEPAState
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal
+from glean_gepa.adapter_types import ALDataInst
 from glean_gepa.al_adapter import (
     MODULES,
     Candidate,
@@ -22,10 +26,13 @@ from glean_gepa.al_adapter import (
     ModuleSpec,
     within_prompt_budget,
 )
-from glean_gepa.batch import GleanEvaluationBatch
+from glean_gepa.batch import EvalRunIds, GleanEvaluationBatch
+from glean_gepa.debug import debug_print
 from glean_gepa.evalset_policy import UnseenEvalSetPolicy
 from glean_gepa.prompt import WRITING_CODE_KEY, default_writing_code
 from glean_gepa.utils import apply_single_module_edit
+
+CHILDREN_CACHE_SCHEMA_VERSION = 2
 
 
 # TODO(Cathy): pick modules based on holistic performance of the eval
@@ -68,7 +75,7 @@ def make_children_for_generation(
         frontier_candidates,
         key=lambda c: adapter.get_screening_score(frontier_evals[c.candidate_id]),
     )
-    print(f"Best quality parent: {best_quality_parent}")
+    debug_print(f"Best quality parent: {best_quality_parent}")
 
     # A cached root is never reflected again. Reuse cached children first, in
     # quality order, before generating mutations for roots we have not seen.
@@ -102,7 +109,14 @@ def make_children_for_generation(
         parent_eval = frontier_evals[parent.candidate_id]
         if not parent_eval.trajectories:
             # Need traces to reflect; skip mutation if missing.
+            if children_by_root is not None:
+                children_by_root.setdefault(parent.candidate_id, [])
             continue
+
+        # Presence in the cache means this root has already had its one
+        # reflection attempt for the current training slice. Record that before
+        # calling the reflector so an empty/invalid response is cached too.
+        cached_children = children_by_root.setdefault(parent.candidate_id, []) if children_by_root is not None else None
 
         modules_to_edit = pick_modules_to_edit()
 
@@ -123,14 +137,13 @@ def make_children_for_generation(
                 reflective_examples=high_signal[module],
             )
             if not variants:
-                print(f"Reflection produced no variants for module {module}")
+                debug_print(f"Reflection produced no variants for module {module}")
                 continue
 
             for variant in variants[: max(1, offspring_count - len(children))]:
-                print(f"Updated module {module}:\n{variant}")
+                debug_print(f"Updated module {module}:\n{variant}")
                 child = apply_single_module_edit(parent, module, variant)
-                if children_by_root is not None:
-                    cached_children = children_by_root.setdefault(parent.candidate_id, [])
+                if cached_children is not None:
                     if all(existing.prompt_modules != child.prompt_modules for existing in cached_children):
                         cached_children.append(child)
                 append_child(child)
@@ -190,6 +203,7 @@ class EvolutionaryProposer:
         callbacks: list[GEPACallback] | None = None,
         evalset_policy: UnseenEvalSetPolicy | None = None,
         reflection_hamming_distance_k: int | None = None,
+        children_cache_file: str | os.PathLike[str] | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -215,12 +229,15 @@ class EvolutionaryProposer:
         self._children_by_root: dict[str, list[Candidate]] = {}
         # Incremental training slices need fresh reflection, but each root should
         # still be reflected at most once within the same slice.
-        self._children_by_root_by_train_slice: dict[tuple[DataId, ...], dict[str, list[Candidate]]] = {}
+        self._children_by_root_by_train_slice: dict[tuple[Any, ...], dict[str, list[Candidate]]] = {}
+        self._eval_run_ids_by_train_slice: dict[
+            tuple[Any, ...], dict[str, dict[str, list[EvalRunIds]]]
+        ] = {}
+        self.children_cache_file = Path(children_cache_file).expanduser() if children_cache_file else None
+        self._load_children_cache()
 
         # Store batch data for eval set (trainset is just metadata for eval set runs)
         # Extract first batch from trainset
-        from typing import cast
-
         if isinstance(trainset, list):
             self._batch_data: list[dict[str, Any]] = cast(list[dict[str, Any]], trainset)
         else:
@@ -233,6 +250,122 @@ class EvolutionaryProposer:
             except Exception:
                 # Fallback to empty batch
                 self._batch_data = []
+
+    def _load_children_cache(self) -> None:
+        """Restore generated children so a resumed run does not reflect them again."""
+        if self.children_cache_file is None or not self.children_cache_file.exists():
+            return
+        try:
+            data = json.loads(self.children_cache_file.read_text())
+            if not isinstance(data, dict):
+                raise ValueError("child cache root must be a JSON object")
+            schema_version = data.get("schema_version")
+            if schema_version not in (1, CHILDREN_CACHE_SCHEMA_VERSION):
+                debug_print(f"[Child cache] Ignoring unsupported cache schema in {self.children_cache_file}")
+                return
+
+            restored: dict[tuple[Any, ...], dict[str, list[Candidate]]] = {}
+            restored_eval_run_ids: dict[
+                tuple[Any, ...], dict[str, dict[str, list[EvalRunIds]]]
+            ] = {}
+            for entry in data.get("training_slices", []):
+                train_ids = tuple(entry["train_ids"])
+                roots: dict[str, list[Candidate]] = {}
+                eval_ids_by_root: dict[str, dict[str, list[EvalRunIds]]] = {}
+                for root_id, child_records in entry.get("roots", {}).items():
+                    root_key = str(root_id)
+                    roots[root_key] = []
+                    eval_ids_by_root[root_key] = {}
+                    for raw_child in child_records:
+                        child_record = (
+                            {"prompt_modules": raw_child, "eval_run_ids": []}
+                            if schema_version == 1
+                            else raw_child
+                        )
+                        child = self._to_candidate(child_record["prompt_modules"])
+                        roots[root_key].append(child)
+                        eval_ids_by_root[root_key][child.candidate_id] = list(
+                            child_record.get("eval_run_ids", [])
+                        )
+                restored[train_ids] = roots
+                restored_eval_run_ids[train_ids] = eval_ids_by_root
+            self._children_by_root_by_train_slice = restored
+            self._eval_run_ids_by_train_slice = restored_eval_run_ids
+            debug_print(f"[Child cache] Loaded {sum(len(roots) for roots in restored.values())} root entries")
+        except (OSError, TypeError, ValueError, KeyError, AttributeError) as exc:
+            debug_print(f"[Child cache] Failed to load {self.children_cache_file}: {exc}")
+            self._children_by_root_by_train_slice = {}
+            self._eval_run_ids_by_train_slice = {}
+
+    def _save_children_cache(self) -> None:
+        """Atomically persist generated children, including cached empty results."""
+        if self.children_cache_file is None:
+            return
+        data = {
+            "schema_version": CHILDREN_CACHE_SCHEMA_VERSION,
+            "training_slices": [
+                {
+                    "train_ids": list(train_ids),
+                    "roots": {
+                        root_id: [
+                            {
+                                "prompt_modules": child.prompt_modules,
+                                "eval_run_ids": self._eval_run_ids_by_train_slice
+                                .get(train_ids, {})
+                                .get(root_id, {})
+                                .get(child.candidate_id, []),
+                            }
+                            for child in children
+                        ]
+                        for root_id, children in roots.items()
+                    },
+                }
+                for train_ids, roots in self._children_by_root_by_train_slice.items()
+            ],
+        }
+        cache_dir = self.children_cache_file.parent
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        temp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile("w", dir=cache_dir, delete=False) as temp_file:
+                temp_path = temp_file.name
+                json.dump(data, temp_file, indent=2)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_path, self.children_cache_file)
+        except (OSError, TypeError, ValueError) as exc:
+            debug_print(f"[Child cache] Failed to save {self.children_cache_file}: {exc}")
+            if temp_path is not None:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+
+    def _cached_eval_run_ids(self, train_ids: tuple[Any, ...], child: Candidate) -> list[EvalRunIds]:
+        """Return eval IDs stored alongside a child for this training slice."""
+        children_by_root = self._children_by_root_by_train_slice.get(train_ids, {})
+        eval_ids_by_root = self._eval_run_ids_by_train_slice.get(train_ids, {})
+        for root_id, children in children_by_root.items():
+            if any(cached_child.candidate_id == child.candidate_id for cached_child in children):
+                return eval_ids_by_root.get(root_id, {}).get(child.candidate_id, [])
+        return []
+
+    def _record_eval_run_ids(
+        self,
+        train_ids: tuple[Any, ...],
+        child: Candidate,
+        eval_run_ids: list[EvalRunIds],
+    ) -> None:
+        """Associate screening eval IDs with the generated child that used them."""
+        if not eval_run_ids:
+            return
+        children_by_root = self._children_by_root_by_train_slice.get(train_ids, {})
+        for root_id, children in children_by_root.items():
+            if any(cached_child.candidate_id == child.candidate_id for cached_child in children):
+                self._eval_run_ids_by_train_slice.setdefault(train_ids, {}).setdefault(root_id, {})[
+                    child.candidate_id
+                ] = list(eval_run_ids)
+                return
 
     def _to_candidate(self, program: dict[str, str]) -> Candidate:
         """Convert a GEPA program to the sole editable Glean prompt module."""
@@ -313,6 +446,8 @@ class EvolutionaryProposer:
             reflection_hamming_distance_k=self.reflection_hamming_distance_k,
             children_by_root=children_by_root,
         )
+        if self.evalset_policy is not None:
+            self._save_children_cache()
 
         if not children:
             self.logger.log(f"Iteration {i}: Evolutionary proposer generated no children")
@@ -338,15 +473,31 @@ class EvolutionaryProposer:
                 return []
             high_signal_batch = self.al_adapter.prepare_high_signal_batch(high_signal_batch)
             if high_signal_batch is None:
-                self.logger.log(f"Iteration {i}: Failed to prepare the high-signal eval set; rejecting children")
-                return []
+                message = f"Iteration {i}: Failed to prepare the high-signal eval set; stopping optimization"
+                self.logger.log(message)
+                raise RuntimeError(message)
         else:
             high_signal_batch = trace_batch
+        train_slice_key = tuple(train_ids)
+        prepared_screen_batch = cast(list[ALDataInst], high_signal_batch)
         screen_evals = invoke_batch_evaluate(
             self.al_adapter,
-            [(child.prompt_modules, high_signal_batch) for child in valid_children],
+            [
+                (
+                    child.prompt_modules,
+                    self.al_adapter.attach_cached_eval_run_ids(
+                        prepared_screen_batch,
+                        self._cached_eval_run_ids(train_slice_key, child),
+                    ),
+                )
+                for child in valid_children
+            ],
             capture_traces=use_high_signal_gate,
         )
+        for child, screen_eval in zip(valid_children, screen_evals, strict=True):
+            self._record_eval_run_ids(train_slice_key, child, getattr(screen_eval, "eval_run_ids", None) or [])
+        if self.evalset_policy is not None:
+            self._save_children_cache()
         screened_children = _select_screened_children(
             self.al_adapter,
             parent_eval,

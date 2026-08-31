@@ -131,7 +131,7 @@ def test_wait_for_eval_run_retries_transient_errors():
         ],
     ) as mock_invoke:
         with patch("glean_gepa.evalcli_client.time.sleep"):
-            client.wait_for_eval_run("run_123", poll_interval_sec=0, timeout_sec=10)
+            client.wait_for_eval_run("run_123", poll_interval_sec=0)
 
     assert mock_invoke.call_count == 3
 
@@ -144,7 +144,7 @@ def test_wait_for_eval_run_raises_on_non_transient_errors():
         side_effect=EvalCliError("stderr: auth failed"),
     ):
         with pytest.raises(EvalCliError, match="auth failed"):
-            client.wait_for_eval_run("run_123", poll_interval_sec=0, timeout_sec=1)
+            client.wait_for_eval_run("run_123", poll_interval_sec=0)
 
 
 def test_invoke_raises_on_nonzero_exit():

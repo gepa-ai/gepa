@@ -21,14 +21,19 @@ class SingleModelALDataInst(EvalSetALDataInst):
 
     eval_entry_id: NotRequired[str]
     eval_run_id: NotRequired[str]
+    source_eval_run_id: NotRequired[str]
     eval_trace_id: NotRequired[str]
     eval_entry_ids: NotRequired[list[str]]
     focused_eval_set_name: NotRequired[str]
     focused_eval_set_version: NotRequired[str]
+    cached_student_eval_run_id: NotRequired[str]
 
 
 class TeacherStudentALDataInst(EvalSetALDataInst):
     """Eval-set configuration for a paired teacher/student comparison."""
+
+    cached_student_eval_run_id: NotRequired[str]
+    cached_teacher_eval_run_id: NotRequired[str]
 
 
 class BaseALRolloutOutput(TypedDict):
@@ -67,6 +72,8 @@ class TeacherStudentALRolloutOutput(BaseALRolloutOutput):
     teacher_tool_calls: int
     teacher_input_tokens: int
     teacher_output_tokens: int
+    student_eval_run_id: NotRequired[str]
+    teacher_eval_run_id: NotRequired[str]
 
 
 class SingleModelALTrajectory(TypedDict):

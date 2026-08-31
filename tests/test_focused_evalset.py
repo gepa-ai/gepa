@@ -50,6 +50,40 @@ def test_ensure_focused_eval_set_uploads_only_requested_entries():
     assert focused.entry_count == 1
 
 
+def test_ensure_focused_eval_set_uploads_resolved_trace_identifiers():
+    evalcli = MagicMock()
+    evalcli.get_eval_set_version.return_value = None
+    evalcli.wait_for_eval_set_entries.return_value = [{"id": "new-entry"}]
+    source_entries = [
+        {
+            "id": "keep",
+            "deploymentId": "prod",
+            "stt": "session-1",
+            "runId": "run-1",
+            "traceId": "trace-1",
+        }
+    ]
+
+    focused = ensure_focused_eval_set(
+        evalcli,
+        base_eval_set_name="Example",
+        base_eval_set_version="v1",
+        deployment_ids=["prod"],
+        entry_ids=["keep"],
+        source_entries=source_entries,
+    )
+
+    assert focused is not None
+    assert evalcli.upload_eval_set.call_args.args[0]["entries"] == [
+        {
+            "deploymentId": "prod",
+            "stt": "session-1",
+            "runId": "run-1",
+            "traceId": "trace-1",
+        }
+    ]
+
+
 def test_ensure_focused_eval_set_reuses_an_existing_version():
     evalcli = MagicMock()
     evalcli.get_eval_set_version.return_value = {"name": "existing"}

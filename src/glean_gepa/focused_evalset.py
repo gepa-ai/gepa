@@ -13,11 +13,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from glean_gepa.debug import debug_print
 from glean_gepa.evalcli_client import EvalCliClient, EvalCliError
 
-DEFAULT_BUCKET_TYPE = "SESSIONT"
+DEFAULT_BUCKET_TYPE = "SESSION"
 FOCUSED_EVAL_SET_NAME_PREFIX = "gepa-high-signal"
-HIGH_SIGNAL_EVAL_SET_SOURCE_SCHEMA = "fact-agentspan-trace-v2"
+HIGH_SIGNAL_EVAL_SET_SOURCE_SCHEMA = "fact-agentspan-trace-v5"
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,7 @@ def ensure_focused_eval_set(
     base_eval_set_version: str,
     deployment_ids: list[str],
     entry_ids: Sequence[str],
+    source_entries: Sequence[Mapping[str, Any]] | None = None,
     bucket_type: str = DEFAULT_BUCKET_TYPE,
 ) -> FocusedEvalSet | None:
     """Create or reuse an eval-set version containing only ``entry_ids``."""
@@ -125,20 +127,21 @@ def ensure_focused_eval_set(
             eval_set_name=name, eval_set_version=version, deployment_ids=deployment_ids
         )
         if existing_entries:
-            print(f"[Focused eval set] Reusing {name}:{version} with {len(existing_entries)} entries")
+            debug_print(f"[Focused eval set] Reusing {name}:{version} with {len(existing_entries)} entries")
             return FocusedEvalSet(name, version, len(existing_entries))
         version = focused_eval_set_retry_version(version)
 
-    source_entries = evalcli.list_eval_set_entries(
-        eval_set_name=base_eval_set_name,
-        eval_set_version=base_eval_set_version,
-        deployment_ids=deployment_ids,
-    )
+    if source_entries is None:
+        source_entries = evalcli.list_eval_set_entries(
+            eval_set_name=base_eval_set_name,
+            eval_set_version=base_eval_set_version,
+            deployment_ids=deployment_ids,
+        )
     wanted = set(entry_ids)
     selected = [entry for entry in source_entries if str(entry.get("id") or "") in wanted]
     upload_entries = [entry for source in selected if (entry := build_upload_entry(source)) is not None]
     if not upload_entries:
-        print(
+        debug_print(
             f"[Focused eval set] None of the {len(entry_ids)} high-signal entries could be resolved from "
             f"{base_eval_set_name}:{base_eval_set_version}"
         )
@@ -152,13 +155,13 @@ def ensure_focused_eval_set(
         base_eval_set_name=base_eval_set_name,
         base_eval_set_version=base_eval_set_version,
     )
-    print(f"[Focused eval set] Uploading {name}:{version} with {len(upload_entries)} entries")
+    debug_print(f"[Focused eval set] Uploading {name}:{version} with {len(upload_entries)} entries")
     try:
         evalcli.upload_eval_set(request)
     except EvalCliError as exc:
         if "already exists" not in str(exc).lower():
             raise
-        print(f"[Focused eval set] {name}:{version} was created concurrently; reusing it")
+        debug_print(f"[Focused eval set] {name}:{version} was created concurrently; reusing it")
 
     try:
         ingested = evalcli.wait_for_eval_set_entries(
@@ -168,7 +171,7 @@ def ensure_focused_eval_set(
             expected_count=len(upload_entries),
         )
     except EvalCliError as exc:
-        print(f"[Focused eval set] {exc}")
+        debug_print(f"[Focused eval set] {exc}")
         return None
     return FocusedEvalSet(name, version, len(ingested))
 

@@ -14,6 +14,7 @@ from gepa.core.adapter import EvaluationBatch
 from glean_gepa.adapter_types import ALDataInst
 from glean_gepa.al_adapter import MODULES, Candidate, GleanAdapterBase, ModuleSpec
 from glean_gepa.batch import GleanEvaluationBatch
+from glean_gepa.debug import debug_print
 from glean_gepa.prompt import WRITING_CODE_KEY
 
 FAKE_FLOW_MARKER = "[fake-flow iteration="
@@ -77,8 +78,10 @@ class FakeFlowAdapter(GleanAdapterBase):
         scores = [min(1.0, 0.2 + (0.15 * index) + (0.2 * iteration)) for index, _ in enumerate(batch)]
         outputs: list[dict[str, Any]] = []
         trajectories: list[dict[str, Any]] = []
+        eval_run_ids = []
         for index, (data, score) in enumerate(zip(batch, scores, strict=True), start=1):
             entry_id = f"fake-entry-{data['eval_set_version']}"
+            eval_run_id = data.get("cached_student_eval_run_id") or f"fake-eval-{iteration}-{index}"
             output = {
                 "deployment_id": "fake-deployment",
                 "query": f"Fake coding task {index}",
@@ -86,9 +89,16 @@ class FakeFlowAdapter(GleanAdapterBase):
                 "student_tool_calls": 2,
                 "student_tool_errors": int(score < 1.0),
                 "shell_error_messages": ["fake shell error: add validation"] if score < 1.0 else [],
-                "student_eval_run_id": f"fake-eval-{iteration}-{index}",
+                "student_eval_run_id": eval_run_id,
             }
             outputs.append(output)
+            eval_run_ids.append(
+                {
+                    "eval_set_name": data["eval_set_name"],
+                    "eval_set_version": data["eval_set_version"],
+                    "student_eval_run_id": eval_run_id,
+                }
+            )
             if capture_traces:
                 trajectories.append(
                     {
@@ -100,7 +110,7 @@ class FakeFlowAdapter(GleanAdapterBase):
                 )
 
         average = sum(scores) / len(scores) if scores else 0.0
-        print(
+        debug_print(
             f"[FAKE FLOW] eval iteration={iteration} entries={len(batch)} "
             f"score={average:.2f} traces={'yes' if capture_traces else 'no'}"
         )
@@ -111,6 +121,7 @@ class FakeFlowAdapter(GleanAdapterBase):
             objective_scores=[{"fake_score": score} for score in scores],
             num_metric_calls=len(scores),
             summary={"fake_score": average},
+            eval_run_ids=eval_run_ids,
         )
 
     def make_reflective_dataset(
@@ -143,7 +154,7 @@ class FakeFlowAdapter(GleanAdapterBase):
             f"[fake-flow iteration={next_iteration}]",
             current,
         )
-        print(f"[FAKE FLOW] proposing fake iteration={next_iteration}")
+        debug_print(f"[FAKE FLOW] proposing fake iteration={next_iteration}")
         return [rewritten], False
 
     @staticmethod

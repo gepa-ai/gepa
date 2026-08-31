@@ -20,7 +20,8 @@ from glean_gepa.al_adapter import (
     enrich_shell_error_action_inputs,
     log_shell_tool_error_analysis,
 )
-from glean_gepa.batch import GleanEvaluationBatch
+from glean_gepa.batch import EvalRunIds, GleanEvaluationBatch
+from glean_gepa.debug import debug_print
 from glean_gepa.focused_evalset import ensure_focused_eval_set
 from glean_gepa.prompt import compile_encoded_prompt
 from glean_gepa.reflection_sampling import strip_stdout_sections
@@ -28,6 +29,7 @@ from glean_gepa.shell_tool_error_util import (
     SHELL_SUCCESS_OBJECTIVE,
     EvalRunShellToolErrorAnalysis,
     fetch_eval_run_shell_tool_error_analysis,
+    fetch_high_signal_evalset_entries,
 )
 
 
@@ -35,6 +37,29 @@ class SingleModelAdapter(GleanAdapterBase):
     """Optimize prompts for a single student model using shell-tool error evidence."""
 
     supports_high_signal_eval = True
+
+    def high_signal_batch(self, eval_batch: GleanEvaluationBatch) -> list[ALDataInst]:
+        """Keep the parent eval ID required to map trace-side UUIDs to source entries."""
+        prepared = super().high_signal_batch(eval_batch)
+        source_run_ids: dict[tuple[str, str, tuple[str, ...]], str] = {}
+        for trajectory in eval_batch.trajectories or []:
+            if trajectory["score"] >= 1.0:
+                continue
+            data = trajectory["data"]
+            output = trajectory["output"]
+            source_eval_run_id = data.get("eval_run_id") or output.get("student_eval_run_id")
+            if source_eval_run_id:
+                key = (data["eval_set_name"], data["eval_set_version"], tuple(data["deployment_ids"]))
+                source_run_ids.setdefault(key, source_eval_run_id)
+
+        enriched: list[ALDataInst] = []
+        for data in prepared:
+            key = (data["eval_set_name"], data["eval_set_version"], tuple(data["deployment_ids"]))
+            source_eval_run_id = source_run_ids.get(key)
+            enriched.append(
+                {**data, "source_eval_run_id": source_eval_run_id} if source_eval_run_id else data
+            )
+        return enriched
 
     def prepare_high_signal_batch(self, batch: list[ALDataInst]) -> list[ALDataInst] | None:
         """Upload/reuse focused eval sets once, before concurrent child screening."""
@@ -44,18 +69,43 @@ class SingleModelAdapter(GleanAdapterBase):
             if not entry_ids:
                 prepared.append(data)
                 continue
+
+            source_eval_run_id = data.get("source_eval_run_id")
+            if not source_eval_run_id:
+                debug_print("[Focused eval set] Missing the parent eval run ID needed to resolve source entries")
+                return None
+            source_entries = fetch_high_signal_evalset_entries(
+                self.bigquery_client,
+                eval_set_name=data["eval_set_name"],
+                eval_set_version=data["eval_set_version"],
+                eval_run_id=source_eval_run_id,
+                entry_ids=entry_ids,
+                deployment_ids=data["deployment_ids"],
+            )
+            resolved_entry_ids = sorted({str(entry["id"]) for entry in source_entries})
+            missing_entry_ids = sorted(set(entry_ids) - set(resolved_entry_ids))
+            if missing_entry_ids:
+                debug_print(
+                    f"[Focused eval set] Skipping {len(missing_entry_ids)} entries without resolved stt, runId, "
+                    f"and traceId: {', '.join(missing_entry_ids)}"
+                )
+            if not resolved_entry_ids:
+                debug_print("[Focused eval set] None of the requested entries could be resolved")
+                return None
             focused = ensure_focused_eval_set(
                 self.runner.evalcli,
                 base_eval_set_name=data["eval_set_name"],
                 base_eval_set_version=data["eval_set_version"],
                 deployment_ids=data["deployment_ids"],
-                entry_ids=entry_ids,
+                entry_ids=resolved_entry_ids,
+                source_entries=source_entries,
             )
             if focused is None:
                 return None
             prepared.append(
                 {
                     **data,
+                    "eval_entry_ids": resolved_entry_ids,
                     "eval_set_name": focused.name,
                     "eval_set_version": focused.version,
                     "focused_eval_set_name": focused.name,
@@ -98,7 +148,7 @@ class SingleModelAdapter(GleanAdapterBase):
     ) -> EvalRunShellToolErrorAnalysis:
         cached = self._eval_analysis_cache.get(eval_id)
         if cached is not None:
-            print(f"[Cache HIT] Using cached shell error analysis for eval_id: {eval_id}")
+            debug_print(f"[Cache HIT] Using cached shell error analysis for eval_id: {eval_id}")
             return cached
         analysis = fetch_eval_run_shell_tool_error_analysis(
             self.bigquery_client,
@@ -108,8 +158,9 @@ class SingleModelAdapter(GleanAdapterBase):
         )
         if include_error_examples:
             analysis = enrich_shell_error_action_inputs(self.runner.evalcli, analysis)
-            self._eval_analysis_cache[eval_id] = analysis
-            self._save_cache()
+            with self._cache_lock:
+                self._eval_analysis_cache[eval_id] = analysis
+                self._save_cache()
         return analysis
 
     def _evaluate_single_model(
@@ -129,6 +180,7 @@ class SingleModelAdapter(GleanAdapterBase):
             trajectories=None,
             objective_scores=result.objective_scores,
             summary=result.summary,
+            eval_run_ids=result.eval_run_ids,
         )
 
     def _create_failure_pattern(self, component_name: str, trajectory: SingleModelALTrajectory) -> tuple[Any, ...]:
@@ -222,6 +274,7 @@ class SingleModelAdapter(GleanAdapterBase):
         all_scores: list[float] = []
         all_trajectories: list[SingleModelALTrajectory] = []
         all_objective_scores: list[dict[str, float]] = []
+        all_eval_run_ids: list[EvalRunIds] = []
         summary_shell_rates: list[float] = []
         total_high_signal_entries = 0
 
@@ -257,12 +310,23 @@ class SingleModelAdapter(GleanAdapterBase):
                     eval_set_version = focused_eval_set.version
                 run_label = "gepa_high_signal"
 
-            student_eval_id = self._get_or_run_student_eval(
-                eval_set_name=eval_set_name,
-                eval_set_version=eval_set_version,
-                deployment_ids=deployment_ids,
-                system_prompt=system_prompt,
-                run_label=run_label,
+            student_eval_id = al_data_inst.get("cached_student_eval_run_id")
+            if student_eval_id:
+                debug_print(f"[Child cache HIT] Using cached student eval_id: {student_eval_id} ({run_label})")
+            else:
+                student_eval_id = self._get_or_run_student_eval(
+                    eval_set_name=eval_set_name,
+                    eval_set_version=eval_set_version,
+                    deployment_ids=deployment_ids,
+                    system_prompt=system_prompt,
+                    run_label=run_label,
+                )
+            all_eval_run_ids.append(
+                {
+                    "eval_set_name": eval_set_name,
+                    "eval_set_version": eval_set_version,
+                    "student_eval_run_id": student_eval_id,
+                }
             )
 
             is_focused_eval = bool(requested_entry_ids)
@@ -396,6 +460,7 @@ class SingleModelAdapter(GleanAdapterBase):
             trajectories=all_trajectories,
             objective_scores=all_objective_scores,
             summary=summary,
+            eval_run_ids=all_eval_run_ids,
         )
 
 

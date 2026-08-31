@@ -12,10 +12,12 @@ from glean_gepa.shell_tool_error_util import (
     ShellToolErrorEntryMetrics,
     ShellToolErrorMetrics,
     build_eval_run_search_params,
+    build_high_signal_source_entries_query,
     build_shell_tool_error_per_entry_query,
     build_shell_tool_error_query_params,
     build_shell_tool_error_rate_query,
     empty_shell_tool_error_metrics,
+    fetch_high_signal_evalset_entries,
     fetch_shell_tool_error_metrics,
     is_shell_tool_error,
     parse_shell_tool_error_example,
@@ -83,6 +85,60 @@ def test_per_entry_query_can_skip_error_examples_for_high_signal_screening():
     assert "shell_errors" in sql
     assert "recent_error_examples" not in sql
     assert "AS trace_ids" not in sql
+
+
+def test_high_signal_source_entries_query_maps_runtime_entry_uuids_to_source_entries():
+    sql = build_high_signal_source_entries_query()
+
+    assert "entry_uuid IN UNNEST(@entry_uuids)" in sql
+    assert "WHERE eval_id = @eval_run_id" in sql
+    assert "JOIN `scio-apps.fact.evalset_entries` AS evalset_entries USING (stt)" in sql
+
+
+def test_fetch_high_signal_evalset_entries_resolves_source_trace_by_entry_id():
+    client = MagicMock()
+    client.query.side_effect = [
+        [
+            {
+                "id": "entry-1",
+                "deploymentId": "scio-prod",
+                "stt": "source-stt",
+                "runId": "source-run",
+                "source_date": date(2026, 8, 14),
+            }
+        ],
+        [
+            {
+                "id": "entry-1",
+                "deploymentId": "scio-prod",
+                "stt": "source-stt",
+                "runId": "source-run",
+                "traceId": "source-trace",
+            }
+        ],
+    ]
+
+    entries = fetch_high_signal_evalset_entries(
+        client,
+        eval_set_name="Glean Chat V2 Medium",
+        eval_set_version="20260820",
+        eval_run_id="parent-eval-run",
+        entry_ids=["entry-1"],
+        deployment_ids=["scio-prod"],
+    )
+
+    assert entries == [
+        {
+            "id": "entry-1",
+            "deploymentId": "scio-prod",
+            "stt": "source-stt",
+            "runId": "source-run",
+            "traceId": "source-trace",
+        }
+    ]
+    source_params = client.query.call_args_list[0].kwargs["params"]
+    assert next(param.value for param in source_params if param.name == "entry_uuids") == ["entry-1"]
+    assert next(param.value for param in source_params if param.name == "eval_run_id") == "parent-eval-run"
 
 
 def test_build_shell_tool_error_query_params_uses_eval_run_date_range():

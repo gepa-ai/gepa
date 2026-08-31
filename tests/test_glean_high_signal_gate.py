@@ -38,6 +38,31 @@ def test_high_signal_batch_contains_only_parent_failures():
     assert focused[0]["eval_entry_ids"] == ["entry-0", "entry-1"]
 
 
+def test_cached_eval_run_id_is_attached_to_matching_eval_set():
+    adapter = GleanAdapterBase.__new__(GleanAdapterBase)
+    batch = [
+        {
+            "eval_set_name": "focused",
+            "eval_set_version": "v1",
+            "deployment_ids": ["prod"],
+            "status": "active",
+        }
+    ]
+
+    attached = adapter.attach_cached_eval_run_ids(
+        batch,
+        [
+            {
+                "eval_set_name": "focused",
+                "eval_set_version": "v1",
+                "student_eval_run_id": "run-cached",
+            }
+        ],
+    )
+
+    assert attached[0]["cached_student_eval_run_id"] == "run-cached"
+
+
 def test_high_signal_fix_rate_requires_error_free_entries():
     adapter = GleanAdapterBase.__new__(GleanAdapterBase)
     parent = _batch([0.0, 0.0, 0.0, 1.0])

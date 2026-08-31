@@ -10,6 +10,8 @@ import tempfile
 import time
 from typing import Any
 
+from glean_gepa.debug import debug_print
+
 CODING_HARNESS_PRESET = "Coding Harness"
 DEFAULT_PRESET = CODING_HARNESS_PRESET
 
@@ -188,32 +190,26 @@ class EvalCliClient:
         eval_run_id: str,
         *,
         poll_interval_sec: int = 60,
-        timeout_sec: int = 7200,
     ) -> None:
-        print(f"Waiting for eval run {eval_run_id} to complete...")
-        elapsed = 0
-        while elapsed < timeout_sec:
+        debug_print(f"Waiting for eval run {eval_run_id} to complete...")
+        while True:
             try:
                 statuses = self._invoke_json("run", "status", "--id", eval_run_id)
             except EvalCliError as exc:
                 if not _is_transient_evalcli_error(exc):
                     raise
-                print(
+                debug_print(
                     f"Transient Cortex error while polling {eval_run_id}; "
                     f"retrying in {poll_interval_sec}s..."
                 )
                 time.sleep(poll_interval_sec)
-                elapsed += poll_interval_sec
                 continue
 
             if isinstance(statuses, list) and statuses and _is_eval_complete(statuses[0]):
-                print(f"Eval run {eval_run_id} completed successfully")
+                debug_print(f"Eval run {eval_run_id} completed successfully")
                 return
 
             time.sleep(poll_interval_sec)
-            elapsed += poll_interval_sec
-
-        raise EvalCliError(f"Eval run {eval_run_id} timed out after {timeout_sec}s")
 
     def get_eval_set_version(self, *, eval_set_name: str, eval_set_version: str) -> dict[str, Any] | None:
         """Return the eval set version, or None when it does not exist yet."""
@@ -295,6 +291,7 @@ class EvalCliClient:
 
     def upload_eval_set(self, request: dict[str, Any]) -> None:
         """Upload a new eval set version. Entries are ingested asynchronously."""
+        debug_print(f"Uploading eval set payload:\n{json.dumps(request, indent=2)}")
         handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
         try:
             json.dump(request, handle)
@@ -314,7 +311,7 @@ class EvalCliClient:
         timeout_sec: int = 900,
     ) -> list[dict[str, Any]]:
         """Poll until the uploaded eval set version has ingested all of its entries."""
-        print(f"Waiting for eval set {eval_set_name}:{eval_set_version} to ingest {expected_count} entries...")
+        debug_print(f"Waiting for eval set {eval_set_name}:{eval_set_version} to ingest {expected_count} entries...")
         elapsed = 0
         entries: list[dict[str, Any]] = []
         while elapsed < timeout_sec:
@@ -328,7 +325,7 @@ class EvalCliClient:
                 entries = []
 
             if len(entries) >= expected_count:
-                print(f"Eval set {eval_set_name}:{eval_set_version} ready with {len(entries)} entries")
+                debug_print(f"Eval set {eval_set_name}:{eval_set_version} ready with {len(entries)} entries")
                 return entries
 
             time.sleep(poll_interval_sec)
@@ -373,7 +370,7 @@ class EvalCliClient:
         poll_interval_sec: int = 60,
         timeout_sec: int = 3600,
     ) -> None:
-        print(f"Waiting for judge run {judge_run_id} to complete...")
+        debug_print(f"Waiting for judge run {judge_run_id} to complete...")
         elapsed = 0
         while elapsed < timeout_sec:
             run = self._invoke_json("judge", "get", "--id", judge_run_id)
@@ -381,7 +378,7 @@ class EvalCliClient:
             if status in TERMINAL_JUDGE_STATUSES:
                 if status != "SUCCEEDED":
                     raise EvalCliError(f"Judge run {judge_run_id} ended with status {status}")
-                print(f"Judge run {judge_run_id} completed successfully")
+                debug_print(f"Judge run {judge_run_id} completed successfully")
                 return
             time.sleep(poll_interval_sec)
             elapsed += poll_interval_sec

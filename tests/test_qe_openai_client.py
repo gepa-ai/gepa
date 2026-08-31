@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from glean_gepa.debug import set_debug
 from glean_gepa.openai_client import create_qe_openai_client, format_exception_chain, get_perfeval_secret
 from glean_gepa.runner import _make_reflection_lm
 
@@ -49,15 +50,19 @@ def test_reflection_lm_uses_qe_responses_auth_body(capsys: pytest.CaptureFixture
             authenticated_email="cathy.chen@glean.com",
         )
 
-    assert reflection_lm("Just say ack") == "ack"
-    assert capsys.readouterr().out == (
-        "QE reflection LLM call 1: requesting model=OPEN_AI:GPT5_LATEST, prompt_chars=12\n"
-        "QE reflection LLM call 1 prompt:\n"
-        "Just say ack\n"
-        "QE reflection LLM call 1: received response_chars=3\n"
-        "QE reflection LLM call 1 response:\n"
-        "ack\n"
-    )
+    set_debug(True)
+    try:
+        assert reflection_lm("Just say ack") == "ack"
+        assert capsys.readouterr().out == (
+            "QE reflection LLM call 1: requesting model=OPEN_AI:GPT5_LATEST, prompt_chars=12\n"
+            "QE reflection LLM call 1 prompt:\n"
+            "Just say ack\n"
+            "QE reflection LLM call 1: received response_chars=3\n"
+            "QE reflection LLM call 1 response:\n"
+            "ack\n"
+        )
+    finally:
+        set_debug(False)
     client.responses.create.assert_called_once_with(
         model="OPEN_AI:GPT5_LATEST",
         input="Just say ack",
