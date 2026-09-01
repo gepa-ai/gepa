@@ -32,6 +32,10 @@ from glean_gepa.shell_tool_error_util import (
 )
 
 
+class ShellToolTelemetryPendingError(RuntimeError):
+    """Raised when an eval has not yet emitted shell telemetry."""
+
+
 class SingleModelAdapter(GleanAdapterBase):
     """Optimize prompts for a single student model using shell-tool error evidence."""
 
@@ -157,6 +161,13 @@ class SingleModelAdapter(GleanAdapterBase):
         )
         if include_error_examples:
             analysis = enrich_shell_error_action_inputs(self.runner.evalcli, analysis)
+            # BigQuery telemetry can arrive after the eval run reports
+            # completion (and even in the next UTC shard). A 0/0 result is
+            # therefore provisional; persisting it prevents the later, real
+            # shell metrics from ever being fetched.
+            if analysis.aggregate.shell_executions == 0:
+                print(f"[Cache] Not caching provisional 0/0 shell analysis for eval_id: {eval_id}")
+                return analysis
             with self._cache_lock:
                 self._eval_analysis_cache[eval_id] = analysis
                 self._save_cache()
@@ -170,7 +181,9 @@ class SingleModelAdapter(GleanAdapterBase):
     ) -> GleanEvaluationBatch:
         # Always build the same minimal error trajectories so a later trace
         # request can reuse the cached eval run and shell-error analysis.
-        result = self._evaluate_with_shell_error_rate(cast(list[SingleModelALDataInst], batch), candidate)
+        result = self._evaluate_with_shell_error_rate(
+            cast(list[SingleModelALDataInst], batch), candidate, capture_traces=capture_traces
+        )
         if capture_traces:
             return result
         return GleanEvaluationBatch(
@@ -258,6 +271,8 @@ class SingleModelAdapter(GleanAdapterBase):
         self,
         batch: list[SingleModelALDataInst],
         candidate: dict[str, str],
+        *,
+        capture_traces: bool,
     ) -> GleanEvaluationBatch[SingleModelALTrajectory, SingleModelALRolloutOutput]:
         if not batch:
             return GleanEvaluationBatch(
@@ -329,10 +344,21 @@ class SingleModelAdapter(GleanAdapterBase):
             )
 
             is_focused_eval = bool(requested_entry_ids)
+            if not is_focused_eval:
+                evaluation_kind = "Trace evaluation" if capture_traces else "Validation"
+                print(
+                    f"[{evaluation_kind}] Reading "
+                    f"{'eval-set' if capture_traces else 'full-validation'} shell results for "
+                    f"{eval_set_name} {eval_set_version}: {student_eval_id}"
+                )
             analysis = self._get_or_fetch_shell_error_analysis(
                 student_eval_id,
                 include_error_examples=not is_focused_eval,
             )
+            if analysis.aggregate.shell_executions == 0:
+                raise ShellToolTelemetryPendingError(
+                    f"No shell telemetry is available yet for eval {student_eval_id}; refusing to score 0/0 as success"
+                )
             if not is_focused_eval:
                 log_shell_tool_error_analysis(analysis)
             # Focused eval sets get fresh entry IDs on upload, so trajectories
@@ -354,6 +380,36 @@ class SingleModelAdapter(GleanAdapterBase):
             else:
                 summary_shell_rates.append(analysis.aggregate.shell_success_rate)
             total_high_signal_entries += len(requested_entry_ids) if is_focused_eval else len(high_signal_entry_ids)
+
+            # A full validation eval-set item represents the whole eval run,
+            # not each of its high-signal entries. The engine has one val ID
+            # per configured eval set, so returning entry-level scores here
+            # would let its zip() persist an arbitrary entry as the full-val
+            # result. Entry-level results are retained only for trace-capturing
+            # training evaluations, where reflection needs those examples.
+            if not is_focused_eval and not capture_traces:
+                output: SingleModelALRolloutOutput = {
+                    "deployment_id": deployment_ids[0] if deployment_ids else "",
+                    "query": f"{eval_set_name}:{eval_set_version}",
+                    "student_tool_calls": analysis.aggregate.shell_executions,
+                    "student_tool_errors": analysis.aggregate.shell_errors,
+                    "entry_id": f"{eval_set_name}:{eval_set_version}",
+                    "shell_error_messages": [
+                        example.error_str for example in analysis.aggregate.recent_error_examples if example.error_str
+                    ],
+                    "student_eval_run_id": student_eval_id,
+                }
+                shell_action_inputs = [
+                    example.action_input for example in analysis.aggregate.recent_error_examples if example.action_input
+                ]
+                if shell_action_inputs:
+                    output["shell_action_inputs"] = shell_action_inputs
+                aggregate_score = analysis.aggregate.shell_success_rate
+                objective_score = {SHELL_SUCCESS_OBJECTIVE: aggregate_score}
+                all_outputs.append(output)
+                all_scores.append(aggregate_score)
+                all_objective_scores.append(objective_score)
+                continue
 
             if not high_signal_entry_ids:
                 shell_error_messages = [

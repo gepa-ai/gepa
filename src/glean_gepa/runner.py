@@ -34,6 +34,24 @@ from glean_gepa.prompt import WRITING_CODE_KEY
 from glean_gepa.single_model_adapter import SingleModelAdapter
 from glean_gepa.teacher_student_adapter import TeacherStudentAdapter
 
+CACHE_DIRECTORY_NAME = "cache"
+ADAPTER_CACHE_FILENAME = "glean_adapter_cache.json"
+EVAL_RUN_CACHE_FILENAME = "glean_eval_run_cache.json"
+CHILDREN_CACHE_FILENAME = "glean_children_cache.json"
+
+
+def _default_cache_file(run_dir: Path | None, filename: str) -> Path | None:
+    """Return a run-local cache path, moving a legacy root-level cache if needed."""
+    if run_dir is None:
+        return None
+
+    cache_file = run_dir / CACHE_DIRECTORY_NAME / filename
+    legacy_file = run_dir / filename
+    if legacy_file.exists() and not cache_file.exists():
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        legacy_file.replace(cache_file)
+    return cache_file
+
 
 def _load_seed_candidate(path: Path) -> dict[str, str]:
     if not path.is_file():
@@ -213,6 +231,30 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Drop later examples whose isolated execution errors are within Hamming distance k.",
     )
     parser.add_argument("--evalcli", default=None)
+    parser.add_argument(
+        "--eval_run_timeout_sec",
+        type=_nonnegative_int,
+        default=21600,
+        help="Maximum time to wait for one Cortex eval run (default: 6 hours).",
+    )
+    parser.add_argument(
+        "--cache_file",
+        type=Path,
+        default=None,
+        help="Persistent adapter-analysis cache. Defaults to <run_dir>/cache/glean_adapter_cache.json.",
+    )
+    parser.add_argument(
+        "--eval_run_cache_file",
+        type=Path,
+        default=None,
+        help="Persistent Cortex eval-run ID cache. Defaults to <run_dir>/cache/glean_eval_run_cache.json.",
+    )
+    parser.add_argument(
+        "--children_cache_file",
+        type=Path,
+        default=None,
+        help="Persistent generated-child cache. Defaults to <run_dir>/cache/glean_children_cache.json.",
+    )
     parser.add_argument("--shell_error_lookback_days", type=int, default=7)
     parser.add_argument("--bigquery_project", default=None)
     parser.add_argument(
@@ -254,8 +296,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = _parse_args()
+def main(argv: Sequence[str] | None = None) -> None:
+    args = _parse_args(argv)
     set_debug(args.debug)
 
     if args.fake_flow:
@@ -270,11 +312,18 @@ def main() -> None:
     trainset = _make_evalset(train_versions)
     valset = _make_evalset(val_versions)
     judging_mode = cast(JudgingMode, args.judging_mode)
+    cache_file = args.cache_file or _default_cache_file(args.run_dir, ADAPTER_CACHE_FILENAME)
+    eval_run_cache_file = args.eval_run_cache_file or _default_cache_file(args.run_dir, EVAL_RUN_CACHE_FILENAME)
+    children_cache_file = args.children_cache_file or _default_cache_file(args.run_dir, CHILDREN_CACHE_FILENAME)
     adapter_kwargs = {
-        "runner": ALRunner(evalcli=evalcli),
+        "runner": ALRunner(
+            evalcli=evalcli,
+            cache_file=str(eval_run_cache_file) if eval_run_cache_file else None,
+            eval_run_timeout_sec=args.eval_run_timeout_sec,
+        ),
         "thresholds": Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
         "student_model": args.student_model,
-        "cache_file": "~/eval_cache.json",
+        "cache_file": str(cache_file) if cache_file else None,
     }
     if judging_mode == "teacher_student":
         adapter = TeacherStudentAdapter(**adapter_kwargs, teacher_model=args.teacher_model, judge=Judge(evalcli))
@@ -306,7 +355,7 @@ def main() -> None:
         reflection_hamming_distance_k=args.reflection_hamming_distance_k,
         baseline_prompt_hash=hashlib.md5(json.dumps(seed_candidate, sort_keys=True).encode()).hexdigest(),
         evalset_policy=UnseenEvalSetPolicy(),
-        children_cache_file=args.run_dir / "glean_children_cache.json" if args.run_dir else None,
+        children_cache_file=children_cache_file,
     )
     optimize(
         seed_candidate=seed_candidate,
@@ -342,7 +391,8 @@ def _run_fake_flow(args: argparse.Namespace) -> None:
         reflect_k=3,
         baseline_prompt_hash=hashlib.md5(json.dumps(seed_candidate, sort_keys=True).encode()).hexdigest(),
         evalset_policy=UnseenEvalSetPolicy(),
-        children_cache_file=args.run_dir / "glean_children_cache.json" if args.run_dir else None,
+        children_cache_file=args.children_cache_file
+        or _default_cache_file(args.run_dir, CHILDREN_CACHE_FILENAME),
     )
     result = optimize(
         seed_candidate=seed_candidate,

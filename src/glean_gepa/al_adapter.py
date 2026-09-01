@@ -31,7 +31,7 @@ from glean_gepa.shell_tool_error_util import (
     parse_shell_tool_error_metrics,
 )
 
-EVAL_ANALYSIS_CACHE_SCHEMA_VERSION = 6
+EVAL_ANALYSIS_CACHE_SCHEMA_VERSION = 9
 
 
 def _write_json_atomically(path: str, data: Any) -> None:
@@ -299,10 +299,12 @@ class ALRunner:
         evalcli: EvalCliClient,
         deployment_ids: list[str] | None = None,
         cache_file: str | None = None,
+        eval_run_timeout_sec: int | None = None,
     ):
         self.evalcli = evalcli
         self.deployment_ids = deployment_ids or ["scio-prod"]
         self.cache_file = os.path.expanduser(cache_file) if cache_file else None
+        self.eval_run_timeout_sec = eval_run_timeout_sec
         self._cache_lock = threading.RLock()
 
         # Track eval run IDs: cache_key -> eval_run_id
@@ -394,7 +396,12 @@ class ALRunner:
 
         with self._cache_lock:
             if cache_key in self._eval_run_ids:
-                return self._eval_run_ids[cache_key]
+                cached_eval_id = self._eval_run_ids[cache_key]
+                print(
+                    f"[Eval run cache HIT] Using cached student eval_id: {cached_eval_id} "
+                    f"for {eval_set_name}:{eval_set_version} ({run_label})"
+                )
+                return cached_eval_id
 
         eval_id = f"{run_label}_{model}_{system_prompt_hash}_{int(time.time())}"
 
@@ -418,10 +425,17 @@ class ALRunner:
         with self._cache_lock:
             self._eval_run_ids[cache_key] = created_id
             self._save_cache()
+        print(
+            f"[Eval run cache] Cached student eval_id at creation: {created_id} "
+            f"for {eval_set_name}:{eval_set_version} ({run_label})"
+        )
         if on_created is not None:
             on_created(created_id)
 
-        self.evalcli.wait_for_eval_run(created_id)
+        if self.eval_run_timeout_sec is None:
+            self.evalcli.wait_for_eval_run(created_id)
+        else:
+            self.evalcli.wait_for_eval_run(created_id, timeout_sec=self.eval_run_timeout_sec)
         print(f"Eval run {created_id} completed successfully")
 
         return created_id
@@ -944,11 +958,8 @@ class GleanAdapterBase:
         # TODO(Cathy) populate the good_module_options
         self.good_module_options: dict[str, list[str]] = defaultdict(list)
 
-        # Eval ID cache: (eval_set_name, eval_set_version, model, prompt_hash) -> eval_id
-        self._eval_cache: dict[tuple[str, ...], str] = {}
-
         # These caches are keyed by the immutable eval run ID so they remain useful
-        # when the prompt/eval cache is loaded in a later process.
+        # when the adapter cache is loaded in a later process.
         self._eval_analysis_cache: dict[str, EvalRunShellToolErrorAnalysis] = {}
 
         # Judge triggered cache: (teacher_eval_id, student_eval_id) -> triggered
@@ -959,7 +970,7 @@ class GleanAdapterBase:
             self._load_cache()
 
     def _load_cache(self) -> None:
-        """Load eval ID cache and judge triggered cache from file."""
+        """Load analysis and judge-trigger state from the adapter cache."""
         if not self.cache_file:
             return
 
@@ -970,28 +981,22 @@ class GleanAdapterBase:
                 with open(self.cache_file) as f:
                     data = json.load(f)
 
-                # Load eval cache
-                eval_cache_data = data.get("eval_cache", {})
-                self._eval_cache = {tuple(json.loads(k)): v for k, v in eval_cache_data.items()}
-
                 # Load judge triggered cache
                 judge_triggered_data = data.get("judge_triggered", [])
                 self._judge_triggered = {tuple(item) for item in judge_triggered_data}
 
                 self._load_eval_analysis_cache(data.get("eval_analysis_cache", {}))
                 print(
-                    f"[GleanAdapter] Loaded {len(self._eval_cache)} eval IDs, "
-                    f"{len(self._eval_analysis_cache)} error analyses, and "
+                    f"[GleanAdapter] Loaded {len(self._eval_analysis_cache)} error analyses and "
                     f"{len(self._judge_triggered)} judge triggers from cache: {self.cache_file}"
                 )
         except Exception as e:
             print(f"[GleanAdapter] Failed to load cache from {self.cache_file}: {e}")
-            self._eval_cache = {}
             self._judge_triggered = set()
             self._eval_analysis_cache = {}
 
     def _save_cache(self) -> None:
-        """Save eval ID cache and judge triggered cache to file."""
+        """Save analysis and judge-trigger state to the adapter cache."""
         if not self.cache_file:
             return
 
@@ -999,7 +1004,6 @@ class GleanAdapterBase:
             with self._cache_lock:
                 # Build cache data structure
                 data = {
-                    "eval_cache": {json.dumps(list(k)): v for k, v in self._eval_cache.items()},
                     "judge_triggered": [list(pair) for pair in self._judge_triggered],
                     "eval_analysis_cache": {
                         eval_id: self._serialize_eval_analysis(analysis)
@@ -1008,18 +1012,11 @@ class GleanAdapterBase:
                 }
                 _write_json_atomically(self.cache_file, data)
                 print(
-                    f"[GleanAdapter] Saved {len(self._eval_cache)} eval IDs, "
-                    f"{len(self._eval_analysis_cache)} error analyses, and "
+                    f"[GleanAdapter] Saved {len(self._eval_analysis_cache)} error analyses and "
                     f"{len(self._judge_triggered)} judge triggers to cache: {self.cache_file}"
                 )
         except Exception as e:
             print(f"[GleanAdapter] Failed to save cache to {self.cache_file}: {e}")
-
-    def _cache_eval_run_id(self, cache_key: tuple[str, ...], eval_run_id: str) -> None:
-        """Persist an eval ID at creation time for reuse if polling is interrupted."""
-        with self._cache_lock:
-            self._eval_cache[cache_key] = eval_run_id
-            self._save_cache()
 
     @staticmethod
     def _serialize_eval_analysis(analysis: EvalRunShellToolErrorAnalysis) -> dict[str, Any]:
@@ -1059,6 +1056,9 @@ class GleanAdapterBase:
                     print(f"[Cache] Refreshing legacy shell error analysis for eval_id: {eval_id}")
                     continue
                 aggregate = parse_shell_tool_error_metrics(raw["aggregate"])
+                if aggregate.shell_executions == 0:
+                    print(f"[Cache] Refreshing provisional 0/0 shell analysis for eval_id: {eval_id}")
+                    continue
                 per_entry = {
                     entry_id: parse_shell_tool_error_entry_metrics(metrics)
                     for entry_id, metrics in (raw.get("per_entry") or {}).items()
@@ -1089,9 +1089,8 @@ class GleanAdapterBase:
         *,
         capture_traces: bool = True,
     ) -> list[GleanEvaluationBatch]:
-        """Run focused child screens concurrently; leave ordinary evals serial."""
-        is_focused = any(data.get("eval_entry_ids") for _candidate, batch in items for data in batch)
-        if not is_focused or len(items) < 2:
+        """Run independent candidate evaluations concurrently, preserving input order."""
+        if len(items) < 2:
             return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
 
         with ThreadPoolExecutor(max_workers=len(items)) as executor:
@@ -1182,36 +1181,14 @@ class GleanAdapterBase:
         system_prompt: str,
         run_label: str = "gepa",
     ) -> str:
-        student_prompt_hash = hashlib.md5(system_prompt.encode()).hexdigest()[:16]
-        student_cache_key = (
-            eval_set_name,
-            eval_set_version,
-            self.student_model,
-            student_prompt_hash,
-            run_label,
-        )
-
-        student_eval_id = self._eval_cache.get(student_cache_key)
-        if student_eval_id:
-            print(f"[Cache HIT] Using cached student eval_id: {student_eval_id} ({run_label})")
-            return student_eval_id
-
-        student_eval_id = self.runner.run(
+        return self.runner.run(
             self.student_model,
             system_prompt=system_prompt,
             eval_set_name=eval_set_name,
             eval_set_version=eval_set_version,
             deployment_ids=deployment_ids,
             run_label=run_label,
-            on_created=lambda created_id: self._cache_eval_run_id(student_cache_key, created_id),
         )
-        # Keep this write as an idempotent fallback for test doubles and
-        # custom runners that do not implement the creation callback.
-        with self._cache_lock:
-            self._eval_cache[student_cache_key] = student_eval_id
-            self._save_cache()
-        print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id} ({run_label})")
-        return student_eval_id
 
     # ---------------------------
     # 5) High-signal reflective dataset selection (per module)

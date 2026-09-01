@@ -4,7 +4,10 @@ import json
 from datetime import date
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from glean_gepa.al_adapter import (
+    EVAL_ANALYSIS_CACHE_SCHEMA_VERSION,
     ALRunner,
     Candidate,
     ModuleSpec,
@@ -22,10 +25,10 @@ from glean_gepa.shell_tool_error_util import (
     ShellToolErrorExample,
     ShellToolErrorMetrics,
 )
-from glean_gepa.single_model_adapter import SingleModelAdapter
+from glean_gepa.single_model_adapter import ShellToolTelemetryPendingError, SingleModelAdapter
 
 
-def test_evaluate_uses_shell_error_rate_objective():
+def test_evaluate_uses_shell_error_rate_objective(capsys: pytest.CaptureFixture[str]):
     evalcli = EvalCliClient(binary="/fake/evalcli")
     runner = ALRunner(evalcli=evalcli)
     bigquery_client = MagicMock()
@@ -119,6 +122,8 @@ def test_evaluate_uses_shell_error_rate_objective():
     ):
         result = adapter.evaluate(batch, {"WRITING_CODE": "test prompt"}, capture_traces=True)
 
+    trace_log = capsys.readouterr().out
+    assert "[Trace evaluation] Reading eval-set shell results for AI Answers Small 20260403: run_123" in trace_log
     run_eval.assert_called_once()
     get_trace.assert_called_once()
 
@@ -131,6 +136,17 @@ def test_evaluate_uses_shell_error_rate_objective():
     assert result.outputs[0]["shell_action_inputs"] == ['{"command": "python3 broken.py"}']
     assert result.trajectories is not None
     assert len(result.trajectories) == 1
+
+    full_val_result = adapter.evaluate(
+        [{**batch[0], "cached_student_eval_run_id": "run_123"}],
+        {"WRITING_CODE": "test prompt"},
+        capture_traces=False,
+    )
+    # Full validation has one score per eval-set item. It must use the
+    # aggregate (75%), not the high-signal entry's 50% score.
+    assert full_val_result.scores == [0.75]
+    assert full_val_result.objective_scores == [{SHELL_SUCCESS_OBJECTIVE: 0.75}]
+    assert "[Validation] Reading full-validation shell results for AI Answers Small 20260403: run_123" in capsys.readouterr().out
 
     assert result.trajectories[0]["data"]["eval_entry_id"] == "entry-1"
     assert result.trajectories[0]["data"]["eval_run_id"] == "run_123"
@@ -503,6 +519,7 @@ def test_evaluate_logs_fetched_shell_error_rate_and_error(capsys):
 
 def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):
     cache_file = tmp_path / "eval-cache.json"
+    runner_cache_file = tmp_path / "eval-run-cache.json"
     error = ShellToolErrorExample(
         started_at="2026-08-11T12:00:00Z",
         project_id="project-1",
@@ -552,7 +569,8 @@ def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):
         }
     ]
 
-    first_runner = ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli"))
+    first_evalcli = EvalCliClient(binary="/fake/evalcli")
+    first_runner = ALRunner(evalcli=first_evalcli, cache_file=str(runner_cache_file))
     first = SingleModelAdapter(
         runner=first_runner,
         bigquery_client=MagicMock(),
@@ -561,17 +579,19 @@ def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):
         cache_file=str(cache_file),
     )
     with (
-        patch.object(first_runner, "run", return_value="run_123") as run,
+        patch.object(first_evalcli, "create_eval_run", return_value="run_123") as create_eval_run,
+        patch.object(first_evalcli, "wait_for_eval_run"),
         patch(
             "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=analysis
         ) as fetch,
     ):
         without_traces = first.evaluate(batch, {"WRITING_CODE": "prompt"}, capture_traces=False)
     assert without_traces.trajectories is None
-    run.assert_called_once()
+    create_eval_run.assert_called_once()
     fetch.assert_called_once()
 
-    second_runner = ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli"))
+    second_evalcli = EvalCliClient(binary="/fake/evalcli")
+    second_runner = ALRunner(evalcli=second_evalcli, cache_file=str(runner_cache_file))
     second = SingleModelAdapter(
         runner=second_runner,
         bigquery_client=MagicMock(),
@@ -580,12 +600,12 @@ def test_capture_traces_reuses_persisted_minimal_error_evidence(tmp_path):
         cache_file=str(cache_file),
     )
     with (
-        patch.object(second_runner, "run") as run,
+        patch.object(second_evalcli, "create_eval_run") as create_eval_run,
         patch("glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis") as fetch,
     ):
         with_traces = second.evaluate(batch, {"WRITING_CODE": "prompt"}, capture_traces=True)
 
-    run.assert_not_called()
+    create_eval_run.assert_not_called()
     fetch.assert_not_called()
     assert with_traces.trajectories is not None
     trace_output = with_traces.trajectories[0]["output"]
@@ -645,6 +665,7 @@ def test_shell_error_analysis_cache_round_trip(tmp_path):
         fetch.assert_called_once()
 
     adapter._save_cache()
+    assert "eval_cache" not in json.loads(cache_file.read_text())
 
     reloaded = SingleModelAdapter(
         runner=ALRunner(evalcli=evalcli),
@@ -660,6 +681,137 @@ def test_shell_error_analysis_cache_round_trip(tmp_path):
     assert cached.aggregate.shell_error_rate == 0.3
     assert cached.high_signal_entry_ids == ("entry-1",)
     assert cached.per_entry["entry-1"].trace_ids == ("trace-cached",)
+
+
+def test_provisional_zero_shell_analysis_is_refetched_instead_of_cached(tmp_path):
+    cache_file = tmp_path / "eval-cache.json"
+    provisional = EvalRunShellToolErrorAnalysis(
+        eval_id="run_pending_telemetry",
+        start_date=date(2026, 8, 31),
+        end_date=date(2026, 9, 1),
+        aggregate=ShellToolErrorMetrics(
+            eval_id="run_pending_telemetry",
+            shell_executions=0,
+            shell_errors=0,
+            shell_error_rate=0.0,
+            shell_error_pct=0.0,
+            recent_error_examples=(),
+        ),
+        per_entry={},
+        high_signal_entry_ids=(),
+    )
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli")),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+        cache_file=str(cache_file),
+    )
+
+    with patch(
+        "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=provisional
+    ) as fetch:
+        assert adapter._get_or_fetch_shell_error_analysis("run_pending_telemetry") is provisional
+        assert adapter._get_or_fetch_shell_error_analysis("run_pending_telemetry") is provisional
+
+    assert fetch.call_count == 2
+    assert adapter._eval_analysis_cache == {}
+
+
+def test_evaluate_refuses_to_score_provisional_zero_shell_analysis():
+    provisional = EvalRunShellToolErrorAnalysis(
+        eval_id="run_pending_telemetry",
+        start_date=date(2026, 8, 31),
+        end_date=date(2026, 9, 1),
+        aggregate=ShellToolErrorMetrics(
+            eval_id="run_pending_telemetry",
+            shell_executions=0,
+            shell_errors=0,
+            shell_error_rate=0.0,
+            shell_error_pct=0.0,
+            recent_error_examples=(),
+        ),
+        per_entry={},
+        high_signal_entry_ids=(),
+    )
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli")),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+    )
+    batch = [
+        {
+            "eval_set_name": "Glean Chat V2 Medium",
+            "eval_set_version": "20260815",
+            "deployment_ids": ["scio-prod"],
+            "status": "active",
+        }
+    ]
+
+    with (
+        patch.object(adapter, "_get_or_run_student_eval", return_value="run_pending_telemetry"),
+        patch.object(adapter, "_get_or_fetch_shell_error_analysis", return_value=provisional),
+        pytest.raises(ShellToolTelemetryPendingError, match="refusing to score 0/0"),
+    ):
+        adapter.evaluate(batch, {"WRITING_CODE": "prompt"})
+
+
+def test_persisted_zero_shell_analysis_is_refetched(tmp_path):
+    cache_file = tmp_path / "eval-cache.json"
+    cache_file.write_text(
+        json.dumps(
+            {
+                "eval_analysis_cache": {
+                    "run_pending_telemetry": {
+                        "schema_version": EVAL_ANALYSIS_CACHE_SCHEMA_VERSION,
+                        "eval_id": "run_pending_telemetry",
+                        "start_date": "2026-08-31",
+                        "end_date": "2026-08-31",
+                        "aggregate": {
+                            "eval_id": "run_pending_telemetry",
+                            "shell_executions": 0,
+                            "shell_errors": 0,
+                            "shell_error_rate": 0.0,
+                            "shell_error_pct": 0.0,
+                            "recent_error_examples": [],
+                        },
+                        "per_entry": {},
+                        "high_signal_entry_ids": [],
+                    }
+                }
+            }
+        )
+    )
+    refreshed = EvalRunShellToolErrorAnalysis(
+        eval_id="run_pending_telemetry",
+        start_date=date(2026, 8, 31),
+        end_date=date(2026, 9, 1),
+        aggregate=ShellToolErrorMetrics(
+            eval_id="run_pending_telemetry",
+            shell_executions=1,
+            shell_errors=0,
+            shell_error_rate=0.0,
+            shell_error_pct=0.0,
+            recent_error_examples=(),
+        ),
+        per_entry={},
+        high_signal_entry_ids=(),
+    )
+    adapter = SingleModelAdapter(
+        runner=ALRunner(evalcli=EvalCliClient(binary="/fake/evalcli")),
+        bigquery_client=MagicMock(),
+        student_model="fast",
+        thresholds=Thresholds(quality_min=0.7, tools_min=0.7, max_student_tokens=100000),
+        cache_file=str(cache_file),
+    )
+
+    with patch(
+        "glean_gepa.single_model_adapter.fetch_eval_run_shell_tool_error_analysis", return_value=refreshed
+    ) as fetch:
+        assert adapter._get_or_fetch_shell_error_analysis("run_pending_telemetry") is refreshed
+
+    fetch.assert_called_once()
 
 
 def test_legacy_shell_error_analysis_cache_is_refetched(tmp_path):

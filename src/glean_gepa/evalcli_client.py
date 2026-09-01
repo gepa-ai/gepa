@@ -190,9 +190,13 @@ class EvalCliClient:
         eval_run_id: str,
         *,
         poll_interval_sec: int = 60,
+        timeout_sec: int | None = None,
     ) -> None:
         print(f"Waiting for eval run {eval_run_id} to complete...")
+        started_at = time.monotonic()
         while True:
+            if timeout_sec is not None and time.monotonic() - started_at >= timeout_sec:
+                raise EvalCliError(f"Eval run {eval_run_id} timed out after {timeout_sec}s")
             try:
                 statuses = self._invoke_json("run", "status", "--id", eval_run_id)
             except EvalCliError as exc:

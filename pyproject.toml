@@ -82,6 +82,13 @@ gskill = [
     "pyyaml",
 ]
 
+glean = [
+    "google-cloud-bigquery>=3.43.0,<4",
+    "openai>=2.54.0,<3",
+    "tiktoken>=0.11.0",
+    "truststore>=0.10.4,<1",
+]
+
 langchain = [
     "langchain>=1.0",
     "langchain-core>=1.0",

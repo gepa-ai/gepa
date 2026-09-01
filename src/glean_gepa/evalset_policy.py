@@ -1,16 +1,18 @@
-"""Evaluation policy that reveals configured eval sets one at a time."""
+"""Training-eval scheduling for Glean's evolutionary proposer."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from gepa.core.data_loader import DataLoader
-from gepa.core.state import GEPAState, ProgramIdx
-from gepa.strategies.eval_policy import FullEvaluationPolicy
 
 
-class UnseenEvalSetPolicy(FullEvaluationPolicy):
-    """Use one previously unseen eval-set item for each full-screen round."""
+class UnseenEvalSetPolicy:
+    """Select one previously unseen training eval-set item per generation.
+
+    Validation remains the engine's full-evaluation policy: every configured
+    validation version is evaluated for each accepted candidate.
+    """
 
     def __init__(self) -> None:
         self._ordered_ids: list[Any] | None = None
@@ -34,15 +36,3 @@ class UnseenEvalSetPolicy(FullEvaluationPolicy):
         self._next_index += 1
         print(f"[Eval set schedule] {purpose}: selected id {selected} ({self._next_index}/{len(ids)})")
         return [selected]
-
-    def get_seed_eval_batch(self, loader: DataLoader) -> list[Any]:
-        return self.take_unseen(loader, purpose="root candidate")
-
-    def get_eval_batch(
-        self,
-        loader: DataLoader,
-        state: GEPAState,
-        target_program_idx: ProgramIdx | None = None,
-    ) -> list[Any]:
-        del state, target_program_idx
-        return self.take_unseen(loader, purpose="accepted-candidate full screen")

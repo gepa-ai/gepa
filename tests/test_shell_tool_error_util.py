@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +22,7 @@ from glean_gepa.shell_tool_error_util import (
     is_shell_tool_error,
     parse_shell_tool_error_example,
     parse_shell_tool_error_metrics,
+    resolve_eval_run_date_range,
     shell_error_free_rate,
 )
 
@@ -67,7 +68,10 @@ def test_build_shell_tool_error_rate_query_includes_eval_and_shell_filters():
     assert "jsonPayload.action.error_str" in sql
     assert "jsonPayload.span_info.execution_status.message" in sql
     assert "jsonPayload.span_info.execution_status.user_message" in sql
-    assert "shell_execution_id AS action_run_id" in sql
+    assert "NULLIF(jsonPayload.action.action_run_id, '')" in sql
+    assert "NULLIF(jsonPayload.context.agent_trace.span_id, '')" in sql
+    assert "TO_JSON_STRING(jsonPayload)" in sql
+    assert "action_run_id," in sql
     assert "recent_error_examples" in sql
 
 
@@ -166,6 +170,18 @@ def test_build_eval_run_search_params_uses_lookback_window():
     assert param_map["eval_id"] == "run_123"
     assert param_map["search_start_date"] == "2026-08-08"
     assert param_map["search_end_date"] == "2026-08-11"
+
+
+def test_resolve_eval_run_date_range_uses_utc_for_bigquery_shards():
+    just_after_midnight_utc = int(datetime(2026, 8, 30, 0, 30, tzinfo=timezone.utc).timestamp() * 1000)
+
+    resolved = resolve_eval_run_date_range(
+        {"min_start_ms": just_after_midnight_utc, "max_start_ms": just_after_midnight_utc},
+        lookback_days=7,
+        end_date=date(2026, 8, 31),
+    )
+
+    assert resolved == (date(2026, 8, 30), date(2026, 8, 30))
 
 
 def test_shell_error_free_rate():
@@ -302,6 +318,16 @@ def test_fetch_shell_tool_error_metrics_returns_parsed_row():
         [{"min_start_ms": 1_786_363_200_000, "max_start_ms": 1_786_449_600_000}],
         [
             {
+                "eval_id": "run_123",
+                "shell_executions": 6,
+                "shell_errors": 2,
+                "shell_error_rate": 1 / 3,
+                "shell_error_pct": 33.33,
+                "recent_error_examples": [],
+            }
+        ],
+        [
+            {
                 "entry_id": "entry-1",
                 "shell_executions": 4,
                 "shell_errors": 1,
@@ -318,9 +344,38 @@ def test_fetch_shell_tool_error_metrics_returns_parsed_row():
         end_date=date(2026, 8, 12),
     )
 
-    assert metrics.shell_error_rate == 0.25
+    assert metrics.shell_error_rate == pytest.approx(1 / 3)
+    assert metrics.shell_errors == 2
+    assert mock_client.query.call_count == 3
+
+
+def test_fetch_shell_error_metrics_keeps_unattributed_shell_spans_in_aggregate():
+    mock_client = MagicMock()
+    mock_client.query.side_effect = [
+        [{"min_start_ms": 1_786_363_200_000, "max_start_ms": 1_786_449_600_000}],
+        [
+            {
+                "eval_id": "run_123",
+                "shell_executions": 3,
+                "shell_errors": 1,
+                "shell_error_rate": 1 / 3,
+                "shell_error_pct": 33.33,
+                "recent_error_examples": [],
+            }
+        ],
+        [],
+    ]
+
+    metrics = fetch_shell_tool_error_metrics(
+        mock_client,
+        eval_id="run_123",
+        end_date=date(2026, 8, 12),
+    )
+
+    assert metrics.shell_executions == 3
     assert metrics.shell_errors == 1
-    assert mock_client.query.call_count == 2
+    assert metrics.shell_error_rate == pytest.approx(1 / 3)
+    assert mock_client.query.call_count == 3
 
 
 def test_fetch_shell_tool_error_metrics_returns_empty_when_no_rows():

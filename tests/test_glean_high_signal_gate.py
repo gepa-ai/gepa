@@ -162,3 +162,32 @@ def test_high_signal_batch_evaluation_dispatches_children_concurrently():
     results = adapter.batch_evaluate(items)
 
     assert len(results) == 2
+
+
+def test_full_validation_batch_evaluation_dispatches_children_concurrently():
+    adapter = GleanAdapterBase.__new__(GleanAdapterBase)
+    barrier = threading.Barrier(2)
+
+    def evaluate_fn(_batch_data, _candidate, _capture_traces):
+        barrier.wait(timeout=1)
+        return _batch([1.0])
+
+    adapter._evaluate_fn = evaluate_fn
+    items = [
+        (
+            {"WRITING_CODE": f"child-{index}"},
+            [
+                {
+                    "eval_set_name": "set",
+                    "eval_set_version": "v1",
+                    "deployment_ids": ["prod"],
+                    "status": "active",
+                }
+            ],
+        )
+        for index in range(2)
+    ]
+
+    results = adapter.batch_evaluate(items, capture_traces=False)
+
+    assert len(results) == 2

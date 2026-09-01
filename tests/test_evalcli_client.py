@@ -151,7 +151,7 @@ def test_subprocess_env_preserves_existing_ssl_cert(monkeypatch):
     assert "REQUESTS_CA_BUNDLE" not in env
 
 
-def test_wait_for_eval_run_retries_transient_errors():
+def test_wait_for_eval_run_retries_transient_errors(capsys):
     client = EvalCliClient(binary="/fake/evalcli")
     in_progress = [{"taskCountsByStatus": [{"status": "TASK_SUBMITTED", "count": 1}]}]
     complete = [{"taskCountsByStatus": [{"status": "TASK_SUCCEEDED", "count": 1}]}]
@@ -164,21 +164,26 @@ def test_wait_for_eval_run_retries_transient_errors():
             complete,
         ],
     ) as mock_invoke:
-        with (
-            patch("glean_gepa.evalcli_client.time.sleep"),
-            patch("glean_gepa.evalcli_client.debug_print") as debug_print,
-        ):
+        with patch("glean_gepa.evalcli_client.time.sleep"):
             client.wait_for_eval_run("run_123", poll_interval_sec=0)
 
     assert mock_invoke.call_count == 3
-    status_logs = [
-        call.args[0]
-        for call in debug_print.call_args_list
-        if call.args[0].startswith("Eval run run_123 status:")
-    ]
+    status_logs = [line for line in capsys.readouterr().out.splitlines() if line.startswith("Eval run run_123 status:")]
     assert len(status_logs) == 2
     assert "TASK_SUBMITTED" in status_logs[0]
     assert "TASK_SUCCEEDED" in status_logs[1]
+
+
+def test_wait_for_eval_run_honors_timeout():
+    client = EvalCliClient(binary="/fake/evalcli")
+    with (
+        patch.object(client, "_invoke_json") as mock_invoke,
+        patch("glean_gepa.evalcli_client.time.monotonic", side_effect=[10.0, 11.0]),
+    ):
+        with pytest.raises(EvalCliError, match="timed out after 1s"):
+            client.wait_for_eval_run("run_123", poll_interval_sec=0, timeout_sec=1)
+
+    mock_invoke.assert_not_called()
 
 
 def test_wait_for_eval_run_raises_on_non_transient_errors():

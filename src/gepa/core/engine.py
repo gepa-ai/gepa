@@ -455,6 +455,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
         linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
         is_best_program = new_program_idx == linear_pareto_front_program_idx
+        frontier_label = f"{state.frontier_type} frontier"
+        self.logger.log(
+            f"Iteration {self._display_iteration(state)}: Full validation score for child candidate "
+            f"{new_program_idx} (parents {parent_program_idx}) is {valset_score}; using this held-out "
+            f"validation result to update the {frontier_label}."
+        )
 
         # Snapshot Pareto front after update and notify callback
         front_after = state.get_pareto_front_mapping()
@@ -464,6 +470,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         new_front = sorted(candidates_after)
         displaced_candidates = sorted(candidates_before - candidates_after)
+
+        self.logger.log(
+            f"Iteration {self._display_iteration(state)}: {frontier_label} after validating candidate "
+            f"{new_program_idx}: candidates {new_front}; displaced {displaced_candidates or 'none'}."
+        )
 
         iteration = self._display_iteration(state)
         notify_callbacks(
@@ -910,10 +921,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             step=state.i + 1,
         )
 
-        self.logger.log(
-            f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
-            f"over {base_val_coverage} / {len(valset)} examples"
-        )
+        if resumed:
+            self.logger.log(
+                f"Resume checkpoint before iteration {state.i + 1}: seed program full valset score from the "
+                f"checkpoint is {base_val_avg} over {base_val_coverage} / {len(valset)} examples "
+                "(not a child validation or frontier update)."
+            )
+        else:
+            self.logger.log(
+                f"Seed program full valset score: {base_val_avg} over {base_val_coverage} / {len(valset)} examples"
+            )
 
         # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
         # This provides the baseline performance before any optimization

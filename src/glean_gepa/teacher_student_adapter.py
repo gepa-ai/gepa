@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any, cast
 
 from glean_gepa.adapter_types import (
@@ -216,58 +215,31 @@ class TeacherStudentAdapter(GleanAdapterBase):
             eval_set_name = al_data_inst.get("eval_set_name", "")
             deployment_ids = al_data_inst.get("deployment_ids", [])
 
-            # Create cache keys for teacher and student
-            teacher_prompt_hash = hashlib.md5(b"<<TEACHER_PROD_PROMPT>>").hexdigest()[:16]
-            student_prompt_hash = hashlib.md5(system_prompt.encode()).hexdigest()[:16]
-
-            teacher_cache_key = (eval_set_name, eval_set_version, self.teacher_model, teacher_prompt_hash)
-            student_cache_key = (eval_set_name, eval_set_version, self.student_model, student_prompt_hash)
-
-            # Check cache for teacher eval
-            teacher_eval_id = al_data_inst.get("cached_teacher_eval_run_id") or self._eval_cache.get(teacher_cache_key)
+            # Child-cache IDs belong to a persisted screening result. All other
+            # eval-ID lookups and writes are owned by ALRunner.
+            teacher_eval_id = al_data_inst.get("cached_teacher_eval_run_id")
             if teacher_eval_id:
                 print(f"[Cache HIT] Using cached teacher eval_id: {teacher_eval_id}")
             else:
-                # Trigger teacher eval run
                 teacher_eval_id = self.runner.run(
                     self.teacher_model,
                     system_prompt="<<TEACHER_PROD_PROMPT>>",
                     eval_set_name=eval_set_name,
                     eval_set_version=eval_set_version,
                     deployment_ids=deployment_ids,
-                    on_created=lambda created_id, cache_key=teacher_cache_key: self._cache_eval_run_id(
-                        cache_key, created_id
-                    ),
                 )
-                # Keep this write as an idempotent fallback for test doubles
-                # and custom runners that do not implement the callback.
-                with self._cache_lock:
-                    self._eval_cache[teacher_cache_key] = teacher_eval_id
-                    self._save_cache()
-                print(f"[Cache MISS] Started and cached teacher eval_id: {teacher_eval_id}")
 
-            # Check cache for student eval
-            student_eval_id = al_data_inst.get("cached_student_eval_run_id") or self._eval_cache.get(student_cache_key)
+            student_eval_id = al_data_inst.get("cached_student_eval_run_id")
             if student_eval_id:
                 print(f"[Cache HIT] Using cached student eval_id: {student_eval_id}")
             else:
-                # Trigger student eval run
                 student_eval_id = self.runner.run(
                     self.student_model,
                     system_prompt=system_prompt,
                     eval_set_name=eval_set_name,
                     eval_set_version=eval_set_version,
                     deployment_ids=deployment_ids,
-                    on_created=lambda created_id, cache_key=student_cache_key: self._cache_eval_run_id(
-                        cache_key, created_id
-                    ),
                 )
-                # Keep this write as an idempotent fallback for test doubles
-                # and custom runners that do not implement the callback.
-                with self._cache_lock:
-                    self._eval_cache[student_cache_key] = student_eval_id
-                    self._save_cache()
-                print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id}")
             all_eval_run_ids.append(
                 {
                     "eval_set_name": eval_set_name,
