@@ -24,7 +24,6 @@ from glean_gepa.al_adapter import (
     get_tool_alignment_from_traces,
 )
 from glean_gepa.batch import EvalRunIds, GleanEvaluationBatch
-from glean_gepa.debug import debug_print
 from glean_gepa.prompt import compile_encoded_prompt
 
 PRIMARY_OBJECTIVE = "correctness"
@@ -227,7 +226,7 @@ class TeacherStudentAdapter(GleanAdapterBase):
             # Check cache for teacher eval
             teacher_eval_id = al_data_inst.get("cached_teacher_eval_run_id") or self._eval_cache.get(teacher_cache_key)
             if teacher_eval_id:
-                debug_print(f"[Cache HIT] Using cached teacher eval_id: {teacher_eval_id}")
+                print(f"[Cache HIT] Using cached teacher eval_id: {teacher_eval_id}")
             else:
                 # Trigger teacher eval run
                 teacher_eval_id = self.runner.run(
@@ -236,17 +235,21 @@ class TeacherStudentAdapter(GleanAdapterBase):
                     eval_set_name=eval_set_name,
                     eval_set_version=eval_set_version,
                     deployment_ids=deployment_ids,
+                    on_created=lambda created_id, cache_key=teacher_cache_key: self._cache_eval_run_id(
+                        cache_key, created_id
+                    ),
                 )
-                # Cache and save immediately
+                # Keep this write as an idempotent fallback for test doubles
+                # and custom runners that do not implement the callback.
                 with self._cache_lock:
                     self._eval_cache[teacher_cache_key] = teacher_eval_id
                     self._save_cache()
-                debug_print(f"[Cache MISS] Started and cached teacher eval_id: {teacher_eval_id}")
+                print(f"[Cache MISS] Started and cached teacher eval_id: {teacher_eval_id}")
 
             # Check cache for student eval
             student_eval_id = al_data_inst.get("cached_student_eval_run_id") or self._eval_cache.get(student_cache_key)
             if student_eval_id:
-                debug_print(f"[Cache HIT] Using cached student eval_id: {student_eval_id}")
+                print(f"[Cache HIT] Using cached student eval_id: {student_eval_id}")
             else:
                 # Trigger student eval run
                 student_eval_id = self.runner.run(
@@ -255,12 +258,16 @@ class TeacherStudentAdapter(GleanAdapterBase):
                     eval_set_name=eval_set_name,
                     eval_set_version=eval_set_version,
                     deployment_ids=deployment_ids,
+                    on_created=lambda created_id, cache_key=student_cache_key: self._cache_eval_run_id(
+                        cache_key, created_id
+                    ),
                 )
-                # Cache and save immediately
+                # Keep this write as an idempotent fallback for test doubles
+                # and custom runners that do not implement the callback.
                 with self._cache_lock:
                     self._eval_cache[student_cache_key] = student_eval_id
                     self._save_cache()
-                debug_print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id}")
+                print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id}")
             all_eval_run_ids.append(
                 {
                     "eval_set_name": eval_set_name,
@@ -277,9 +284,9 @@ class TeacherStudentAdapter(GleanAdapterBase):
             skip_trigger = judge_cache_key in self._judge_triggered
 
             if skip_trigger:
-                debug_print(f"[Judge Cache HIT] Judge already triggered for {teacher_eval_id} vs {student_eval_id}")
+                print(f"[Judge Cache HIT] Judge already triggered for {teacher_eval_id} vs {student_eval_id}")
             else:
-                debug_print(f"[Judge Cache MISS] Will trigger judge for {teacher_eval_id} vs {student_eval_id}")
+                print(f"[Judge Cache MISS] Will trigger judge for {teacher_eval_id} vs {student_eval_id}")
                 # Mark as triggered and save immediately
                 with self._cache_lock:
                     self._judge_triggered.add(judge_cache_key)

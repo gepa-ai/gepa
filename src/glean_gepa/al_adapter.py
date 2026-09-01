@@ -123,7 +123,7 @@ CODING_HARNESS_SC_PARAMS = (
 def log_shell_tool_error_analysis(analysis: EvalRunShellToolErrorAnalysis) -> None:
     """Log the fetched shell-tool error rate and recent error details."""
     aggregate = analysis.aggregate
-    debug_print(
+    print(
         f"[Shell Tool] Fetched error rate for eval {analysis.eval_id}: "
         f"{aggregate.shell_error_pct:.2f}% "
         f"({aggregate.shell_errors}/{aggregate.shell_executions})"
@@ -325,9 +325,9 @@ class ALRunner:
                     data = json.load(f)
                 # Convert string keys back to tuples
                 self._eval_run_ids = {tuple(json.loads(k)): v for k, v in data.items()}
-                debug_print(f"Loaded {len(self._eval_run_ids)} eval run IDs from cache")
+                print(f"Loaded {len(self._eval_run_ids)} eval run IDs from cache")
         except Exception as e:
-            debug_print(f"Failed to load cache from {self.cache_file}: {e}")
+            print(f"Failed to load cache from {self.cache_file}: {e}")
             self._eval_run_ids = {}
 
     def _save_cache(self) -> None:
@@ -340,9 +340,9 @@ class ALRunner:
                 # Convert tuple keys to strings for JSON serialization
                 data = {json.dumps(list(k)): v for k, v in self._eval_run_ids.items()}
                 _write_json_atomically(self.cache_file, data)
-                debug_print(f"Saved {len(self._eval_run_ids)} eval run IDs to cache")
+                print(f"Saved {len(self._eval_run_ids)} eval run IDs to cache")
         except Exception as e:
-            debug_print(f"Failed to save cache to {self.cache_file}: {e}")
+            print(f"Failed to save cache to {self.cache_file}: {e}")
 
     def _build_sc_params(self, model: str, system_prompt: str) -> str:
         """Build scParams based on model type."""
@@ -371,6 +371,7 @@ class ALRunner:
         eval_set_version: str,
         deployment_ids: list[str],
         run_label: str = "gepa",
+        on_created: Callable[[str], None] | None = None,
     ) -> str:
         """
         Trigger an eval run and return the eval_run_id.
@@ -382,6 +383,8 @@ class ALRunner:
             eval_set_version: Version of the eval set
             deployment_ids: List of deployment IDs to use
             run_label: Prefix for eval run id / cache key (e.g. gepa vs verify_<hash>)
+            on_created: Optional callback invoked after the eval run is created and cached,
+                but before polling for completion.
 
         Returns:
             eval_run_id string
@@ -402,7 +405,7 @@ class ALRunner:
         else:
             eval_params += ",gleanchat_agent=ADVANCED"
 
-        debug_print(f"Creating eval run {eval_id} for {eval_set_name}:{eval_set_version}...")
+        print(f"Creating eval run {eval_id} for {eval_set_name}:{eval_set_version}...")
         created_id = self.evalcli.create_eval_run(
             eval_run_id=eval_id,
             eval_set_name=eval_set_name,
@@ -412,12 +415,14 @@ class ALRunner:
             sc_params=sc_params,
             eval_params=eval_params,
         )
-        self.evalcli.wait_for_eval_run(created_id)
-        debug_print(f"Eval run {created_id} completed successfully")
-
         with self._cache_lock:
             self._eval_run_ids[cache_key] = created_id
             self._save_cache()
+        if on_created is not None:
+            on_created(created_id)
+
+        self.evalcli.wait_for_eval_run(created_id)
+        print(f"Eval run {created_id} completed successfully")
 
         return created_id
 
@@ -467,18 +472,18 @@ class Judge:
         """
         cache_key = (teacher_eval_id, student_eval_id)
         if cache_key in self._judge_cache:
-            debug_print(f"Using cached judge result for {teacher_eval_id} vs {student_eval_id}")
+            print(f"Using cached judge result for {teacher_eval_id} vs {student_eval_id}")
             return self._judge_cache[cache_key]
 
         if not skip_trigger:
-            debug_print(f"Triggering judge run for {teacher_eval_id} vs {student_eval_id}...")
+            print(f"Triggering judge run for {teacher_eval_id} vs {student_eval_id}...")
             judge_run_id = self.evalcli.create_judge_run(
                 student_eval_id=student_eval_id,
                 teacher_eval_id=teacher_eval_id,
             )
             self.evalcli.wait_for_judge_run(judge_run_id)
         else:
-            debug_print(
+            print(
                 f"Skipping judge trigger (already triggered), fetching results for {teacher_eval_id} vs {student_eval_id}."
             )
 
@@ -544,7 +549,7 @@ class Judge:
         # Extract trace information for each (entryId, evalId) pair
         for item in details_data:
             if item.get("error"):
-                debug_print(f"Error in details data: {item.get('error')}")
+                print(f"Error in details data: {item.get('error')}")
                 continue
             entry_id = item.get("evalSetEntry", {}).get("id")
             deployment_id = item.get("evalSetEntry", {}).get("deploymentId")
@@ -554,7 +559,7 @@ class Judge:
             correctness_scores = {}
             for judge_entry in item.get("judgeRunEntries") or []:
                 if judge_entry.get("errorMessage"):
-                    debug_print(f"Error in judge entry: {judge_entry.get('errorMessage')}")
+                    print(f"Error in judge entry: {judge_entry.get('errorMessage')}")
                     continue
                 outputs = judge_entry.get("outputs", [])
                 eval_id = judge_entry.get("evalRunId")
@@ -565,7 +570,7 @@ class Judge:
                         correctness_scores[(entry_id, eval_id)] = output.get("score", 0)
             for run_response in run_responses:
                 if not run_response.get("output"):
-                    debug_print(f"Error in run response: {run_response.get('errorMessage')}")
+                    print(f"Error in run response: {run_response.get('errorMessage')}")
                     continue
                 eval_id = run_response.get("runId")
                 trace_id = run_response.get("outputTrace", {}).get("id", "")
@@ -573,7 +578,7 @@ class Judge:
                 finish_time_ms = metadata.get("finishTimeMillis", "")
                 answer = run_response.get("output").get("chatResponseInfo", {}).get("actResponse", "")
                 query = item.get("evalSetEntry", {}).get("input", {}).get("query")
-                debug_print(f"Got query: {query}")
+                print(f"Got query: {query}")
 
                 if entry_id and eval_id and trace_id and finish_time_ms:
                     trace_info: TraceInfo = {
@@ -632,7 +637,7 @@ class Judge:
                     if trace_info.get("correctness_score"):
                         curr_score = trace_info.get("correctness_score")
                     else:
-                        debug_print(f"Get a none correctness score for trace {trace_info.get('eval_id')}")
+                        print(f"Get a none correctness score for trace {trace_info.get('eval_id')}")
                     correctness_score_list.append(curr_score)
         correctness = sum(correctness_score_list) / len(correctness_score_list) if correctness_score_list else 0.0
         tool_alignment = get_tool_alignment(trace_map, student_eval_id, teacher_eval_id)
@@ -722,7 +727,7 @@ def process_raw_typed_value(raw: str | dict):
 
     str_value = outer.get("strValue")
     if str_value is None:
-        debug_print("No strValue")
+        print("No strValue")
         return None
 
     # Try parsing strValue directly as JSON
@@ -734,7 +739,7 @@ def process_raw_typed_value(raw: str | dict):
             parsed_input = json.loads(parsed["input"])
             return parsed_input
         except (TypeError, ValueError, json.JSONDecodeError):
-            debug_print(f"Could not parse input: {parsed['input']}")
+            print(f"Could not parse input: {parsed['input']}")
             return parsed
 
     return parsed
@@ -756,7 +761,7 @@ def extract_tool_names_from_spans(spans: list[dict[str, Any]] | None) -> list[st
 def parse_tool_usage(span: dict) -> tuple[str, dict] | None:
     parts = span["name"].split(": ")
     if len(parts) < 2:
-        debug_print(f"Invalid span name: {span['name']}")
+        print(f"Invalid span name: {span['name']}")
         return None
     tool_name = span["name"].split(": ")[1]
     tool_inputs = span["attributes"]["input"]
@@ -858,7 +863,7 @@ def enrich_shell_error_action_inputs(
                 end_time_millis=end_time_millis,
             )
         except Exception as exc:
-            debug_print(f"[Shell Tool] Failed to fetch action inputs for trace {trace_id}: {exc}")
+            print(f"[Shell Tool] Failed to fetch action inputs for trace {trace_id}: {exc}")
             continue
         for action_run_id, action_input in extract_shell_action_inputs(detailed_trace).items():
             resolved[(deployment_id, trace_id, action_run_id)] = action_input
@@ -974,13 +979,13 @@ class GleanAdapterBase:
                 self._judge_triggered = {tuple(item) for item in judge_triggered_data}
 
                 self._load_eval_analysis_cache(data.get("eval_analysis_cache", {}))
-                debug_print(
+                print(
                     f"[GleanAdapter] Loaded {len(self._eval_cache)} eval IDs, "
                     f"{len(self._eval_analysis_cache)} error analyses, and "
                     f"{len(self._judge_triggered)} judge triggers from cache: {self.cache_file}"
                 )
         except Exception as e:
-            debug_print(f"[GleanAdapter] Failed to load cache from {self.cache_file}: {e}")
+            print(f"[GleanAdapter] Failed to load cache from {self.cache_file}: {e}")
             self._eval_cache = {}
             self._judge_triggered = set()
             self._eval_analysis_cache = {}
@@ -1002,13 +1007,19 @@ class GleanAdapterBase:
                     },
                 }
                 _write_json_atomically(self.cache_file, data)
-                debug_print(
+                print(
                     f"[GleanAdapter] Saved {len(self._eval_cache)} eval IDs, "
                     f"{len(self._eval_analysis_cache)} error analyses, and "
                     f"{len(self._judge_triggered)} judge triggers to cache: {self.cache_file}"
                 )
         except Exception as e:
-            debug_print(f"[GleanAdapter] Failed to save cache to {self.cache_file}: {e}")
+            print(f"[GleanAdapter] Failed to save cache to {self.cache_file}: {e}")
+
+    def _cache_eval_run_id(self, cache_key: tuple[str, ...], eval_run_id: str) -> None:
+        """Persist an eval ID at creation time for reuse if polling is interrupted."""
+        with self._cache_lock:
+            self._eval_cache[cache_key] = eval_run_id
+            self._save_cache()
 
     @staticmethod
     def _serialize_eval_analysis(analysis: EvalRunShellToolErrorAnalysis) -> dict[str, Any]:
@@ -1045,7 +1056,7 @@ class GleanAdapterBase:
                 if not isinstance(raw, dict):
                     continue
                 if raw.get("schema_version") != EVAL_ANALYSIS_CACHE_SCHEMA_VERSION:
-                    debug_print(f"[Cache] Refreshing legacy shell error analysis for eval_id: {eval_id}")
+                    print(f"[Cache] Refreshing legacy shell error analysis for eval_id: {eval_id}")
                     continue
                 aggregate = parse_shell_tool_error_metrics(raw["aggregate"])
                 per_entry = {
@@ -1182,7 +1193,7 @@ class GleanAdapterBase:
 
         student_eval_id = self._eval_cache.get(student_cache_key)
         if student_eval_id:
-            debug_print(f"[Cache HIT] Using cached student eval_id: {student_eval_id} ({run_label})")
+            print(f"[Cache HIT] Using cached student eval_id: {student_eval_id} ({run_label})")
             return student_eval_id
 
         student_eval_id = self.runner.run(
@@ -1192,11 +1203,14 @@ class GleanAdapterBase:
             eval_set_version=eval_set_version,
             deployment_ids=deployment_ids,
             run_label=run_label,
+            on_created=lambda created_id: self._cache_eval_run_id(student_cache_key, created_id),
         )
+        # Keep this write as an idempotent fallback for test doubles and
+        # custom runners that do not implement the creation callback.
         with self._cache_lock:
             self._eval_cache[student_cache_key] = student_eval_id
             self._save_cache()
-        debug_print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id} ({run_label})")
+        print(f"[Cache MISS] Started and cached student eval_id: {student_eval_id} ({run_label})")
         return student_eval_id
 
     # ---------------------------
@@ -1270,7 +1284,7 @@ class GleanAdapterBase:
                 )
                 removed = before_dedupe - len(reflective_examples)
                 if removed:
-                    debug_print(
+                    print(
                         f"Reflection sampling removed {removed} near-duplicate {component_name} example(s) "
                         f"within Hamming distance {error_hamming_distance_k}."
                     )

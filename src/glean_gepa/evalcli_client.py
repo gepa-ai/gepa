@@ -191,23 +191,23 @@ class EvalCliClient:
         *,
         poll_interval_sec: int = 60,
     ) -> None:
-        debug_print(f"Waiting for eval run {eval_run_id} to complete...")
+        print(f"Waiting for eval run {eval_run_id} to complete...")
         while True:
             try:
                 statuses = self._invoke_json("run", "status", "--id", eval_run_id)
             except EvalCliError as exc:
                 if not _is_transient_evalcli_error(exc):
                     raise
-                debug_print(
+                print(
                     f"Transient Cortex error while polling {eval_run_id}; "
                     f"retrying in {poll_interval_sec}s..."
                 )
                 time.sleep(poll_interval_sec)
                 continue
 
-            debug_print(f"Eval run {eval_run_id} status: {json.dumps(statuses, sort_keys=True, default=str)}")
+            print(f"Eval run {eval_run_id} status: {json.dumps(statuses, sort_keys=True, default=str)}")
             if isinstance(statuses, list) and statuses and _is_eval_complete(statuses[0]):
-                debug_print(f"Eval run {eval_run_id} completed successfully")
+                print(f"Eval run {eval_run_id} completed successfully")
                 return
 
             time.sleep(poll_interval_sec)
@@ -312,7 +312,7 @@ class EvalCliClient:
         timeout_sec: int = 900,
     ) -> list[dict[str, Any]]:
         """Poll until the uploaded eval set version has ingested all of its entries."""
-        debug_print(f"Waiting for eval set {eval_set_name}:{eval_set_version} to ingest {expected_count} entries...")
+        print(f"Waiting for eval set {eval_set_name}:{eval_set_version} to ingest {expected_count} entries...")
         elapsed = 0
         entries: list[dict[str, Any]] = []
         while elapsed < timeout_sec:
@@ -326,7 +326,7 @@ class EvalCliClient:
                 entries = []
 
             if len(entries) >= expected_count:
-                debug_print(f"Eval set {eval_set_name}:{eval_set_version} ready with {len(entries)} entries")
+                print(f"Eval set {eval_set_name}:{eval_set_version} ready with {len(entries)} entries")
                 return entries
 
             time.sleep(poll_interval_sec)
@@ -371,7 +371,7 @@ class EvalCliClient:
         poll_interval_sec: int = 60,
         timeout_sec: int = 3600,
     ) -> None:
-        debug_print(f"Waiting for judge run {judge_run_id} to complete...")
+        print(f"Waiting for judge run {judge_run_id} to complete...")
         elapsed = 0
         while elapsed < timeout_sec:
             run = self._invoke_json("judge", "get", "--id", judge_run_id)
@@ -379,7 +379,7 @@ class EvalCliClient:
             if status in TERMINAL_JUDGE_STATUSES:
                 if status != "SUCCEEDED":
                     raise EvalCliError(f"Judge run {judge_run_id} ended with status {status}")
-                debug_print(f"Judge run {judge_run_id} completed successfully")
+                print(f"Judge run {judge_run_id} completed successfully")
                 return
             time.sleep(poll_interval_sec)
             elapsed += poll_interval_sec

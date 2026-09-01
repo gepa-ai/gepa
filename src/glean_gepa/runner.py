@@ -24,7 +24,7 @@ from glean_gepa.al_adapter import (
 )
 from glean_gepa.api import optimize
 from glean_gepa.bigquery_client import BigQueryClient
-from glean_gepa.debug import debug_print, set_debug
+from glean_gepa.debug import set_debug
 from glean_gepa.evalcli_client import EvalCliClient
 from glean_gepa.evalset_policy import UnseenEvalSetPolicy
 from glean_gepa.evolutionary_proposer import EvolutionaryProposer
@@ -64,8 +64,8 @@ def _make_reflection_lm(
     def reflection_lm(prompt: str) -> str:
         nonlocal call_count
         call_count += 1
-        debug_print(f"QE reflection LLM call {call_count}: requesting model={model}, prompt_chars={len(prompt)}")
-        debug_print(f"QE reflection LLM call {call_count} prompt:\n{prompt}")
+        print(f"QE reflection LLM call {call_count}: requesting model={model}, prompt_chars={len(prompt)}")
+        print(f"QE reflection LLM call {call_count} prompt:\n{prompt}")
         try:
             response = client.responses.create(
                 model=model,
@@ -83,8 +83,8 @@ def _make_reflection_lm(
             response_text = response.output_text.strip()
             if not response_text:
                 raise RuntimeError("QE reflection LLM returned an empty response")
-            debug_print(f"QE reflection LLM call {call_count}: received response_chars={len(response_text)}")
-            debug_print(f"QE reflection LLM call {call_count} response:\n{response_text}")
+            print(f"QE reflection LLM call {call_count}: received response_chars={len(response_text)}")
+            print(f"QE reflection LLM call {call_count} response:\n{response_text}")
             return response_text
         except Exception as exc:
             message = format_exception_chain(exc)
@@ -174,7 +174,7 @@ def _resolve_eval_version_split(args: argparse.Namespace, evalcli: EvalCliClient
             lookback_days=args.eval_version_lookback_days,
             valset_size=args.val_eval_version_count,
         )
-        debug_print(
+        print(
             "[Eval set schedule] Auto-selected "
             f"train versions={','.join(train_versions)} and val versions={','.join(val_versions)}"
         )
@@ -249,7 +249,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable diagnostic output, including prompts and error details.",
+        help="Show eval-set payloads and shell-tool action/error details.",
     )
     return parser.parse_args(argv)
 
@@ -325,7 +325,7 @@ def main() -> None:
 def _run_fake_flow(args: argparse.Namespace) -> None:
     """Execute the real GEPA lifecycle with in-memory fake evaluations."""
     seed_candidate, trainset, valset, adapter, module_specs = build_fake_flow_components()
-    debug_print(
+    print(
         "[FAKE FLOW] Starting offline Glean GEPA flow with separate train and val sets; no external services will be called."
     )
     logger = StdOutLogger()
@@ -356,7 +356,7 @@ def _run_fake_flow(args: argparse.Namespace) -> None:
         run_dir=str(args.run_dir) if args.run_dir else None,
         frontier_type="objective",
     )
-    debug_print(
+    print(
         f"[FAKE FLOW] Complete: iterations={result.num_candidates - 1}, "
         f"metric_calls={result.total_evals}, best_score={result.best_score:.2f}"
     )

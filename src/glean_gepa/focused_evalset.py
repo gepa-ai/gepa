@@ -13,7 +13,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from glean_gepa.debug import debug_print
 from glean_gepa.evalcli_client import EvalCliClient, EvalCliError
 
 DEFAULT_BUCKET_TYPE = "SESSION"
@@ -127,7 +126,7 @@ def ensure_focused_eval_set(
             eval_set_name=name, eval_set_version=version, deployment_ids=deployment_ids
         )
         if existing_entries:
-            debug_print(f"[Focused eval set] Reusing {name}:{version} with {len(existing_entries)} entries")
+            print(f"[Focused eval set] Reusing {name}:{version} with {len(existing_entries)} entries")
             return FocusedEvalSet(name, version, len(existing_entries))
         version = focused_eval_set_retry_version(version)
 
@@ -141,7 +140,7 @@ def ensure_focused_eval_set(
     selected = [entry for entry in source_entries if str(entry.get("id") or "") in wanted]
     upload_entries = [entry for source in selected if (entry := build_upload_entry(source)) is not None]
     if not upload_entries:
-        debug_print(
+        print(
             f"[Focused eval set] None of the {len(entry_ids)} high-signal entries could be resolved from "
             f"{base_eval_set_name}:{base_eval_set_version}"
         )
@@ -155,13 +154,13 @@ def ensure_focused_eval_set(
         base_eval_set_name=base_eval_set_name,
         base_eval_set_version=base_eval_set_version,
     )
-    debug_print(f"[Focused eval set] Uploading {name}:{version} with {len(upload_entries)} entries")
+    print(f"[Focused eval set] Uploading {name}:{version} with {len(upload_entries)} entries")
     try:
         evalcli.upload_eval_set(request)
     except EvalCliError as exc:
         if "already exists" not in str(exc).lower():
             raise
-        debug_print(f"[Focused eval set] {name}:{version} was created concurrently; reusing it")
+        print(f"[Focused eval set] {name}:{version} was created concurrently; reusing it")
 
     try:
         ingested = evalcli.wait_for_eval_set_entries(
@@ -171,7 +170,7 @@ def ensure_focused_eval_set(
             expected_count=len(upload_entries),
         )
     except EvalCliError as exc:
-        debug_print(f"[Focused eval set] {exc}")
+        print(f"[Focused eval set] {exc}")
         return None
     return FocusedEvalSet(name, version, len(ingested))
 

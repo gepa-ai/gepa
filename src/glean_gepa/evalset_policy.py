@@ -7,7 +7,6 @@ from typing import Any
 from gepa.core.data_loader import DataLoader
 from gepa.core.state import GEPAState, ProgramIdx
 from gepa.strategies.eval_policy import FullEvaluationPolicy
-from glean_gepa.debug import debug_print
 
 
 class UnseenEvalSetPolicy(FullEvaluationPolicy):
@@ -33,7 +32,7 @@ class UnseenEvalSetPolicy(FullEvaluationPolicy):
             )
         selected = ids[self._next_index]
         self._next_index += 1
-        debug_print(f"[Eval set schedule] {purpose}: selected id {selected} ({self._next_index}/{len(ids)})")
+        print(f"[Eval set schedule] {purpose}: selected id {selected} ({self._next_index}/{len(ids)})")
         return [selected]
 
     def get_seed_eval_batch(self, loader: DataLoader) -> list[Any]:

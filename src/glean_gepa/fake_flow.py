@@ -14,7 +14,6 @@ from gepa.core.adapter import EvaluationBatch
 from glean_gepa.adapter_types import ALDataInst
 from glean_gepa.al_adapter import MODULES, Candidate, GleanAdapterBase, ModuleSpec
 from glean_gepa.batch import GleanEvaluationBatch
-from glean_gepa.debug import debug_print
 from glean_gepa.prompt import WRITING_CODE_KEY
 
 FAKE_FLOW_MARKER = "[fake-flow iteration="
@@ -110,7 +109,7 @@ class FakeFlowAdapter(GleanAdapterBase):
                 )
 
         average = sum(scores) / len(scores) if scores else 0.0
-        debug_print(
+        print(
             f"[FAKE FLOW] eval iteration={iteration} entries={len(batch)} "
             f"score={average:.2f} traces={'yes' if capture_traces else 'no'}"
         )
@@ -154,7 +153,7 @@ class FakeFlowAdapter(GleanAdapterBase):
             f"[fake-flow iteration={next_iteration}]",
             current,
         )
-        debug_print(f"[FAKE FLOW] proposing fake iteration={next_iteration}")
+        print(f"[FAKE FLOW] proposing fake iteration={next_iteration}")
         return [rewritten], False
 
     @staticmethod

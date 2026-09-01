@@ -78,7 +78,7 @@ def test_high_signal_fix_rate_is_zero_without_parent_failures():
     assert adapter.high_signal_fix_rate(_batch([1.0]), _batch([1.0])) == 0.0
 
 
-def test_high_signal_screen_keeps_all_children_over_half():
+def test_high_signal_screen_keeps_children_at_or_above_one_third():
     adapter = GleanAdapterBase.__new__(GleanAdapterBase)
     parent = _batch([0.0, 0.0, 0.0, 0.0])
     children = [object(), object(), object()]
@@ -98,6 +98,7 @@ def test_high_signal_screen_keeps_all_children_over_half():
 
     assert [(child, score) for child, _evaluation, score in selected] == [
         (children[0], 0.75),
+        (children[1], 0.5),
         (children[2], 1.0),
     ]
 
@@ -110,11 +111,27 @@ def test_high_signal_screen_returns_empty_when_every_child_is_rejected():
         adapter,
         parent,
         [object(), object()],  # type: ignore[list-item]
-        [_batch([1.0, 1.0, 0.0, 0.0]), _batch([1.0, 0.0, 0.0, 0.0])],
+        [_batch([1.0, 0.0, 0.0, 0.0]), _batch([0.0, 0.0, 0.0, 0.0])],
         use_high_signal_gate=True,
     )
 
     assert selected == []
+
+
+def test_high_signal_screen_accepts_exactly_one_third():
+    adapter = GleanAdapterBase.__new__(GleanAdapterBase)
+    parent = _batch([0.0, 0.0, 0.0])
+
+    selected = _select_screened_children(
+        adapter,
+        parent,
+        [object()],  # type: ignore[list-item]
+        [_batch([1.0, 0.0, 0.0])],
+        use_high_signal_gate=True,
+    )
+
+    assert len(selected) == 1
+    assert selected[0][2] == 1 / 3
 
 
 def test_high_signal_batch_evaluation_dispatches_children_concurrently():

@@ -48,7 +48,7 @@ The current single-model path selects deduplicated error examples. Other clients
 
 ### 7. Screen on motivating failures
 
-Original GEPA screens a mutation on a random training minibatch. We screen a child on the high-signal failures that motivated it and only continue when it fixes at least half of them. This spends full validation on changes that address the diagnosed problem.
+Original GEPA screens a mutation on a random training minibatch. We screen a child on the high-signal failures that motivated it and only continue when it fixes at least one-third of them. This spends full validation on changes that address the diagnosed problem.
 
 ## Current architecture
 

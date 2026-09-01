@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,6 +42,39 @@ def test_create_eval_run_invokes_evalcli_with_expected_args():
     assert args[preset_idx + 1] == "Coding Harness"
     assert "--sc-params" in args
     assert "--eval-params" in args
+
+
+def test_al_runner_caches_created_eval_before_waiting(tmp_path):
+    cache_file = tmp_path / "eval-runs.json"
+    client = EvalCliClient(binary="/fake/evalcli")
+    runner = ALRunner(evalcli=client, cache_file=str(cache_file))
+    events = []
+
+    def on_created(eval_run_id):
+        events.append(("created", eval_run_id, json.loads(cache_file.read_text())))
+
+    def wait_for_eval_run(eval_run_id):
+        events.append(("wait", eval_run_id, json.loads(cache_file.read_text())))
+
+    with (
+        patch.object(client, "create_eval_run", return_value="run_123"),
+        patch.object(client, "wait_for_eval_run", side_effect=wait_for_eval_run),
+    ):
+        assert (
+            runner.run(
+                "fast",
+                "prompt",
+                "eval-set",
+                "v1",
+                ["scio-prod"],
+                on_created=on_created,
+            )
+            == "run_123"
+        )
+
+    assert [event[0] for event in events] == ["created", "wait"]
+    assert all(event[2] for event in events)
+    assert list(events[0][2].values()) == ["run_123"]
 
 
 def test_create_judge_run_parses_response_list():

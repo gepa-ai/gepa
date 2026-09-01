@@ -21,7 +21,6 @@ from glean_gepa.al_adapter import (
     log_shell_tool_error_analysis,
 )
 from glean_gepa.batch import EvalRunIds, GleanEvaluationBatch
-from glean_gepa.debug import debug_print
 from glean_gepa.focused_evalset import ensure_focused_eval_set
 from glean_gepa.prompt import compile_encoded_prompt
 from glean_gepa.reflection_sampling import strip_stdout_sections
@@ -72,7 +71,7 @@ class SingleModelAdapter(GleanAdapterBase):
 
             source_eval_run_id = data.get("source_eval_run_id")
             if not source_eval_run_id:
-                debug_print("[Focused eval set] Missing the parent eval run ID needed to resolve source entries")
+                print("[Focused eval set] Missing the parent eval run ID needed to resolve source entries")
                 return None
             source_entries = fetch_high_signal_evalset_entries(
                 self.bigquery_client,
@@ -85,12 +84,12 @@ class SingleModelAdapter(GleanAdapterBase):
             resolved_entry_ids = sorted({str(entry["id"]) for entry in source_entries})
             missing_entry_ids = sorted(set(entry_ids) - set(resolved_entry_ids))
             if missing_entry_ids:
-                debug_print(
+                print(
                     f"[Focused eval set] Skipping {len(missing_entry_ids)} entries without resolved stt, runId, "
                     f"and traceId: {', '.join(missing_entry_ids)}"
                 )
             if not resolved_entry_ids:
-                debug_print("[Focused eval set] None of the requested entries could be resolved")
+                print("[Focused eval set] None of the requested entries could be resolved")
                 return None
             focused = ensure_focused_eval_set(
                 self.runner.evalcli,
@@ -148,7 +147,7 @@ class SingleModelAdapter(GleanAdapterBase):
     ) -> EvalRunShellToolErrorAnalysis:
         cached = self._eval_analysis_cache.get(eval_id)
         if cached is not None:
-            debug_print(f"[Cache HIT] Using cached shell error analysis for eval_id: {eval_id}")
+            print(f"[Cache HIT] Using cached shell error analysis for eval_id: {eval_id}")
             return cached
         analysis = fetch_eval_run_shell_tool_error_analysis(
             self.bigquery_client,
@@ -312,7 +311,7 @@ class SingleModelAdapter(GleanAdapterBase):
 
             student_eval_id = al_data_inst.get("cached_student_eval_run_id")
             if student_eval_id:
-                debug_print(f"[Child cache HIT] Using cached student eval_id: {student_eval_id} ({run_label})")
+                print(f"[Child cache HIT] Using cached student eval_id: {student_eval_id} ({run_label})")
             else:
                 student_eval_id = self._get_or_run_student_eval(
                     eval_set_name=eval_set_name,
