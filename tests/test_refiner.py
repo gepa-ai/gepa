@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from gepa.gepa_launcher import (
-    DEFAULT_REFINER_PROMPT,
     EngineConfig,
     GEPAConfig,
     RefinerConfig,
@@ -607,6 +606,45 @@ class TestRefiner:
         # Score should equal the original (no refinement improved)
         assert score == -abs(50 - GOLDEN_NUMBER)
 
+    def test_evaluated_candidates_matches_refined_score(self):
+        """Regression test for #440: when a refiner swaps in a better candidate,
+        EvaluationBatch.evaluated_candidates must report that swapped candidate,
+        not the pre-refinement one — so a caller storing (candidate, score) pairs
+        stores an artifact that actually reproduces the recorded score.
+        """
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+        refinements = iter(["FIX1", "FIX2", "FIX3"])
+
+        def fake_refiner_lm(prompt: str) -> str:
+            import json
+
+            return json.dumps({"code": next(refinements)})
+
+        def evaluator(candidate, **kwargs):
+            scores = {"BROKEN": 0.0, "FIX1": 1.0, "FIX2": 2.0, "FIX3": 3.0}
+            code = candidate["code"]
+            side_info = {"error": "cannot run"} if code == "BROKEN" else {"ran": code}
+            return scores[code], None, side_info
+
+        adapter = OptimizeAnythingAdapter(
+            evaluator=evaluator,
+            parallel=False,
+            refiner_config=RefinerConfig(refiner_lm=fake_refiner_lm, max_refinements=3),
+            cache_mode="off",
+        )
+
+        original = {"code": "BROKEN", "refiner_prompt": "repair errors"}
+        batch = adapter.evaluate([None], original)
+
+        assert batch.scores[0] == 3.0
+        assert batch.evaluated_candidates is not None
+        evaluated_candidate = batch.evaluated_candidates[0]
+        # The candidate GEPA would store must be the one that actually earned
+        # the recorded score, not the original "BROKEN" candidate.
+        assert evaluated_candidate["code"] == "FIX3"
+        assert evaluator(evaluated_candidate)[0] == batch.scores[0]
+
 
 class TestRefinerWithDataset:
     """Test refiner with a dataset (per-instance evaluation)."""
@@ -765,7 +803,7 @@ class TestRefinerFrontierTypes:
         assert len(eval_batch.objective_scores) == len(DATASET)
 
         for i, (score, side_info, obj_scores) in enumerate(
-            zip(eval_batch.scores, eval_batch.trajectories, eval_batch.objective_scores)
+            zip(eval_batch.scores, eval_batch.trajectories, eval_batch.objective_scores, strict=False)
         ):
             print(f"\n[{frontier_type}] Example {i} (golden={DATASET[i]['golden']}):")
             print(f"  Score: {score}")
