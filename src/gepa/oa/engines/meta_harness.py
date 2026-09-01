@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
+from gepa.oa.git_commit import RepoCandidate, resolve_repo_candidate
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
 from gepa.oa.task import seed_as_text
 from gepa.oa.utils import example_to_json
@@ -201,7 +202,7 @@ Treat `evolution_summary.jsonl`, `frontier.json`, and any prior `agents/iter*.tx
 """
 
 
-def _build_task_md(task: Task) -> str:
+def _build_task_md(task: Task, repo: RepoCandidate | None = None) -> str:
     optional = ""
     if task.objective:
         optional += f"## Objective\n{task.objective}\n\n"
@@ -221,14 +222,32 @@ def _build_task_md(task: Task) -> str:
             "This is a **single-task** optimization. The outer loop scores each candidate "
             "once; one scored candidate costs 1 unit of the evaluation budget."
         )
-    return f"# Task: {task.name}\n\n{optional}## Evaluation model\n\n{eval_section}\n"
+    repo_section = ""
+    if repo is not None:
+        manifest_lines = "\n".join(f"- `{g}`" for g in repo.manifest_globs)
+        repo_section = (
+            "\n## Repository candidate (git-commit mode)\n\n"
+            "A candidate is a git **commit sha**, not a file's text. You edit real "
+            "repository files in a host-leased worktree slot (its path is in the "
+            "iteration prompt); the host commits your edits and records the sha. "
+            "Do NOT run any git command. Edits are confined to these manifest globs "
+            "(relative to the slot root); anything outside them is rejected:\n\n"
+            f"{manifest_lines}\n"
+        )
+    return f"# Task: {task.name}\n\n{optional}## Evaluation model\n\n{eval_section}\n{repo_section}"
 
 
-def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget: BudgetTracker) -> None:
+def _materialize_sandbox(
+    work_dir: Path,
+    task: Task,
+    server: EvalServer,
+    budget: BudgetTracker,
+    repo: RepoCandidate | None = None,
+) -> None:
     del budget
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    (work_dir / "task.md").write_text(_build_task_md(task))
+    (work_dir / "task.md").write_text(_build_task_md(task, repo))
 
     skill_dir = work_dir / ".claude" / "skills" / "gepa-optimize-anything-meta-harness"
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -289,24 +308,64 @@ def _run_proposer(
     log_dir: Path,
     max_thinking_tokens: int | None = None,
     sandbox: bool = True,
+    repo: RepoCandidate | None = None,
+    slot_dir: Path | None = None,
 ) -> tuple[int, float, str]:
     state = work_dir / "state"
-    prompt = (
-        f"Run iteration {iteration} of the meta-harness evolution loop. "
-        f"Produce up to {max_candidates} candidate(s).\n\n"
-        f"## Run directories (absolute paths)\n"
-        f"- task.md: `{work_dir / 'task.md'}`\n"
-        f"- state/frontier.json: `{state / 'frontier.json'}`\n"
-        f"- state/evolution_summary.jsonl: `{state / 'evolution_summary.jsonl'}`\n"
-        f"- state/eval_traces/<candidate_name>/: `{state / 'eval_traces'}`\n"
-        f"- state/reports/: `{state / 'reports'}`\n"
-        f"- agents/: `{work_dir / 'agents'}`\n"
-        f"- Write pending_eval.json to: `{pending_path}`\n\n"
-        f"Follow the gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
-    )
+    # Git-commit mode: the agent edits real repo files in the host-leased slot
+    # (its cwd); the host commits afterwards. Otherwise the agent writes text
+    # candidate files under agents/.
+    commit_mode = repo is not None and slot_dir is not None
+    if commit_mode:
+        assert repo is not None and slot_dir is not None
+        manifest_lines = "\n".join(f"  - `{g}`" for g in repo.manifest_globs)
+        prompt = (
+            f"Run iteration {iteration} of the meta-harness evolution loop. "
+            f"Produce up to {max_candidates} candidate(s).\n\n"
+            f"## Git-commit candidate mode (ACTIVE)\n"
+            f"A candidate is a git **commit sha**. Edit the repository files **in place** "
+            f"inside your working directory (the host-leased worktree slot); the host "
+            f"commits your edits and records the sha. Do NOT run any git command.\n"
+            f"- Worktree slot (your cwd; edit files here): `{slot_dir}`\n"
+            f"- Editable manifest globs (relative to the slot root); edits elsewhere are "
+            f"rejected:\n{manifest_lines}\n\n"
+            f"## Run directories (absolute paths)\n"
+            f"- task.md: `{work_dir / 'task.md'}`\n"
+            f"- state/frontier.json: `{state / 'frontier.json'}`\n"
+            f"- state/evolution_summary.jsonl: `{state / 'evolution_summary.jsonl'}`\n"
+            f"- state/eval_traces/<candidate_name>/: `{state / 'eval_traces'}`\n"
+            f"- state/reports/: `{state / 'reports'}`\n"
+            f"- Write pending_eval.json to: `{pending_path}`\n\n"
+            f"In pending_eval.json list ONE candidate; its `file` field is where the host "
+            f"writes the resulting commit sha. Follow the "
+            f"gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
+        )
+    else:
+        prompt = (
+            f"Run iteration {iteration} of the meta-harness evolution loop. "
+            f"Produce up to {max_candidates} candidate(s).\n\n"
+            f"## Run directories (absolute paths)\n"
+            f"- task.md: `{work_dir / 'task.md'}`\n"
+            f"- state/frontier.json: `{state / 'frontier.json'}`\n"
+            f"- state/evolution_summary.jsonl: `{state / 'evolution_summary.jsonl'}`\n"
+            f"- state/eval_traces/<candidate_name>/: `{state / 'eval_traces'}`\n"
+            f"- state/reports/: `{state / 'reports'}`\n"
+            f"- agents/: `{work_dir / 'agents'}`\n"
+            f"- Write pending_eval.json to: `{pending_path}`\n\n"
+            f"Follow the gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
+        )
 
     session_id = str(uuid.uuid4())
-    cmd: list[str] = bwrap_prefix(work_dir) if sandbox else []
+    # In commit mode the agent's cwd is the leased slot; the jail must also cover
+    # the repo dir (worktree + shared .git) and the work dir (state + pending).
+    if commit_mode:
+        assert repo is not None and slot_dir is not None
+        cwd = slot_dir
+        extra_writable: list[Path | str] = [repo.repo_dir, work_dir]
+    else:
+        cwd = work_dir
+        extra_writable = []
+    cmd: list[str] = bwrap_prefix(cwd, extra_writable=extra_writable) if sandbox else []
     cmd += [
         "claude",
         "--print",
@@ -322,7 +381,7 @@ def _run_proposer(
     # Single source of the permission posture (see claude_permission_args):
     # bypassPermissions in the bwrap jail / unsandboxed, or the macOS Seatbelt
     # settings whose --permission-mode default enforces the file-tool whitelist.
-    cmd.extend(claude_permission_args(work_dir, sandboxed=sandbox))
+    cmd.extend(claude_permission_args(cwd, sandboxed=sandbox, extra_writable=extra_writable))
     if effort is not None:
         cmd.extend(["--effort", effort])
     if max_budget_usd is not None:
@@ -336,7 +395,7 @@ def _run_proposer(
         env["MAX_THINKING_TOKENS"] = str(max_thinking_tokens)
 
     log_dir.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
     (log_dir / f"iter{iteration}_stdout.json").write_text(proc.stdout or "")
     (log_dir / f"iter{iteration}_stderr.txt").write_text(proc.stderr or "")
     cost_usd, result_payload = _parse_proposer_result(proc.stdout or "")
@@ -641,7 +700,89 @@ class MetaHarnessEngine:
         # subprocess sessions. Enforced via --max-budget-usd; the eval server
         # never sees proposer spend.
         self.max_token_cost = config.max_token_cost
+        # Git-commit candidate mode: when set, candidates are commit SHAs. The
+        # agent edits a leased worktree slot in place and the host commits it.
+        self.git_commit: dict[str, Any] | None = config.git_commit
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
+
+    def _invoke_proposer(
+        self,
+        repo: RepoCandidate,
+        *,
+        work_dir: Path,
+        slot_dir: Path,
+        iteration: int,
+        max_budget_usd: float | None,
+        pending_path: Path,
+        sessions_dir: Path,
+    ) -> tuple[int, float, str]:
+        """Run the commit-mode proposer against a leased slot.
+
+        The single seam commit mode invokes the agent through — tests
+        monkeypatch THIS method (not module-level ``subprocess.run``) so the
+        pool's own subprocess-git calls stay real while the ``claude`` launch is
+        stubbed out.
+        """
+        return _run_proposer(
+            work_dir=work_dir,
+            iteration=iteration,
+            model=self.model,
+            effort=self.effort,
+            max_candidates=self.max_candidates_per_iter,
+            max_budget_usd=max_budget_usd,
+            pending_path=pending_path,
+            log_dir=sessions_dir,
+            max_thinking_tokens=self.max_thinking_tokens,
+            sandbox=bool(self.sandbox),
+            repo=repo,
+            slot_dir=slot_dir,
+        )
+
+    def _propose_commit(
+        self,
+        repo: RepoCandidate,
+        *,
+        work_dir: Path,
+        iteration: int,
+        pending_path: Path,
+        per_session_cap: float | None,
+        sessions_dir: Path,
+    ) -> tuple[int, float, str]:
+        """Commit-mode proposal: lease the base slot, run the agent, mint a commit.
+
+        Leases ``repo.base_commit`` (exclusive), runs the agent (which edits repo
+        files in the slot and writes ``pending_eval.json``), then commits the
+        slot via ``pool.commit_worktree`` and writes the resulting child SHA into
+        the candidate's declared file so the normal scoring loop reads a SHA and
+        passes it to ``server.evaluate`` unchanged. A gate failure falls back to
+        the base SHA.
+        """
+        lease = repo.pool.lease(repo.base_commit, exclusive=True)
+        try:
+            slot_dir = Path(lease.slot_dir)
+            exit_code, cost, session_id = self._invoke_proposer(
+                repo,
+                work_dir=work_dir,
+                slot_dir=slot_dir,
+                iteration=iteration,
+                max_budget_usd=per_session_cap,
+                pending_path=pending_path,
+                sessions_dir=sessions_dir,
+            )
+            # One slot holds one edit set → one candidate commit. Record the SHA
+            # into the candidate's file so the shared scoring path reads it.
+            for c in _read_pending(pending_path)[:1]:
+                message = f"gepa candidate iter={iteration} name={c.get('name', '?')} parent={repo.base_commit[:12]}"
+                try:
+                    child_sha = repo.pool.commit_worktree(slot_dir, message, repo.manifest_globs)
+                except Exception:
+                    child_sha = repo.base_commit
+                dest = (work_dir / c["file"]).resolve()
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(child_sha)
+            return exit_code, cost, session_id
+        finally:
+            repo.pool.release(lease)
 
     def run(self, task: Task, server: EvalServer) -> Result:
         preflight_claude_engine(self.name, sandbox=bool(self.sandbox))
@@ -661,7 +802,10 @@ class MetaHarnessEngine:
             self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_mh_")
             work_dir = Path(self._pending_tempdir.name)
 
-        _materialize_sandbox(work_dir, task, server, budget)
+        # Git-commit mode: candidates are commit SHAs (None = ordinary text mode).
+        repo = resolve_repo_candidate(self.git_commit, seed=seed_as_text(task.seed_candidate) or None)
+
+        _materialize_sandbox(work_dir, task, server, budget, repo)
 
         state_dir = work_dir / "state"
         frontier_path = state_dir / "frontier.json"
@@ -700,18 +844,28 @@ class MetaHarnessEngine:
                 pending_path.unlink()
 
             propose_start = time.time()
-            exit_code, cost, session_id = _run_proposer(
-                work_dir=work_dir,
-                iteration=iteration,
-                model=self.model,
-                effort=self.effort,
-                max_candidates=self.max_candidates_per_iter,
-                max_budget_usd=per_session_cap,
-                pending_path=pending_path,
-                log_dir=sessions_dir,
-                max_thinking_tokens=self.max_thinking_tokens,
-                sandbox=bool(self.sandbox),
-            )
+            if repo is not None:
+                exit_code, cost, session_id = self._propose_commit(
+                    repo,
+                    work_dir=work_dir,
+                    iteration=iteration,
+                    pending_path=pending_path,
+                    per_session_cap=per_session_cap,
+                    sessions_dir=sessions_dir,
+                )
+            else:
+                exit_code, cost, session_id = _run_proposer(
+                    work_dir=work_dir,
+                    iteration=iteration,
+                    model=self.model,
+                    effort=self.effort,
+                    max_candidates=self.max_candidates_per_iter,
+                    max_budget_usd=per_session_cap,
+                    pending_path=pending_path,
+                    log_dir=sessions_dir,
+                    max_thinking_tokens=self.max_thinking_tokens,
+                    sandbox=bool(self.sandbox),
+                )
             propose_time = time.time() - propose_start
             total_proposer_cost += cost
             session_ids.append(session_id)
