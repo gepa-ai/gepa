@@ -165,7 +165,9 @@ def _terminate_claude_process(running: _RunningClaudeProcess) -> tuple[str, str]
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            _signal_claude_process(proc, signal.SIGKILL)
+            # SIGKILL is not defined by Windows' signal module. Any value other
+            # than SIGTERM uses the direct `proc.kill()` fallback there.
+            _signal_claude_process(proc, getattr(signal, "SIGKILL", -9))
             proc.wait()
     return _collect_claude_output(running)
 

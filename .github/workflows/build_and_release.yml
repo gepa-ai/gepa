@@ -24,8 +24,15 @@ jobs:
           VERSION=${TAG#v}
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
 
+  verify-ci:
+    name: Run CI for release
+    if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/run_tests.yml
+
   build-and-publish-test-pypi:
-    needs: [extract-tag]
+    needs: [extract-tag, verify-ci]
     if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
@@ -81,12 +88,11 @@ jobs:
         run: uv venv test_before_testpypi
       - name: Test package installation and functionality
         run: |
-          source test_before_testpypi/bin/activate
           # Install the locally built wheel and testing dependencies
           WHEEL_FILE=$(ls dist/*.whl | head -1)
-          uv pip install "$WHEEL_FILE[dev]" pytest
-          uv run pytest tests/
-          deactivate
+          uv pip install --python test_before_testpypi/bin/python "$WHEEL_FILE[dev]" pytest
+          # Use the wheel environment without syncing the source checkout into it
+          VIRTUAL_ENV="$PWD/test_before_testpypi" uv run --active --no-sync pytest tests/
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
         uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
@@ -169,12 +175,11 @@ jobs:
         run: uv venv test_before_pypi
       - name: Test package installation and functionality
         run: |
-          source test_before_pypi/bin/activate
           # Install the locally built wheel and testing dependencies
           WHEEL_FILE=$(ls dist/*.whl | head -1)
-          uv pip install "$WHEEL_FILE[dev]" pytest
-          uv run pytest tests/
-          deactivate
+          uv pip install --python test_before_pypi/bin/python "$WHEEL_FILE[dev]" pytest
+          # Use the wheel environment without syncing the source checkout into it
+          VIRTUAL_ENV="$PWD/test_before_pypi" uv run --active --no-sync pytest tests/
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (gepa)
         uses: pypa/gh-action-pypi-publish@release/v1

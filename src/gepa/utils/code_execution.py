@@ -301,15 +301,15 @@ def _execute_in_process(
 
     # Set up timeout using signal (Unix only)
     old_handler = None
-    has_signal = hasattr(signal, "SIGALRM")
+    alarm_signal = getattr(signal, "SIGALRM", None)
 
-    if timeout > 0 and has_signal:
-        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+    if timeout > 0 and alarm_signal is not None:
+        old_handler = signal.signal(alarm_signal, _alarm_handler)
         # Use setitimer for sub-second precision if available
         try:
-            signal.setitimer(signal.ITIMER_REAL, timeout)
+            signal.setitimer(signal.ITIMER_REAL, timeout)  # pyright: ignore[reportAttributeAccessIssue]
         except AttributeError:
-            signal.alarm(int(timeout))
+            signal.alarm(int(timeout))  # pyright: ignore[reportAttributeAccessIssue]
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
@@ -333,13 +333,13 @@ def _execute_in_process(
         success = False
     finally:
         # Disable timeout
-        if timeout > 0 and has_signal:
+        if timeout > 0 and alarm_signal is not None:
             try:
-                signal.setitimer(signal.ITIMER_REAL, 0)
+                signal.setitimer(signal.ITIMER_REAL, 0)  # pyright: ignore[reportAttributeAccessIssue]
             except AttributeError:
-                signal.alarm(0)
+                signal.alarm(0)  # pyright: ignore[reportAttributeAccessIssue]
             if old_handler is not None:
-                signal.signal(signal.SIGALRM, old_handler)
+                signal.signal(alarm_signal, old_handler)
 
         # Double-check: if we've exceeded timeout but no exception was raised, kill children
         elapsed = time.time() - start_time
