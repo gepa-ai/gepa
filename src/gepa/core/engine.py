@@ -33,6 +33,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
+from gepa.core.result import StepOutcome, StepResult
 from gepa.core.state import (
     SEED_ITERATION_ID,
     TRAINSET_CACHE_SPLIT,
@@ -162,6 +163,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Graceful stopping mechanism
         self._stop_requested = False
+        # Step-API state (see initialize/step/finalize). None until initialize().
+        self._state: GEPAState[RolloutOutput, DataId] | None = None
+        self._progress_bar: Any = None
+        self._last_pbar_val = 0
 
         # Set up stopping mechanism
         self.stop_callback = stop_callback
@@ -711,9 +716,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # Main optimization loop
     # ------------------------------------------------------------------
 
-    def run(self) -> GEPAState[RolloutOutput, DataId]:
+    def initialize(self) -> GEPAState[RolloutOutput, DataId]:
+        """Evaluate the seed candidate and build the optimization state.
+
+        Idempotent: calling it again returns the existing state without
+        re-evaluating the seed. Must precede :meth:`step` / :meth:`finalize`.
+        """
+        if self._state is not None:
+            return self._state
+
         # Check tqdm availability if progress bar is enabled
-        progress_bar = None
+        self._progress_bar = None
         if self.display_progress_bar:
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
@@ -737,10 +750,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 break
 
             if total_calls is not None:
-                progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
+                self._progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
             else:
-                progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
-            progress_bar.update(0)
+                self._progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
+            self._progress_bar.update(0)
 
         # Prepare valset
         valset = self.valset
@@ -931,180 +944,209 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
 
-        # Main loop
-        last_pbar_val = 0
-        while not self._should_stop(state):
-            if self.display_progress_bar and progress_bar is not None:
-                delta = state.total_num_evals - last_pbar_val
-                progress_bar.update(delta)
-                last_pbar_val = state.total_num_evals
+        self._state = state
+        self._last_pbar_val = 0
+        return state
 
-            assert state.is_consistent()
-            proposal_accepted = False
-            iteration_started = False
-            evals_before_iteration = state.total_num_evals
-            try:
-                self._sync_adapter_state_to_state(state)
-                state.save(
-                    self.run_dir,
-                    use_cloudpickle=self.use_cloudpickle,
-                    write_agent_state=self.write_agent_state,
-                )
-                notify_callbacks(
-                    self.callbacks,
-                    "on_state_saved",
-                    StateSavedEvent(
-                        iteration=state.i + 1,
-                        run_dir=self.run_dir,
-                    ),
-                )
+    def is_done(self) -> bool:
+        """True once a stop condition or :meth:`request_stop` has fired."""
+        return self._should_stop(self._require_state())
 
-                state.i += 1
-                state.full_program_trace.append({"i": state.i, "iteration_id": new_iteration_id()})
+    def step(self) -> StepResult:
+        """Run exactly one optimization iteration and report what happened.
 
-                # Notify callbacks of iteration start
-                notify_callbacks(
-                    self.callbacks,
-                    "on_iteration_start",
-                    IterationStartEvent(
-                        iteration=state.i + 1,
-                        state=state,
-                        trainset_loader=self.reflective_proposer.trainset,
-                    ),
-                )
-                iteration_started = True
+        Requires :meth:`initialize`. Performs the same work as one pass of the
+        loop in :meth:`run`: checkpoint, merge attempt (if scheduled), then
+        reflective mutation. Callers driving the loop themselves should check
+        :meth:`is_done` before each call and call :meth:`finalize` when done.
+        """
+        state = self._require_state()
+        evals_before_iteration = state.total_num_evals
+        n_candidates_before = len(state.program_candidates)
+        proposal_accepted = False
 
-                # 1) Attempt merge first if scheduled and last iter found new program
-                if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                    if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
-                        proposal = self.merge_proposer.propose(state)
-                        self.merge_proposer.last_iter_found_new_program = False  # old behavior
+        def _result(outcome: StepOutcome) -> StepResult:
+            return StepResult(
+                iteration=state.i + 1,
+                outcome=outcome,
+                proposal_accepted=proposal_accepted,
+                evals_consumed=state.total_num_evals - evals_before_iteration,
+                new_candidate_indices=tuple(range(n_candidates_before, len(state.program_candidates))),
+            )
 
-                        if proposal is not None and proposal.tag == "merge":
-                            parent_sums = proposal.subsample_scores_before or [
-                                float("-inf"),
-                                float("-inf"),
-                            ]
-                            new_sum = sum(proposal.subsample_scores_after or [])
+        if self.display_progress_bar and self._progress_bar is not None:
+            delta = state.total_num_evals - self._last_pbar_val
+            self._progress_bar.update(delta)
+            self._last_pbar_val = state.total_num_evals
 
-                            # Notify merge attempted
+        assert state.is_consistent()
+        iteration_started = False
+        try:
+            self._sync_adapter_state_to_state(state)
+            state.save(
+                self.run_dir,
+                use_cloudpickle=self.use_cloudpickle,
+                write_agent_state=self.write_agent_state,
+            )
+            notify_callbacks(
+                self.callbacks,
+                "on_state_saved",
+                StateSavedEvent(
+                    iteration=state.i + 1,
+                    run_dir=self.run_dir,
+                ),
+            )
+
+            state.i += 1
+            state.full_program_trace.append({"i": state.i, "iteration_id": new_iteration_id()})
+
+            # Notify callbacks of iteration start
+            notify_callbacks(
+                self.callbacks,
+                "on_iteration_start",
+                IterationStartEvent(
+                    iteration=state.i + 1,
+                    state=state,
+                    trainset_loader=self.reflective_proposer.trainset,
+                ),
+            )
+            iteration_started = True
+
+            # 1) Attempt merge first if scheduled and last iter found new program
+            if self.merge_proposer is not None and self.merge_proposer.use_merge:
+                if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
+                    proposal = self.merge_proposer.propose(state)
+                    self.merge_proposer.last_iter_found_new_program = False  # old behavior
+
+                    if proposal is not None and proposal.tag == "merge":
+                        parent_sums = proposal.subsample_scores_before or [
+                            float("-inf"),
+                            float("-inf"),
+                        ]
+                        new_sum = sum(proposal.subsample_scores_after or [])
+
+                        # Notify merge attempted
+                        notify_callbacks(
+                            self.callbacks,
+                            "on_merge_attempted",
+                            MergeAttemptedEvent(
+                                iteration=state.i + 1,
+                                parent_ids=proposal.parent_program_ids,
+                                merged_candidate=proposal.candidate,
+                            ),
+                        )
+
+                        if new_sum >= max(parent_sums):
+                            # ACCEPTED: consume one merge attempt and record it
+                            new_idx, _ = self._run_full_eval_and_add(
+                                new_program=proposal.candidate,
+                                state=state,
+                                parent_program_idx=proposal.parent_program_ids,
+                            )
+                            self.merge_proposer.merges_due -= 1
+                            self.merge_proposer.total_merges_tested += 1
+                            proposal_accepted = True
+
+                            # Stamp the trace entry so the agent-state
+                            # writer archives the merged candidate under
+                            # this iteration's dir. Unlike the reflective
+                            # path, the merge path never set this flag, so
+                            # ``_save_iteration_dirs`` saw ``accepted=None``
+                            # and skipped the merged candidate's components
+                            # and val_scores.
+                            if self.write_agent_state:
+                                state.full_program_trace[-1]["proposal_accepted"] = True
+
+                            # Notify merge accepted
                             notify_callbacks(
                                 self.callbacks,
-                                "on_merge_attempted",
-                                MergeAttemptedEvent(
+                                "on_merge_accepted",
+                                MergeAcceptedEvent(
                                     iteration=state.i + 1,
+                                    new_candidate_idx=new_idx,
                                     parent_ids=proposal.parent_program_ids,
-                                    merged_candidate=proposal.candidate,
                                 ),
                             )
+                            notify_callbacks(
+                                self.callbacks,
+                                "on_candidate_accepted",
+                                CandidateAcceptedEvent(
+                                    iteration=state.i + 1,
+                                    new_candidate_idx=new_idx,
+                                    new_score=new_sum,
+                                    parent_ids=proposal.parent_program_ids,
+                                ),
+                            )
+                            return _result(StepOutcome.MERGE_ACCEPTED)
+                        else:
+                            # REJECTED: do NOT consume merges_due or total_merges_tested
+                            self.logger.log(
+                                f"Iteration {state.i + 1}: New program subsample score {new_sum} "
+                                f"is worse than both parents {parent_sums}, skipping merge"
+                            )
+                            # Notify merge rejected
+                            notify_callbacks(
+                                self.callbacks,
+                                "on_merge_rejected",
+                                MergeRejectedEvent(
+                                    iteration=state.i + 1,
+                                    parent_ids=proposal.parent_program_ids,
+                                    reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
+                                ),
+                            )
+                            # Skip reflective this iteration (old behavior)
+                            return _result(StepOutcome.MERGE_REJECTED)
 
-                            if new_sum >= max(parent_sums):
-                                # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
-                                    new_program=proposal.candidate,
-                                    state=state,
-                                    parent_program_idx=proposal.parent_program_ids,
-                                )
-                                self.merge_proposer.merges_due -= 1
-                                self.merge_proposer.total_merges_tested += 1
-                                proposal_accepted = True
+                # Old behavior: regardless of whether we attempted, clear the flag before reflective
+                self.merge_proposer.last_iter_found_new_program = False
 
-                                # Stamp the trace entry so the agent-state
-                                # writer archives the merged candidate under
-                                # this iteration's dir. Unlike the reflective
-                                # path, the merge path never set this flag, so
-                                # ``_save_iteration_dirs`` saw ``accepted=None``
-                                # and skipped the merged candidate's components
-                                # and val_scores.
-                                if self.write_agent_state:
-                                    state.full_program_trace[-1]["proposal_accepted"] = True
+            # 2) Reflective mutation proposer
+            proposals = self.reflective_proposer.propose(state)
+            if not proposals:
+                self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
+                return _result(StepOutcome.NO_PROPOSAL)
 
-                                # Notify merge accepted
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_merge_accepted",
-                                    MergeAcceptedEvent(
-                                        iteration=state.i + 1,
-                                        new_candidate_idx=new_idx,
-                                        parent_ids=proposal.parent_program_ids,
-                                    ),
-                                )
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_candidate_accepted",
-                                    CandidateAcceptedEvent(
-                                        iteration=state.i + 1,
-                                        new_candidate_idx=new_idx,
-                                        new_score=new_sum,
-                                        parent_ids=proposal.parent_program_ids,
-                                    ),
-                                )
-                                continue  # skip reflective this iteration
-                            else:
-                                # REJECTED: do NOT consume merges_due or total_merges_tested
-                                self.logger.log(
-                                    f"Iteration {state.i + 1}: New program subsample score {new_sum} "
-                                    f"is worse than both parents {parent_sums}, skipping merge"
-                                )
-                                # Notify merge rejected
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_merge_rejected",
-                                    MergeRejectedEvent(
-                                        iteration=state.i + 1,
-                                        parent_ids=proposal.parent_program_ids,
-                                        reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
-                                    ),
-                                )
-                                # Skip reflective this iteration (old behavior)
-                                continue
+            proposal_accepted = self._run_reflective_batch(proposals, state)
+            return _result(StepOutcome.REFLECTIVE_ACCEPTED if proposal_accepted else StepOutcome.REFLECTIVE_REJECTED)
 
-                    # Old behavior: regardless of whether we attempted, clear the flag before reflective
-                    self.merge_proposer.last_iter_found_new_program = False
-
-                # 2) Reflective mutation proposer
-                proposals = self.reflective_proposer.propose(state)
-                if not proposals:
-                    self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
-                    continue
-
-                proposal_accepted = self._run_reflective_batch(proposals, state)
-
-            except Exception as e:
-                self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
-                self.logger.log(traceback.format_exc())
-                made_progress = state.total_num_evals > evals_before_iteration
-                # Notify error callback
+        except Exception as e:
+            self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
+            self.logger.log(traceback.format_exc())
+            made_progress = state.total_num_evals > evals_before_iteration
+            # Notify error callback
+            notify_callbacks(
+                self.callbacks,
+                "on_error",
+                ErrorEvent(
+                    iteration=state.i + 1,
+                    exception=e,
+                    will_continue=not self.raise_on_exception and made_progress,
+                ),
+            )
+            if self.raise_on_exception or not made_progress:
+                raise e
+            else:
+                return _result(StepOutcome.ERROR_CONTINUED)
+        finally:
+            # Notify iteration end only if the iteration actually started
+            # (i.e., on_iteration_start was called successfully)
+            if iteration_started:
                 notify_callbacks(
                     self.callbacks,
-                    "on_error",
-                    ErrorEvent(
+                    "on_iteration_end",
+                    IterationEndEvent(
                         iteration=state.i + 1,
-                        exception=e,
-                        will_continue=not self.raise_on_exception and made_progress,
+                        state=state,
+                        proposal_accepted=proposal_accepted,
                     ),
                 )
-                if self.raise_on_exception or not made_progress:
-                    raise e
-                else:
-                    continue
-            finally:
-                # Notify iteration end only if the iteration actually started
-                # (i.e., on_iteration_start was called successfully)
-                if iteration_started:
-                    notify_callbacks(
-                        self.callbacks,
-                        "on_iteration_end",
-                        IterationEndEvent(
-                            iteration=state.i + 1,
-                            state=state,
-                            proposal_accepted=proposal_accepted,
-                        ),
-                    )
 
+    def finalize(self) -> GEPAState[RolloutOutput, DataId]:
+        """Persist the final state, emit ``on_optimization_end`` and return the state."""
+        state = self._require_state()
         # Close progress bar if it exists
-        if self.display_progress_bar and progress_bar is not None:
-            progress_bar.close()
+        if self.display_progress_bar and self._progress_bar is not None:
+            self._progress_bar.close()
 
         self._sync_adapter_state_to_state(state)
         state.save(
@@ -1141,6 +1183,22 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.experiment_tracker.log_summary(summary)
 
         return state
+
+    def run(self) -> GEPAState[RolloutOutput, DataId]:
+        """Drive the full optimization loop: initialize, step until done, finalize.
+
+        Equivalent to calling :meth:`initialize`, then :meth:`step` while
+        :meth:`is_done` is false, then :meth:`finalize`.
+        """
+        self.initialize()
+        while not self.is_done():
+            self.step()
+        return self.finalize()
+
+    def _require_state(self) -> GEPAState[RolloutOutput, DataId]:
+        if self._state is None:
+            raise RuntimeError("GEPAEngine.initialize() must be called before step()/is_done()/finalize()")
+        return self._state
 
     def _log_proposal_lm_calls(
         self,

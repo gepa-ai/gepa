@@ -2,6 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
@@ -10,6 +11,38 @@ from gepa.core.state import ProgramIdx
 
 if TYPE_CHECKING:
     from gepa.core.state import GEPAState
+
+
+class StepOutcome(str, Enum):
+    """How a single :meth:`GEPAEngine.step` iteration ended."""
+
+    MERGE_ACCEPTED = "merge_accepted"
+    MERGE_REJECTED = "merge_rejected"
+    NO_PROPOSAL = "no_proposal"
+    REFLECTIVE_ACCEPTED = "reflective_accepted"
+    REFLECTIVE_REJECTED = "reflective_rejected"
+    ERROR_CONTINUED = "error_continued"
+
+
+@dataclass(frozen=True)
+class StepResult:
+    """Outcome of one :meth:`GEPAEngine.step` call.
+
+    Attributes:
+        iteration: 1-based iteration number, matching the ``iteration`` field on
+            lifecycle callback events.
+        outcome: Which path ended the iteration.
+        proposal_accepted: True if at least one candidate was added to the pool.
+        evals_consumed: Metric calls charged during this iteration.
+        new_candidate_indices: Indices of candidates added this iteration, in
+            pool order. Empty unless ``proposal_accepted``.
+    """
+
+    iteration: int
+    outcome: StepOutcome
+    proposal_accepted: bool
+    evals_consumed: int
+    new_candidate_indices: tuple[ProgramIdx, ...] = ()
 
 
 @dataclass(frozen=True)

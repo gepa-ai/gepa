@@ -7,7 +7,7 @@ from . import (
 from .adapters import default_adapter
 from .api import optimize
 from .core.adapter import EvaluationBatch, GEPAAdapter
-from .core.result import GEPAResult
+from .core.result import GEPAResult, StepOutcome, StepResult
 from .examples import aime
 from .image import Image
 from .utils.stop_condition import (
