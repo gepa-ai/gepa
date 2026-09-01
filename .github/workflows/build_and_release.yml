@@ -24,8 +24,15 @@ jobs:
           VERSION=${TAG#v}
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
 
+  verify-ci:
+    name: Run CI for release
+    if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/run_tests.yml
+
   build-and-publish-test-pypi:
-    needs: [extract-tag]
+    needs: [extract-tag, verify-ci]
     if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
