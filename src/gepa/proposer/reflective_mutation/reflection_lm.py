@@ -183,6 +183,18 @@ class StatelessReflectionLM:
 
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}) for _ in jobs]
         for (job_idx, name, prompt, _messages), raw_output in zip(rendered, raw_outputs, strict=True):
+            # A reflection that ran out of generation budget mid-thought has no
+            # instruction to extract, and the extractor would hand its raw
+            # monologue back as the proposal. Leave the component out instead:
+            # the proposer already treats a missing component as "no update"
+            # and keeps the parent text, so nothing unreviewed enters the pool.
+            if InstructionProposalSignature.is_truncated_output(raw_output):
+                self._log(
+                    f"Component '{name}': the reflection output ends inside an unterminated reasoning "
+                    "block, so the generation was truncated and carries no proposal. Skipping. Raise the "
+                    "reflection LM's output budget, or shrink the reflection minibatch, to recover it."
+                )
+                continue
             new_instruction = InstructionProposalSignature.output_extractor(raw_output.strip())["new_instruction"]
             proposals[job_idx].new_texts[name] = new_instruction
             proposals[job_idx].prompts[name] = prompt
