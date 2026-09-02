@@ -105,6 +105,58 @@ jobs:
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
+  rpc_test:
+    name: Run RPC Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      - name: Run tests with pytest
+        run: uv run -p .venv pytest -vv tests/test_rpc_integration.py
+
+  rpc_typescript_test:
+    name: Run RPC TypeScript SDK Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/gepa/rpc/sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+
+  rpc_rust_test:
+    name: Run RPC Rust SDK Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/gepa/rpc/sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 'stable'
+      - run: cargo check --all-targets
+
   # llm_call_test:
   #   name: Run Tests with Real LM
   #   runs-on: ubuntu-latest
