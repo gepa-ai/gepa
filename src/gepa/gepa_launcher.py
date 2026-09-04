@@ -131,7 +131,7 @@ from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import (
     BatchEvaluatorWrapper,
     OptimizeAnythingAdapter,
 )
-from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
+from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, ReflectiveDatasetEnricher
 from gepa.core.callbacks import GEPACallback, ReflectiveDatasetDumpCallback
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
@@ -764,6 +764,10 @@ class ReflectionConfig:
     Ignored when ``reflection_lm`` is already a callable."""
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    reflective_dataset_enricher: ReflectiveDatasetEnricher | None = None
+    """Optional hook run after the adapter builds its reflective dataset and
+    before reflection is asked for a revision. Mirrors the argument of the same
+    name on :func:`gepa.optimize`."""
 
 
 @dataclass
@@ -1698,6 +1702,7 @@ def optimize_anything(
         callbacks=resolved_callbacks,
         sampling_strategy=config.engine.sampling_strategy,
         reflection_strategy=config.reflection.reflection_strategy,
+        reflective_dataset_enricher=config.reflection.reflective_dataset_enricher,
     )
 
     # Define evaluator function for merge proposer
