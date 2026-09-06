@@ -55,7 +55,10 @@ dspy = []
 test = [
     "gepa[full]",
     "pytest",
-    "pyright"
+    "pyright",
+    # Exercises the psutil-backed child-process cleanup in
+    # gepa.utils.code_execution (see tests/test_code_execution.py).
+    "psutil>=5.9.0"
 ]
 build = [
     "setuptools>=77.0.1",
