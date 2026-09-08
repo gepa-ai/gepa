@@ -74,7 +74,18 @@ pytest tests/test_rpc_integration.py -v
 
 Tests spin up a real gRPC server and drive both endpoints end-to-end with a mock optimizer (no LLM calls needed). This test module is skipped automatically if `grpcio` isn't installed (i.e. when the `rpc` extra wasn't requested), so it never breaks the default `gepa` test run.
 
-### 5. Build the Docker image
+### 5. Run the real end-to-end optimization tests
+
+```bash
+pip install -e ".[dev,rpc]"
+pytest tests/test_rpc_e2e/ -v          # Python
+cd sdk/typescript && npm run test:e2e  # TypeScript
+cd sdk/rust && cargo test --test e2e   # Rust
+```
+
+Unlike the integration tests above, these run an actual, unmocked GEPA optimization (`optimize_anything(engine="gepa")`) through a real `gepa-rpc` server subprocess and each language's real client. LLM calls (both the task-solving call each test's `evaluate()` makes and GEPA's own reflection call) are recorded/replayed against a local stand-in (`gepa.rpc.testing.fake_llm_server`) instead of a live provider, keyed by `(model, messages)` the same way gepa's own `tests/conftest.py` `mocked_lms` fixture is. Interception just happens at the network boundary here instead of via Python callable injection, since the server has to run as a real subprocess for non-Python clients. All three languages drive the identical task and assert against the same committed cache/golden file (`tests/test_rpc_e2e/llm_cache.json`, `optimized_candidate.txt`), so a passing run in any language proves the same real optimization. To regenerate them (e.g. after a change to reflection-prompt wording upstream), run any one with `RECORD_TESTS=true` and a real `OPENAI_API_KEY`.
+
+### 6. Build the Docker image
 
 ```bash
 docker build -f src/gepa/rpc/Dockerfile -t gepa-rpc:latest .   # from the repo root
@@ -92,6 +103,7 @@ src/gepa/rpc/
   servicer.py                   GEPAServicer -- RunOptimization + RunOptimizationOmni handlers
   server.py                     build_server() / serve()
   cli.py                        `gepa-rpc` console script
+  testing/fake_llm_server.py    record/replay LLM stand-in used by the e2e tests below
   scripts/compile_proto.sh      regenerates generated/ from proto/gepa.proto
   Dockerfile                    build with the repo root as context (see Quickstart)
   sdk/typescript/                @gepa/sdk npm package
@@ -103,6 +115,7 @@ src/gepa/rpc/
     examples/{basic,omni}.rs
     proto/gepa.proto             synced from ../../proto via scripts/compile_proto.sh
 tests/test_rpc_integration.py    gRPC integration tests (pytest, skipped without the rpc extra)
+tests/test_rpc_e2e/               real e2e optimization test + shared cache/golden file (Python; TS/Rust equivalents live under each SDK's tests/)
 ```
 
 ## Notes
