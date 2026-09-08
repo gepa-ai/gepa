@@ -14,6 +14,7 @@ Usage::
 """
 
 from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -91,7 +92,11 @@ def _make_handler(cache: _Cache) -> type[BaseHTTPRequestHandler]:
                     return
                 import litellm
 
-                response = litellm.completion(model=model, messages=messages)
+                try:
+                    response = litellm.completion(model=model, messages=messages)
+                except Exception as e:
+                    self._send_json(502, {"error": {"message": f"fake_llm_server: real provider call failed: {e}"}})
+                    return
                 content = response.choices[0].message.content or ""  # type: ignore[union-attr]
                 cache.put(key, content)
 

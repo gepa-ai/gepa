@@ -90,6 +90,7 @@ async function callTaskLm(stubPort: number, candidate: string, text: string): Pr
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: TASK_MODEL, messages: [{ role: "user", content: prompt }] }),
+    signal: AbortSignal.timeout(30000),
   });
   const payload = await resp.json();
   return payload.choices[0].message.content;

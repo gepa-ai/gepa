@@ -204,7 +204,9 @@ async fn run_test(
     wait_for_port(stub_port, 10_000).await;
     wait_for_port(server_port, 10_000).await;
 
-    let http = reqwest::Client::new();
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
     let client = Client::new(format!("localhost:{server_port}"));
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
 
