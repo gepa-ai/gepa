@@ -17,7 +17,8 @@
   "scripts": {
     "sync-proto": "bash scripts/sync-proto.sh",
     "build": "npm run sync-proto && tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:e2e": "tsx tests/e2e.ts"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.0",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.4.0"
   },
   "engines": {
