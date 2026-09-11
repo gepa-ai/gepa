@@ -74,9 +74,10 @@ def test_legacy_gepa_config_call_returns_gepa_result():
 
 
 def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
-    """Budget smaller than the seed's valset pass: the engine has no GEPAResult
-    to stash, so the legacy path synthesizes a single-candidate one — legacy
-    callers must never see the omni Result."""
+    """Budget smaller than the seed's valset pass: core finishes the seed's
+    pass (the cap is enforced at iteration boundaries, not mid-eval) and its
+    stopper ends the run — legacy callers still get a GEPAResult, never the
+    omni Result."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
@@ -331,3 +332,54 @@ def test_full_config_passthrough_and_reflective_dataset_persistence(tmp_path):
     # not by a private optimize_anything callback.
     rds = glob.glob(os.path.join(tmp_path, "iterations", "*", "reflective_dataset.json"))
     assert rds, "core should persist reflective_dataset.json when write_agent_state is on"
+
+
+def test_legacy_cap_crossed_mid_valset_keeps_the_iteration(tmp_path):
+    """Issue #448: the iteration that crosses ``max_metric_calls`` must finish
+    and keep its child, as in 0.1.4 (core's ``MaxMetricCallsStopper`` stops at
+    the iteration boundary). Before the fix the server-side tracker raised
+    ``BudgetExhausted`` mid-valset, the in-flight child (already scored on most
+    of the valset) was discarded, and the result reloaded from the previous
+    iteration's state carried only the seed.
+
+    Also guards the companion leak: server bookkeeping (``_budget``) must not
+    ride along in per-example side info into the reflection prompt.
+    """
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    calls: list[tuple[str, str]] = []
+
+    def evaluator(candidate, example):
+        calls.append((candidate, example))
+        return (1.0 if "improved" in candidate else 0.2), {"note": f"scored {example}"}
+
+    prompts: list[str] = []
+
+    def reflection_lm(prompt):
+        prompts.append(prompt)
+        return f"improved candidate v{len(prompts)}"
+
+    data = [f"ex{i}" for i in range(4)]
+    # Seed valset pass = 4 evals, child minibatch = 2, child valset = 4 → the
+    # child's valset pass crosses a cap of 7.
+    config = GEPAConfig(
+        engine=EngineConfig(
+            max_metric_calls=7,
+            run_dir=str(tmp_path / "state"),
+            cache_evaluation=True,
+            raise_on_exception=True,
+            parallel=False,
+            seed=0,
+        ),
+        reflection=ReflectionConfig(reflection_lm=reflection_lm, reflection_minibatch_size=2),
+    )
+    result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+
+    assert len(result.candidates) == 2
+    assert result.val_aggregate_scores == [0.2, 1.0]
+    assert result.best_candidate == "improved candidate v1"
+    # Core's counter overshoots by the in-flight iteration; the server ledger
+    # counts every real evaluator call, none discarded.
+    assert result.total_metric_calls == 10
+    assert result.total_evals == len(calls)
+    assert prompts and not any("_budget" in p for p in prompts)
