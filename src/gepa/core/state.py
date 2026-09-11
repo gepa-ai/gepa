@@ -1126,6 +1126,11 @@ def initialize_gepa_state(
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
+        if seed_candidate != gepa_state.program_candidates[0]:
+            logger.log(
+                "Warning: provided seed_candidate differs from the saved seed candidate; "
+                "ignoring the provided seed and using the saved candidate."
+            )
         if gepa_state.frontier_type != frontier_type:
             raise ValueError(
                 f"Frontier type mismatch: requested '{frontier_type}' but loaded state has '{gepa_state.frontier_type}'. "
