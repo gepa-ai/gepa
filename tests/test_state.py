@@ -79,7 +79,7 @@ def test_initialize_gepa_state_no_run_dir():
 def test_initialize_gepa_state_none_eval_raises_without_saved_state(run_dir):
     """seed_valset_evaluation=None is only valid when a saved gepa_state.bin exists."""
     msg = "seed_valset_evaluation is required when no saved state exists in run_dir"
-    kwargs = dict(logger=MagicMock(), seed_candidate={"model": "m"}, seed_valset_evaluation=None)
+    kwargs = {"logger": MagicMock(), "seed_candidate": {"model": "m"}, "seed_valset_evaluation": None}
     with pytest.raises(ValueError, match=msg):
         state_mod.initialize_gepa_state(run_dir=str(run_dir), **kwargs)
     with pytest.raises(ValueError, match=msg):
