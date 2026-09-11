@@ -239,7 +239,7 @@ Several options:
 
 ### Can I continue optimization from a previous run?
 
-Yes! Set `run_dir` in `EngineConfig` — GEPA saves state to disk and automatically resumes:
+Yes! Set `run_dir` — GEPA saves `gepa_state.bin` and resumes from it:
 
 ```python
 config = GEPAConfig(engine=EngineConfig(
@@ -247,9 +247,14 @@ config = GEPAConfig(engine=EngineConfig(
     max_metric_calls=500,
 ))
 result = optimize_anything(..., config=config)
+# or: gepa.optimize(..., run_dir="./runs/my_exp")
 ```
 
-`gepa.optimize(..., run_dir=...)` behaves the same: resume skips re-evaluating the saved seed. If you pass a `seed_candidate` that is not already in the saved pool, it is full-valset-evaluated and added as a child of the saved seed.
+On resume:
+
+- The saved seed is not re-evaluated on the valset.
+- A different `seed_candidate` is full-valset-evaluated and added as a child of the saved seed (like an accepted proposal).
+- The same `seed_candidate` does no extra seed eval.
 
 
 ### My smaller model produces malformed outputs frequently — can GEPA fix this?
