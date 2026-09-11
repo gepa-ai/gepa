@@ -908,7 +908,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ValsetEvaluatedEvent(
                 iteration=0,
                 candidate_idx=0,
-                candidate=self.seed_candidate,
+                candidate=state.program_candidates[0],
                 scores_by_val_id=dict(seed_scores),
                 average_score=base_val_avg,
                 num_examples_evaluated=len(seed_scores),
@@ -939,8 +939,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.merge_proposer.last_iter_found_new_program = False
 
         # Resume with a different seed: add it like a minibatch-accepted child of
-        # the saved seed (index 0). Identical seed keeps the #453 skip path.
-        if resumed and self.seed_candidate != state.program_candidates[0]:
+        # the saved seed (index 0). A seed already in the pool (saved seed or a
+        # previously ingested one) keeps the #453 skip path.
+        if resumed and self.seed_candidate not in state.program_candidates:
             state.i += 1
             state.full_program_trace.append({"i": state.i, "iteration_id": new_iteration_id()})
             new_idx, _ = self._run_full_eval_and_add(

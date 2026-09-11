@@ -877,3 +877,49 @@ def test_resume_different_seed_is_full_eval_and_added(run_dir):
     assert second_run.num_full_val_evals == n_full + 1
     assert resume_adapter.evaluate_calls >= 1
     assert resume_adapter.examples_evaluated == 10
+
+
+def test_resume_different_seed_not_readded_on_third_call(run_dir):
+    """A previously ingested resume seed must not be full-eval-and-added again."""
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
+    valset = [{"id": i, "difficulty": i + 2} for i in range(10)]
+    seed_candidate = {"system_prompt": "weight=0"}
+    new_seed = {"system_prompt": "weight=99"}
+
+    gepa.optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=_CountingAdapter(),
+        reflection_lm=None,
+        max_metric_calls=10,
+        run_dir=str(run_dir),
+    )
+    second = gepa.optimize(
+        seed_candidate=new_seed,
+        trainset=trainset,
+        valset=valset,
+        adapter=_CountingAdapter(),
+        reflection_lm=None,
+        max_metric_calls=30,
+        run_dir=str(run_dir),
+    )
+    new_seed_count = sum(1 for c in second.candidates if c == new_seed)
+    assert new_seed_count == 1
+
+    resume_adapter = _CountingAdapter()
+    third = gepa.optimize(
+        seed_candidate=new_seed,
+        trainset=trainset,
+        valset=valset,
+        adapter=resume_adapter,
+        reflection_lm=None,
+        max_metric_calls=0,
+        run_dir=str(run_dir),
+    )
+
+    assert sum(1 for c in third.candidates if c == new_seed) == 1
+    assert len(third.candidates) == len(second.candidates)
+    assert third.total_metric_calls == second.total_metric_calls
+    assert resume_adapter.evaluate_calls == 0
+    assert resume_adapter.examples_evaluated == 0

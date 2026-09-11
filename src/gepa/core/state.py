@@ -220,6 +220,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     Tracks all explored candidates, their per-example and per-objective scores,
     Pareto frontiers, evaluation budget, and optional evaluation cache.
     Saved/loaded automatically when ``EngineConfig.run_dir`` is set.
+    On resume the engine skips re-evaluating the saved seed; a new
+    ``seed_candidate`` is added as a child of that seed (see ``gepa.optimize``).
 
     Users interact with this indirectly via :class:`~gepa.core.result.GEPAResult`
     returned by :func:`~gepa.optimize_anything.optimize_anything`.

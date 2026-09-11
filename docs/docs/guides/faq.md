@@ -249,6 +249,8 @@ config = GEPAConfig(engine=EngineConfig(
 result = optimize_anything(..., config=config)
 ```
 
+`gepa.optimize(..., run_dir=...)` behaves the same: resume skips re-evaluating the saved seed. If you pass a `seed_candidate` that is not already in the saved pool, it is full-valset-evaluated and added as a child of the saved seed.
+
 
 ### My smaller model produces malformed outputs frequently — can GEPA fix this?
 
