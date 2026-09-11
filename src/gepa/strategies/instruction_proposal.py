@@ -31,6 +31,48 @@ Provide the new instructions within ``` blocks."""
     input_keys: ClassVar[list[str]] = ["current_instruction_doc", "dataset_with_feedback", "prompt_template"]
     output_keys: ClassVar[list[str]] = ["new_instruction"]
 
+    #: Reasoning-block tag names whose opening tag must be matched by a closing
+    #: one. Subclass and extend this if your reflection LM wraps its chain of
+    #: thought in a different tag.
+    reasoning_tags: ClassVar[tuple[str, ...]] = ("think",)
+
+    @classmethod
+    def _has_fence_pair(cls, lm_out: str) -> bool:
+        """Whether ``lm_out`` holds an opening and a closing fence to extract between."""
+        return (lm_out.find("```") + 3) < lm_out.rfind("```")
+
+    @classmethod
+    def is_truncated_output(cls, lm_out: str) -> bool:
+        """Whether ``lm_out`` was cut off before the model finished reasoning.
+
+        A reflection LM that hits its generation budget mid-thought opens a
+        reasoning block, never closes it, and never reaches the fenced
+        instruction, so its monologue arrives at :meth:`output_extractor` with
+        nothing to extract and is returned verbatim. All three parts of that
+        shape are required here: the output BEGINS with an opening reasoning
+        tag, one of the tags it opened is never closed, and there is no fence
+        pair to extract from.
+
+        Each part earns its place by the false positive it prevents. Without
+        the fence-pair test, a proposal whose instruction text mentions a
+        reasoning tag would be discarded. Without the "begins with" test, so
+        would an unfenced instruction that merely talks about one, such as
+        "open a <think> block before you answer". The unfenced salvage path is
+        deliberate, so it has to keep working.
+
+        The honest limit: a monologue truncated before any tag was emitted, or
+        one whose tags the provider strips, is indistinguishable from a
+        deliberately unfenced instruction. This reports what the output itself
+        makes visible and does not guess beyond it.
+        """
+        if cls._has_fence_pair(lm_out):
+            return False
+        stripped = lm_out.lstrip()
+        return any(
+            stripped.startswith(f"<{tag}>") and lm_out.count(f"<{tag}>") > lm_out.count(f"</{tag}>")
+            for tag in cls.reasoning_tags
+        )
+
     @classmethod
     def validate_prompt_template(cls, prompt_template: str | None) -> None:
         if prompt_template is None:
@@ -128,8 +170,11 @@ Provide the new instructions within ``` blocks."""
             start = lm_out.find("```") + 3
             end = lm_out.rfind("```")
 
-            # Handle if the first and last backticks are the same or overlap
-            if start >= end:
+            # Handle if the first and last backticks are the same or overlap.
+            # is_truncated_output asks the same question through
+            # _has_fence_pair, so the two cannot disagree about what counts as
+            # an extractable span.
+            if not cls._has_fence_pair(lm_out):
                 # Handle incomplete blocks
                 stripped = lm_out.strip()
                 if stripped.startswith("```"):
