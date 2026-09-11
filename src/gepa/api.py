@@ -25,13 +25,21 @@ from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
+from gepa.strategies.acceptance import (
+    AcceptanceCriterion,
+    AlwaysAcceptance,
+    ImprovementOrEqualAcceptance,
+    StrictImprovementAcceptance,
+)
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
+    BatchLexicaseCandidateSelector,
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
+    LatestCandidateSelector,
     ParetoCandidateSelector,
     TopKParetoCandidateSelector,
+    UnprunedParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -54,7 +62,9 @@ def optimize(
     reflection_lm: LanguageModel | str | None = None,
     reflection_lm_kwargs: dict[str, Any] | None = None,
     candidate_selection_strategy: CandidateSelector
-    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
+    | Literal[
+        "pareto", "current_best", "epsilon_greedy", "top_k_pareto", "batch_lexicase", "unpruned_pareto", "latest"
+    ] = "pareto",
     frontier_type: FrontierType = "instance",
     skip_perfect_score: bool = True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
@@ -96,7 +106,7 @@ def optimize(
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     acceptance_criterion: AcceptanceCriterion
-    | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    | Literal["strict_improvement", "improvement_or_equal", "always"] = "strict_improvement",
     # Proposal strategies (default: 1 parent, 1 mutation per iteration)
     sampling_strategy: SamplingStrategy | None = None,
     selection_strategy: SelectionStrategy | None = None,
@@ -150,7 +160,7 @@ def optimize(
     - sampling_strategy: Controls how many (parent, minibatch) proposal tasks are sampled per iteration. One of `SingleMutationSampling` (default; 1 parent, 1 mutation — identical to classic GEPA), `SameParentSampling(n)`, `IndependentSampling(n)`, or `PxNSampling(p, n)`, or any custom `SamplingStrategy`.
     - selection_strategy: Controls which of an iteration's improving proposals enter the candidate pool. One of `AllImprovements` (default), `BestImprovement`, or `TopKImprovements(k)`, or any custom `SelectionStrategy`.
     - reflection_strategy: Advanced: a `ReflectionLM` implementation that owns how reflective mutation calls the reflection model (e.g. stateful sessions or aggregating reflectors). Defaults to the stateless single-call reflector built from `reflection_lm`. Implementations may provide `reflect_many` for batched reflection; otherwise `reflect` is called once per task.
-    - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
+    - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'batch_lexicase', 'unpruned_pareto', 'latest'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
     - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
@@ -329,6 +339,9 @@ def optimize(
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
             "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
+            "batch_lexicase": lambda: BatchLexicaseCandidateSelector(rng=rng),
+            "unpruned_pareto": lambda: UnprunedParetoCandidateSelector(rng=rng),
+            "latest": lambda: LatestCandidateSelector(),
         }
 
         try:
@@ -336,7 +349,7 @@ def optimize(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'batch_lexicase', 'unpruned_pareto', 'latest'"
             ) from exc
     elif isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
@@ -378,13 +391,14 @@ def optimize(
         acceptance_factories: dict[str, type[AcceptanceCriterion]] = {
             "strict_improvement": StrictImprovementAcceptance,
             "improvement_or_equal": ImprovementOrEqualAcceptance,
+            "always": AlwaysAcceptance,
         }
         try:
             acceptance_criterion_instance = acceptance_factories[acceptance_criterion]()
         except KeyError as exc:
             raise ValueError(
                 f"Unknown acceptance_criterion: {acceptance_criterion}. "
-                "Supported strategies: 'strict_improvement', 'improvement_or_equal'"
+                "Supported strategies: 'strict_improvement', 'improvement_or_equal', 'always'"
             ) from exc
     elif isinstance(acceptance_criterion, AcceptanceCriterion):
         acceptance_criterion_instance = acceptance_criterion
