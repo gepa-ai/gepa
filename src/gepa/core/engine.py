@@ -804,15 +804,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Evaluate seed candidate on valset (after on_optimization_start callback).
-        # Policies may narrow the seed evaluation via the optional get_seed_eval_batch
-        # hook; the state does not exist yet, so get_eval_batch cannot be used here.
-        seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
-        seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
-        seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
-
-        # Initialize state with pre-computed seed evaluation
+        # A saved state already holds the seed's valset scores, so a resumed run
+        # skips the seed evaluation instead of spending metric calls on a result
+        # that initialize_gepa_state would discard.
         resumed = self.run_dir is not None and os.path.exists(os.path.join(self.run_dir, "gepa_state.bin"))
+        seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId] | None = None
+        if not resumed:
+            # Evaluate seed candidate on valset (after on_optimization_start callback).
+            # Policies may narrow the seed evaluation via the optional get_seed_eval_batch
+            # hook; the state does not exist yet, so get_eval_batch cannot be used here.
+            seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
+            seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
+            seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
+
+        # Initialize state with pre-computed seed evaluation, or load the saved state on resume
         state = initialize_gepa_state(
             run_dir=self.run_dir,
             logger=self.logger,
@@ -825,7 +830,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Fresh runs: record the seed valset eval in the cache. On resume the seed scores already
         # live in state; writing the re-computed seed eval would desynchronize cache from
         # prog_candidate_val_subscores.
-        if not resumed and state.evaluation_cache is not None:
+        if seed_valset_evaluation is not None and state.evaluation_cache is not None:
             seed_ids = list(seed_valset_evaluation.scores_by_val_id)
             seed_obj = (
                 [seed_valset_evaluation.objective_scores_by_val_id[eid] for eid in seed_ids]
@@ -842,8 +847,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             )
 
         # Seed uses the reserved iteration id — outputs/trajectories go under
-        # iterations/seed/ alongside subsequent loop iterations.
-        self._write_agent_iteration_files(SEED_ITERATION_ID, seed_valset_evaluation)
+        # iterations/seed/ alongside subsequent loop iterations. A resumed run
+        # keeps the files written by the original run.
+        if seed_valset_evaluation is not None:
+            self._write_agent_iteration_files(SEED_ITERATION_ID, seed_valset_evaluation)
 
         # Restore adapter state from persisted state (only has effect on resume)
         self._sync_state_to_adapter(state)
