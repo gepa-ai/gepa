@@ -938,6 +938,28 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
 
+        # Resume with a different seed: add it like a minibatch-accepted child of
+        # the saved seed (index 0). Identical seed keeps the #453 skip path.
+        if resumed and self.seed_candidate != state.program_candidates[0]:
+            state.i += 1
+            state.full_program_trace.append({"i": state.i, "iteration_id": new_iteration_id()})
+            new_idx, _ = self._run_full_eval_and_add(
+                new_program=self.seed_candidate,
+                state=state,
+                parent_program_idx=[0],
+            )
+            state.full_program_trace[-1]["proposal_accepted"] = True
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_accepted",
+                CandidateAcceptedEvent(
+                    iteration=state.i + 1,
+                    new_candidate_idx=new_idx,
+                    new_score=self.val_evaluation_policy.get_valset_score(new_idx, state),
+                    parent_ids=[0],
+                ),
+            )
+
         # Main loop
         last_pbar_val = 0
         while not self._should_stop(state):
