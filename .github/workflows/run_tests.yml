@@ -105,6 +105,100 @@ jobs:
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
+  rpc_test:
+    name: Run RPC Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      - name: Run tests with pytest
+        run: uv run -p .venv pytest -vv tests/test_rpc_integration.py tests/test_rpc_e2e/
+
+  rpc_typescript_test:
+    name: Run RPC TypeScript SDK Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install npm dependencies
+        working-directory: src/gepa/rpc/sdk/typescript
+        run: npm ci
+      - name: Build
+        working-directory: src/gepa/rpc/sdk/typescript
+        run: npm run build
+      - name: Run e2e test
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:e2e
+
+  rpc_rust_test:
+    name: Run RPC Rust SDK Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 'stable'
+      - name: Check
+        working-directory: src/gepa/rpc/sdk/rust
+        run: cargo check --all-targets
+      - name: Run e2e test
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test e2e
+
   # llm_call_test:
   #   name: Run Tests with Real LM
   #   runs-on: ubuntu-latest

@@ -13,6 +13,7 @@
     "src/gepa/adapters/confidence_adapter",
     "src/gepa/adapters/langchain_adapter",
     "src/gepa/gskill",
+    "src/gepa/rpc/generated",
     "tests"
   ]
 }
