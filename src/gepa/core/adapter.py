@@ -80,6 +80,24 @@ class ProposalFn(Protocol):
         ...
 
 
+class ReflectiveDatasetEnricher(Protocol[Trajectory, RolloutOutput]):
+    """Optional optimizer-side augmentation of an adapter's reflective dataset.
+
+    Enrichers run after ``GEPAAdapter.make_reflective_dataset`` and immediately
+    before reflective proposal. They can inspect the original evaluation batch,
+    including trajectories, without wrapping or modifying the task adapter.
+    """
+
+    def __call__(
+        self,
+        *,
+        candidate: dict[str, str],
+        eval_batch: EvaluationBatch[Trajectory, RolloutOutput],
+        components_to_update: list[str],
+        reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]: ...
+
+
 class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
     """
     GEPAAdapter is the single integration point between your system
