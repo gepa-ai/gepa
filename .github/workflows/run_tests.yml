@@ -105,6 +105,58 @@ jobs:
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
+  dspy_compatibility:
+    name: DSPy Compatibility (${{ matrix.dspy-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dspy-version: ["3.3.1", "latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create virtual environment
+        run: uv venv .venv --python 3.11
+      - name: Install GEPA test environment
+        run: uv sync -p .venv --locked --extra dev
+      - name: Install DSPy and restore the GEPA checkout
+        shell: bash
+        run: |
+          if [[ "${{ matrix.dspy-version }}" == "latest" ]]; then
+            uv pip install -p .venv dspy
+          else
+            uv pip install -p .venv "dspy==${{ matrix.dspy-version }}"
+          fi
+          # DSPy 3.3.1 pins gepa==0.1.4. Restore this checkout after resolving
+          # DSPy's dependencies so future GEPA versions test runtime compatibility.
+          uv pip install -p .venv --no-deps -e .
+      - name: Assert GEPA is loaded from this checkout
+        run: |
+          uv run --no-sync -p .venv python - <<'PY'
+          from pathlib import Path
+          import gepa
+
+          root = Path.cwd().resolve()
+          module = Path(gepa.__file__).resolve()
+          assert root in module.parents, f"Loaded {module}, expected a module under {root}"
+          PY
+      - name: Run DSPy consumer-contract tests
+        # --no-sync preserves this intentionally overridden compatibility
+        # environment instead of syncing it back to the lockfile.
+        run: |
+          uv run --no-sync -p .venv python -m pytest -vv \
+            tests/test_dspy_compatibility.py \
+            tests/test_dspy_full_program_adapter.py
+
   # llm_call_test:
   #   name: Run Tests with Real LM
   #   runs-on: ubuntu-latest
