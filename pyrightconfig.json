@@ -12,6 +12,7 @@
     "src/gepa/adapters/terminal_bench_adapter",
     "src/gepa/adapters/confidence_adapter",
     "src/gepa/adapters/langchain_adapter",
+    "src/gepa/adapters/opik_adapter",
     "src/gepa/gskill",
     "tests"
   ]
