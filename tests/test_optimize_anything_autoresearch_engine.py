@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,7 +13,7 @@ import pytest
 
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
-from gepa.oa.engines.autoresearch import AutoResearchEngine
+from gepa.oa.engines.autoresearch import AutoResearchEngine, _RunningClaudeProcess, _terminate_claude_process
 from gepa.oa.task import Task
 
 
@@ -195,6 +196,34 @@ def test_autoresearch_budget_watchdog_preserves_reason_string(tmp_path: Path, mo
         completed = _run_once(engine, tmp_path, budget)
 
     assert "BUDGET_EXHAUSTED" in completed.stderr
+
+
+def test_autoresearch_kills_unresponsive_process_without_sigkill_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _UnresponsiveFakePopen(_FakePopen):
+        def __init__(self) -> None:
+            super().__init__(-9, "")
+            self.terminate_calls = 0
+            self.kill_calls = 0
+
+        def terminate(self) -> None:
+            self.terminate_calls += 1
+
+        def wait(self, timeout: float | None = None) -> int:
+            if self.kill_calls == 0:
+                raise subprocess.TimeoutExpired("claude", timeout)
+            return self.returncode
+
+        def kill(self) -> None:
+            self.kill_calls += 1
+
+    fake = _UnresponsiveFakePopen()
+    monkeypatch.setattr("gepa.oa.engines.autoresearch.os.name", "nt")
+    monkeypatch.delattr("gepa.oa.engines.autoresearch.signal.SIGKILL", raising=False)
+
+    _terminate_claude_process(_RunningClaudeProcess(fake, StringIO(), StringIO()))
+
+    assert fake.terminate_calls == 1
+    assert fake.kill_calls == 1
 
 
 def test_autoresearch_uses_direct_process_fallback_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

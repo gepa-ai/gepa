@@ -14,7 +14,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
+from gepa.core.state import VALSET_CACHE_SPLIT, GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -234,6 +234,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
     ):
         self.logger = logger
         self.valset = valset
+        self.valset_cache_split = VALSET_CACHE_SPLIT
         self.evaluator = evaluator
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
@@ -363,7 +364,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         )
 
         outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
-            new_program, subsample_ids, self.valset.fetch, self.evaluator
+            new_program, subsample_ids, self.valset.fetch, self.evaluator, split=self.valset_cache_split
         )
         new_sub_scores = [scores_by_id[eid] for eid in subsample_ids]
         outputs = [outputs_by_id[eid] for eid in subsample_ids]

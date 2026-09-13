@@ -9,6 +9,7 @@ on:
       - fst-followup
       - omni-blog
       - jialin-blog
+      - workbench
 
 jobs:
   build-and-deploy:

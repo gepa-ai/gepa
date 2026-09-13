@@ -439,7 +439,7 @@ def test_trace_records_every_task_not_just_the_first():
     adapter = MagicMock()
     adapter.propose_new_texts = None
     adapter.batch_evaluate = MagicMock(
-        side_effect=lambda items: [
+        side_effect=lambda items, **kwargs: [
             EvaluationBatch(
                 outputs=["o"], scores=[0.4], trajectories=[{"step": 1}], objective_scores=None, num_metric_calls=1
             )
@@ -460,6 +460,7 @@ def test_trace_records_every_task_not_just_the_first():
     )
     state = _make_state()
     proposals = proposer.propose(state)
+    assert all(call.kwargs == {"capture_traces": True} for call in adapter.batch_evaluate.call_args_list)
     assert len(proposals) == 2
 
     entry = state.full_program_trace[-1]

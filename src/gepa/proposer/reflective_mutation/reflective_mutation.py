@@ -13,7 +13,7 @@ from gepa.core.adapter import (
     ProposalFn,
     RolloutOutput,
     Trajectory,
-    default_batch_evaluate,
+    invoke_batch_evaluate,
 )
 from gepa.core.callbacks import (
     CandidateSelectedEvent,
@@ -28,7 +28,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import GEPAState, _candidate_hash
+from gepa.core.state import TRAINSET_CACHE_SPLIT, GEPAState, _candidate_hash
 from gepa.proposer.base import CandidateProposal, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
@@ -277,10 +277,7 @@ class ReflectiveMutationProposer:
 
     def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
         """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
-        batch_fn = getattr(self.adapter, "batch_evaluate", None)
-        if batch_fn is not None:
-            return batch_fn(items)
-        return default_batch_evaluate(self.adapter, items)
+        return invoke_batch_evaluate(self.adapter, items, capture_traces=True)
 
     # ------------------------------------------------------------------
     # Main proposal method
@@ -389,6 +386,7 @@ class ReflectiveMutationProposer:
                     eval_curr.outputs,
                     eval_curr.scores,
                     objective_scores_list,
+                    split=TRAINSET_CACHE_SPLIT,
                 )
 
         # Trace: legacy first-task keys (pre-#329 tooling compatibility) plus
@@ -648,7 +646,12 @@ class ReflectiveMutationProposer:
             for (_, (task, new_candidate, _, _)), child_eval in zip(valid_children, child_evals, strict=True):
                 new_obj_scores = list(child_eval.objective_scores) if child_eval.objective_scores else None
                 state.evaluation_cache.put_batch(
-                    new_candidate, task.minibatch_ids, child_eval.outputs, child_eval.scores, new_obj_scores
+                    new_candidate,
+                    task.minibatch_ids,
+                    child_eval.outputs,
+                    child_eval.scores,
+                    new_obj_scores,
+                    split=TRAINSET_CACHE_SPLIT,
                 )
 
         # Trace: per-task before/after scores (children is index-aligned with tasks)

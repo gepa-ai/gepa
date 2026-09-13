@@ -4,7 +4,7 @@ The public entry point is `gepa.optimize_anything.optimize_anything`.
 
 ## Signature
 ```python
-from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+from gepa.optimize_anything import GEPAResult, optimize_anything, OptimizeAnythingConfig
 
 result = optimize_anything(
     seed_candidate: str | None = None,   # starting text; None = seedless (engine bootstraps from objective/background)
@@ -17,7 +17,7 @@ result = optimize_anything(
     background: str | None = None,       # long-form rules/constraints/domain notes
     test_set: list | None = None,        # reporting-only: seed + final candidate scored here at the end
     config: OptimizeAnythingConfig | None = None,
-) -> Result
+) -> GEPAResult
 ```
 Examples in `dataset`/`valset`/`test_set` are opaque — any object your `evaluator` understands.
 `seed_candidate` is a **single string** at this API (multi-component `dict[str, str]` candidates
@@ -106,7 +106,9 @@ engine_config={
         "frontier_type": "hybrid",       # "instance" | "objective" | "hybrid" (default) | "cartesian"
         "candidate_selection_strategy": "pareto",      # | "current_best" | "epsilon_greedy" | "top_k_pareto"
         "acceptance_criterion": "strict_improvement",  # | "improvement_or_equal"
-        "cache_evaluation": False,       # opt-in: cache identical (candidate, example) evals
+        "cache_evaluation": False,       # opt-in: cache (candidate, split, example) evals.
+                                         # Distinct valset is isolated from trainset ids.
+                                         # valset=None still shares minibatch rollouts.
         "capture_stdio": False,          # opt-in: route evaluator print() output into feedback
         "raise_on_exception": True,      # False → evaluator exceptions become score 0 + info["error"]
         # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_dir
@@ -220,21 +222,40 @@ take caller-owned `EvalServer`s — one per config (one shared server for
 eval through their own server. Related: the autoresearch backend's `handoffs` key materializes
 prior-stage artifacts into the agent's work dir for hand-rolled sequential compositions.
 
-## `Result`
+## `GEPAResult`
+
+`optimize_anything` always returns a `GEPAResult` (the same type as the legacy
+`gepa.gepa_launcher` path). The mutable engine-internal `Result` is still what
+engines and ensemble helpers thread; it is not the public return.
+
 ```python
-result.best_candidate   # str
+result.best_candidate   # str (or dict[str, str] for multi-component seeds)
 result.best_score       # float (on valset/selection set)
-result.total_evals      # int
+result.total_evals      # int — eval-server call count (budget.used)
 result.eval_log         # list[dict]
 result.metadata         # dict (verified keys):
-#   "gepa_result"            full GEPAResult (all candidates + per-instance val scores) — gepa engine only
 #   "test_score"             avg over test_set         } only present
 #   "test_scores"            per-example dict          } if you passed
 #   "baseline_test_score"    seed avg over test_set    } a test_set
 #   "baseline_test_scores"   seed per-example dict     }
 #   "budget", "total_cost", "adapter_cost", "wall_time", "engine", "output_dir", "progress_log"
+result.candidates            # full candidate pool (length 1 on non-gepa engines)
+result.best_idx              # index of the highest val score
+result.val_aggregate_scores  # per-candidate average validation score
+result.to_dict()             # JSON-safe pool snapshot (does not include eval_log / metadata)
 ```
+
+The candidate pool lives on the result itself. `metadata` does **not** contain a nested
+`gepa_result`. `total_evals` is the eval-server count; `total_metric_calls` is GEPA core's
+own counter and may differ (e.g. after `BudgetExhausted`). `to_dict()` / `from_dict()` omit
+`eval_log`, `metadata`, and `eval_server_calls` so the frozen JSON pool contract stays
+byte-stable.
+
 The gepa engine also writes `run_dir/` artifacts, and the eval server writes
-`output_dir/summary.json`. The `gepa_result` in metadata is the richest artifact — keep it for
-post-hoc analysis. (If the best candidate equals the seed, the test scores are reported from the
+`output_dir/summary.json`. (If the best candidate equals the seed, the test scores are reported from the
 seed's single scoring pass rather than re-scored.)
+
+**Migration:** callers that used `isinstance(result, Result)` or
+`result.metadata["gepa_result"]` after `optimize_anything(...)` should switch to
+`GEPAResult` and `result.candidates`. Ensemble helpers (`optimize_sequential`, …)
+still return the mutable `Result`.

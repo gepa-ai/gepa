@@ -150,18 +150,21 @@ event's `metadata`) and experiment trackers (in the
 exposed by delegation to the wrapped LM, so `max_reflection_cost` works as a
 stop condition.
 
-Under multi-proposal sampling strategies
-([parallel proposals](parallel-proposals.md)), ComBEE implements
-`reflect_many`: when the LM provides `batch_complete`, all proposals' Level-1
-calls go out as **one batched wave** and all Level-2 calls as a second. This
+When the LM provides `batch_complete`, ComBEE issues the iteration's Level-1
+map calls as **one batched wave** and the Level-2 reduce calls as a second.
+That includes the default single-proposal path: one job's `k` maps go out
+together, and a singleton reduce uses a plain completion (a wave of one is
+not batched). Under [parallel proposals](parallel-proposals.md), maps from
+all proposals share the first wave and reduces share the second. This
 assumes the LM's calls are **exchangeable** (each reply depends only on its
 own prompt — the standard property of stateless completion APIs). Without
 that capability, ComBEE automatically executes complete jobs in strict #307
 order, preserving sequential results for ordinary and order-dependent
 callables. Set `batch_reflection=False` to request that strict ordering even
 for a batch-capable LM. Failed attempts restore the RNG state and memoize
-already-completed logical calls, so both direct `reflect_many` retries and the
-engine's per-job recovery path preserve results without repurchasing work.
+already-completed logical calls, so both `reflect()` / `reflect_many` retries
+and the engine's per-job recovery path preserve results without
+repurchasing work.
 
 ## Credits
 

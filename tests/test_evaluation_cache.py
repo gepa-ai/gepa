@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gepa.core.state import EvaluationCache
+from gepa.core.state import TRAINSET_CACHE_SPLIT, EvaluationCache
 
 # RECORDER_DIR paths for cached tests (imported lazily to avoid module conflicts)
 # Source: tests/test_aime_prompt_optimization/test_aime_prompt_optimize.py
@@ -22,13 +22,13 @@ class TestEvaluationCache:
     def test_empty_cache_returns_none(self):
         """Get on empty cache should return None."""
         cache: EvaluationCache = EvaluationCache()
-        assert cache.get({"prompt": "test"}, "example_1") is None
+        assert cache.get({"prompt": "test"}, "example_1", split=TRAINSET_CACHE_SPLIT) is None
 
     def test_put_and_get_basic(self):
         """Basic put and get functionality."""
         cache: EvaluationCache = EvaluationCache()
-        cache.put({"prompt": "test"}, "example_1", "output1", 0.8)
-        result = cache.get({"prompt": "test"}, "example_1")
+        cache.put({"prompt": "test"}, "example_1", "output1", 0.8, split=TRAINSET_CACHE_SPLIT)
+        result = cache.get({"prompt": "test"}, "example_1", split=TRAINSET_CACHE_SPLIT)
         assert result is not None
         assert result.output == "output1"
         assert result.score == 0.8
@@ -37,26 +37,26 @@ class TestEvaluationCache:
         """Different examples should have separate cache entries."""
         cache: EvaluationCache = EvaluationCache()
         candidate = {"prompt": "test"}
-        cache.put(candidate, "ex1", "out1", 0.5)
-        cache.put(candidate, "ex2", "out2", 0.7)
-        assert cache.get(candidate, "ex1").output == "out1"
-        assert cache.get(candidate, "ex2").output == "out2"
+        cache.put(candidate, "ex1", "out1", 0.5, split=TRAINSET_CACHE_SPLIT)
+        cache.put(candidate, "ex2", "out2", 0.7, split=TRAINSET_CACHE_SPLIT)
+        assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).output == "out1"
+        assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).output == "out2"
 
     def test_different_candidates_separate_entries(self):
         """Different candidates should have separate cache entries."""
         cache: EvaluationCache = EvaluationCache()
-        cache.put({"prompt": "test1"}, "ex1", "out1", 0.5)
-        cache.put({"prompt": "test2"}, "ex1", "out2", 0.7)
-        assert cache.get({"prompt": "test1"}, "ex1").output == "out1"
-        assert cache.get({"prompt": "test2"}, "ex1").output == "out2"
+        cache.put({"prompt": "test1"}, "ex1", "out1", 0.5, split=TRAINSET_CACHE_SPLIT)
+        cache.put({"prompt": "test2"}, "ex1", "out2", 0.7, split=TRAINSET_CACHE_SPLIT)
+        assert cache.get({"prompt": "test1"}, "ex1", split=TRAINSET_CACHE_SPLIT).output == "out1"
+        assert cache.get({"prompt": "test2"}, "ex1", split=TRAINSET_CACHE_SPLIT).output == "out2"
 
     def test_get_batch(self):
         """Test batch get functionality."""
         cache: EvaluationCache = EvaluationCache()
         candidate = {"prompt": "test"}
-        cache.put(candidate, "ex1", "out1", 0.5)
-        cache.put(candidate, "ex2", "out2", 0.6)
-        cached_results, uncached_ids = cache.get_batch(candidate, ["ex1", "ex2", "ex3"])
+        cache.put(candidate, "ex1", "out1", 0.5, split=TRAINSET_CACHE_SPLIT)
+        cache.put(candidate, "ex2", "out2", 0.6, split=TRAINSET_CACHE_SPLIT)
+        cached_results, uncached_ids = cache.get_batch(candidate, ["ex1", "ex2", "ex3"], split=TRAINSET_CACHE_SPLIT)
         assert "ex1" in cached_results and "ex2" in cached_results
         assert uncached_ids == ["ex3"]
 
@@ -64,9 +64,29 @@ class TestEvaluationCache:
         """Test batch put functionality."""
         cache: EvaluationCache = EvaluationCache()
         candidate = {"prompt": "test"}
-        cache.put_batch(candidate, ["ex1", "ex2"], ["out1", "out2"], [0.5, 0.6], [{"acc": 0.9}, {"acc": 0.8}])
-        assert cache.get(candidate, "ex1").score == 0.5
-        assert cache.get(candidate, "ex2").objective_scores == {"acc": 0.8}
+        cache.put_batch(
+            candidate,
+            ["ex1", "ex2"],
+            ["out1", "out2"],
+            [0.5, 0.6],
+            [{"acc": 0.9}, {"acc": 0.8}],
+            split=TRAINSET_CACHE_SPLIT,
+        )
+        assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).score == 0.5
+        assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).objective_scores == {"acc": 0.8}
+
+    def test_split_is_required(self):
+        """Omitting split must be a TypeError, not a silent trainset lookup."""
+        cache: EvaluationCache = EvaluationCache()
+        with pytest.raises(TypeError):
+            cache.get({"prompt": "test"}, "ex1")
+        with pytest.raises(TypeError):
+            cache.put({"prompt": "test"}, "ex1", "out", 0.5)
+
+    def test_unknown_split_is_rejected(self):
+        cache: EvaluationCache = EvaluationCache()
+        with pytest.raises(ValueError, match="Unknown evaluation-cache split"):
+            cache.put({"prompt": "test"}, "ex1", "out", 0.5, split="holdout")
 
 
 class TestEvaluationCacheIntegration:

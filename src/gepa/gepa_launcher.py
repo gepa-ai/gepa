@@ -506,7 +506,10 @@ class EngineConfig:
     parallel: bool = True
     max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
-    # Evaluation caching
+    # Evaluation caching. Opt-in. Keys are (candidate, split, example_id): a distinct valset
+    # never reuses trainset rollouts at the same list index. valset=None (or the same dataset
+    # object passed as both trainset and valset) shares the trainset namespace. Caches written
+    # before splits existed are dropped on resume.
     cache_evaluation: bool = False
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
 
@@ -1379,7 +1382,7 @@ def optimize_anything(
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(effective_dataset)
-    val_loader = ensure_loader(valset) if valset is not None else train_loader
+    val_loader = train_loader if valset is None or valset is effective_dataset else ensure_loader(valset)
 
     # --- 1. Validate and setup reflection LM ---
     if needs_seed_generation and config.reflection.reflection_lm is None:

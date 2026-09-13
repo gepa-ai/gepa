@@ -72,9 +72,9 @@ class SyntheticAdapter:
 
 
 class BatchedSyntheticAdapter(SyntheticAdapter):
-    def batch_evaluate(self, items):
+    def batch_evaluate(self, items, *, capture_traces=True):
         self.grouped_calls.append(len(items))
-        return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
+        return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
 
 
 class SyntheticReflectionLM:

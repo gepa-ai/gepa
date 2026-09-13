@@ -759,7 +759,7 @@ class TestRefinerFrontierTypes:
         }
 
         # Evaluate across dataset
-        eval_batch = adapter.evaluate(DATASET, candidate)
+        eval_batch = adapter.evaluate(DATASET, candidate, capture_traces=True)
 
         assert len(eval_batch.scores) == len(DATASET)
         assert len(eval_batch.objective_scores) == len(DATASET)
