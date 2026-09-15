@@ -51,9 +51,7 @@ class TraceAwareBatchImprovingAdapter(ImprovingAdapter):
 
     def batch_evaluate(self, items, *, capture_traces=True):
         self.batch_calls.append((items[0][1][0]["split"], len(items), capture_traces))
-        return [
-            self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items
-        ]
+        return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
 
 
 def _run(adapter, sampling_strategy, tmp_path):
@@ -115,10 +113,7 @@ def test_batch_error_without_budget_progress_does_not_loop_when_exceptions_are_s
             self.batch_calls += 1
             if capture_traces:
                 raise TypeError("adapter bug")
-            return [
-                self.evaluate(batch, candidate, capture_traces=False)
-                for candidate, batch in items
-            ]
+            return [self.evaluate(batch, candidate, capture_traces=False) for candidate, batch in items]
 
     adapter = BrokenAdapter()
     with pytest.raises(TypeError, match="adapter bug"):
@@ -199,6 +194,47 @@ def test_issue_428_call_sequence_ends_with_untraced_accepted_val(tmp_path):
         ("train", "ax", True),
         ("val", "ax", False),
     ]
+
+
+def test_uncacheable_results_are_skipped_across_optimization_paths(tmp_path):
+    class UncacheableAdapter:
+        def __init__(self):
+            self.propose_new_texts = self.propose
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            score = 0.1 * len(candidate["prompt"])
+            return EvaluationBatch(
+                outputs=["temporary"] * len(batch),
+                scores=[score] * len(batch),
+                trajectories=[{}] * len(batch) if capture_traces else None,
+                cacheable=[False] * len(batch),
+            )
+
+        def make_reflective_dataset(self, candidate, evaluation, components):
+            return {component: [{}] for component in components}
+
+        def propose(self, candidate, dataset, components):
+            return {"prompt": candidate["prompt"] + "x"}
+
+    import gepa
+    from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, GEPAState
+
+    gepa.optimize(
+        seed_candidate={"prompt": "a"},
+        trainset=[{"split": "train"}],
+        valset=[{"split": "val"}],
+        adapter=UncacheableAdapter(),
+        max_metric_calls=4,
+        reflection_lm=None,
+        cache_evaluation=True,
+        run_dir=str(tmp_path),
+    )
+
+    state = GEPAState.load(str(tmp_path))
+    assert state.evaluation_cache is not None
+    for candidate in ({"prompt": "a"}, {"prompt": "ax"}):
+        assert state.evaluation_cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT) is None
+        assert state.evaluation_cache.get(candidate, 0, split=VALSET_CACHE_SPLIT) is None
 
 
 def test_single_mutation_still_works(tmp_path):

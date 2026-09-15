@@ -356,7 +356,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         objective_by = objective_by or {}
                         objective_by[eid] = obj[j]
                 if cache is not None:
-                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj, split=self.valset_cache_split)
+                    cache.put_batch(
+                        program,
+                        uncached,
+                        eb.outputs,
+                        eb.scores,
+                        obj,
+                        split=self.valset_cache_split,
+                        cacheable=eb.cacheable,
+                    )
 
             results.append(
                 (
@@ -768,6 +776,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         if eval_result.trajectories is not None
                         else None
                     ),
+                    cacheable_by_val_id=(
+                        dict(zip(val_ids, eval_result.cacheable, strict=False))
+                        if eval_result.cacheable is not None
+                        else None
+                    ),
                 )
 
             (eval_result,) = invoke_batch_evaluate(
@@ -786,6 +799,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 outputs_by_val_id=outputs_dict,
                 scores_by_val_id=scores_dict,
                 objective_scores_by_val_id=objective_scores_dict,
+                cacheable_by_val_id=(
+                    dict(zip(val_ids, eval_result.cacheable, strict=False))
+                    if eval_result.cacheable is not None
+                    else None
+                ),
             )
 
         # Notify callbacks of optimization start (before seed valset eval)
@@ -837,6 +855,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 if seed_valset_evaluation.objective_scores_by_val_id is not None
                 else None
             )
+            seed_cacheable = (
+                [seed_valset_evaluation.cacheable_by_val_id[eid] for eid in seed_ids]
+                if seed_valset_evaluation.cacheable_by_val_id is not None
+                else None
+            )
             state.evaluation_cache.put_batch(
                 self.seed_candidate,
                 seed_ids,
@@ -844,6 +867,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 [seed_valset_evaluation.scores_by_val_id[eid] for eid in seed_ids],
                 seed_obj,
                 split=self.valset_cache_split,
+                cacheable=seed_cacheable,
             )
 
         # Seed uses the reserved iteration id — outputs/trajectories go under
