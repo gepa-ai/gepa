@@ -75,6 +75,23 @@ class TestEvaluationCache:
         assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).score == 0.5
         assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).objective_scores == {"acc": 0.8}
 
+    def test_put_batch_skips_uncacheable_results(self):
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "test"}
+        cache.put_batch(
+            candidate,
+            ["transient", "zero"],
+            ["failed", "valid"],
+            [0.0, 0.0],
+            split=TRAINSET_CACHE_SPLIT,
+            cacheable=[False, True],
+        )
+
+        assert cache.get(candidate, "transient", split=TRAINSET_CACHE_SPLIT) is None
+        cached_zero = cache.get(candidate, "zero", split=TRAINSET_CACHE_SPLIT)
+        assert cached_zero is not None
+        assert cached_zero.score == 0.0
+
     def test_split_is_required(self):
         """Omitting split must be a TypeError, not a silent trainset lookup."""
         cache: EvaluationCache = EvaluationCache()
