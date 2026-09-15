@@ -351,7 +351,8 @@ def test_transient_batch_failure_is_never_cached():
     assert second[0].cacheable == [True, True]
 
 
-def test_transient_batch_failure_is_not_persisted_in_core_cache(tmp_path):
+@pytest.mark.parametrize("write_agent_state", [False, True])
+def test_transient_batch_failure_is_not_persisted_in_core_cache(tmp_path, write_agent_state):
     calls = 0
 
     def flaky(pairs):
@@ -374,6 +375,7 @@ def test_transient_batch_failure_is_not_persisted_in_core_cache(tmp_path):
         seed_candidate=candidate,
         trainset=examples,
         adapter=adapter,
+        write_agent_state=write_agent_state,
         reflection_lm=lambda prompt: "unused",
         max_metric_calls=1,
         cache_evaluation=True,

@@ -200,8 +200,10 @@ def test_uncacheable_results_are_skipped_across_optimization_paths(tmp_path):
     class UncacheableAdapter:
         def __init__(self):
             self.propose_new_texts = self.propose
+            self.calls = []
 
         def evaluate(self, batch, candidate, capture_traces=False):
+            self.calls.append((batch[0]["split"], candidate["prompt"], capture_traces))
             score = 0.1 * len(candidate["prompt"])
             return EvaluationBatch(
                 outputs=["temporary"] * len(batch),
@@ -219,17 +221,25 @@ def test_uncacheable_results_are_skipped_across_optimization_paths(tmp_path):
     import gepa
     from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, GEPAState
 
-    gepa.optimize(
+    adapter = UncacheableAdapter()
+    result = gepa.optimize(
         seed_candidate={"prompt": "a"},
         trainset=[{"split": "train"}],
         valset=[{"split": "val"}],
-        adapter=UncacheableAdapter(),
+        adapter=adapter,
         max_metric_calls=4,
         reflection_lm=None,
         cache_evaluation=True,
         run_dir=str(tmp_path),
     )
 
+    assert adapter.calls == [
+        ("val", "a", False),
+        ("train", "a", True),
+        ("train", "ax", True),
+        ("val", "ax", False),
+    ]
+    assert result.candidates == [{"prompt": "a"}, {"prompt": "ax"}]
     state = GEPAState.load(str(tmp_path))
     assert state.evaluation_cache is not None
     for candidate in ({"prompt": "a"}, {"prompt": "ax"}):
