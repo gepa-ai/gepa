@@ -20,7 +20,7 @@
                     <span class="blog-post-authors">
                         {%- for author in page.authors %}
                             {%- if author.url -%}
-                                <a href="{{ author.url }}">{{ author.name }}</a>
+                                <a href="{{ author.url }}"{% if page.meta.external_links_new_tab %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ author.name }}</a>
                             {%- else -%}
                                 {{ author.name }}
                             {%- endif -%}
