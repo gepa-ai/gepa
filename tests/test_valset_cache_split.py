@@ -50,6 +50,11 @@ def _run(dataset, valset, produced_by):
         return score, {"ran": content}
 
     counter = iter(range(1000))
+
+    def reflection_lm(_prompt):
+        candidate = json.dumps({"text": f"cand-{next(counter)}"})
+        return f"```\n{candidate}\n```"
+
     optimize_anything(
         seed_candidate=json.dumps({"text": "seed"}),
         evaluator=evaluator,
@@ -64,7 +69,7 @@ def _run(dataset, valset, produced_by):
                 cache_evaluation=True,
             ),
             reflection=ReflectionConfig(
-                reflection_lm=lambda _prompt: json.dumps({"text": f"cand-{next(counter)}"}),
+                reflection_lm=reflection_lm,
                 reflection_minibatch_size=4,
             ),
         ),

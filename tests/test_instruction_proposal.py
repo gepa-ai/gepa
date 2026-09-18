@@ -14,8 +14,7 @@ class TestInstructionProposalSignature:
         [
             # Test with language specifier
             (
-                """Here's the improved instruction:
-```markdown
+                """```markdown
 This is the actual instruction content.
 It should not include the word 'markdown'.
 ```
@@ -24,11 +23,9 @@ It should not include the word 'markdown'.
             ),
             # Test without language specifier (original behavior)
             (
-                """Here's the instruction:
-```
+                """```
 This is the instruction without language specifier.
-```
-Done.""",
+```""",
                 "This is the instruction without language specifier.",
             ),
             (
@@ -48,8 +45,7 @@ Here are the instructions.
             ),
             # Test multiple sets of backticks (should take the "outermost" block)
             (
-                """Begin text
-```plaintext
+                """```plaintext
 Begin instructions
 
 ```
@@ -61,38 +57,8 @@ Internal block 2
 ```
 
 End instructions
-```
-End text
-""",
-                "Begin instructions\n\n```\nInternal block 1\n```\n\n```python\nInternal block 2\n```\n\nEnd instructions",
-            ),
-            # Test when the output starts with ``` but doesn't end with it
-            (
-                """```text
-Here are the instructions.""",
-                "Here are the instructions.",
-            ),
-            # Test when the output ends with ``` but doesn't start with it
-            (
-                """Here are the instructions.
 ```""",
-                "Here are the instructions.",
-            ),
-            # Test only backticks in the middle
-            (
-                """
-Here are some backticks:
-```
-I hope you didn't get confused.
-                """,
-                "Here are some backticks:\n```\nI hope you didn't get confused.",
-            ),
-            # Test when there are no backticks at all, also strip whitespace
-            (
-                """
-                Here are the instructions.
-                """,
-                "Here are the instructions.",
+                "Begin instructions\n\n```\nInternal block 1\n```\n\n```python\nInternal block 2\n```\n\nEnd instructions",
             ),
         ],
     )
@@ -100,3 +66,19 @@ I hope you didn't get confused.
         """Test extraction of instructions from various code block formats."""
         result = InstructionProposalSignature.output_extractor(lm_output)
         assert result["new_instruction"] == expected_instruction
+
+    @pytest.mark.parametrize(
+        "lm_output",
+        [
+            "```text\nHere are the instructions.",
+            "Here are the instructions.\n```",
+            "Here are some backticks:\n```\nBut no outer fence.",
+            "Here are the instructions.",
+            "Analysis before the fence.\n```\nHere are the instructions.\n```",
+            "```\nHere are the instructions.\n```\nCommentary after the fence.",
+            "```\n```",
+        ],
+    )
+    def test_rejects_incomplete_or_nonconforming_fences(self, lm_output):
+        with pytest.raises(ValueError, match="complete outer code fence"):
+            InstructionProposalSignature.output_extractor(lm_output)

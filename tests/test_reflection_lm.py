@@ -19,7 +19,7 @@ class RecordingLM:
 
     def __call__(self, prompt):
         self.calls.append(prompt)
-        return f"Here is the update:\n```\n{self.reply}\n```"
+        return f"```\n{self.reply}\n```"
 
 
 class BatchRecordingLM(RecordingLM):

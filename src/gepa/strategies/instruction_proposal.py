@@ -123,31 +123,16 @@ Provide the new instructions within ``` blocks."""
 
     @classmethod
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
-        def extract_instruction_text() -> str:
-            # Find the first and last backtick positions (if any)
-            start = lm_out.find("```") + 3
-            end = lm_out.rfind("```")
+        stripped = lm_out.strip()
+        if not stripped.startswith("```") or not stripped.endswith("```"):
+            raise ValueError("Instruction proposal must be enclosed in a complete outer code fence")
 
-            # Handle if the first and last backticks are the same or overlap
-            if start >= end:
-                # Handle incomplete blocks
-                stripped = lm_out.strip()
-                if stripped.startswith("```"):
-                    # Remove opening ``` and optional language specifier
-                    match = re.match(r"^```\S*\n?", lm_out)
-                    if match:
-                        return lm_out[match.end() :].strip()
-                elif stripped.endswith("```"):
-                    # Remove closing ```
-                    return stripped[:-3].strip()
-                return stripped
+        content = stripped[3:-3]
+        match = re.match(r"^\S*\n", content)
+        if match:
+            content = content[match.end() :]
+        content = content.strip()
+        if not content:
+            raise ValueError("Instruction proposal must contain text inside a complete outer code fence")
 
-            # Skip optional language specifier
-            content = lm_out[start:end]
-            match = re.match(r"^\S*\n", content)
-            if match:
-                content = content[match.end() :]
-
-            return content.strip()
-
-        return {"new_instruction": extract_instruction_text()}
+        return {"new_instruction": content}
