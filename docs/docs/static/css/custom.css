@@ -1125,3 +1125,22 @@ div.person-avatar {
 [data-md-color-scheme="slate"] .toc-drawer {
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.35);
 }
+
+/* Blog index: Main / Guest blogs section headings */
+.blog-section-title {
+    margin: 1.75rem 0 0.75rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.blog-section-title:first-of-type {
+    margin-top: 1rem;
+}
+
+/* Guest post byline */
+.blog-post-contrib-label {
+    margin-right: 0.35rem;
+    color: var(--md-default-fg-color--light);
+    font-weight: 500;
+}

@@ -18,6 +18,9 @@
 
                 {% if page.authors %}
                     <span class="blog-post-authors">
+                        {%- if page.meta.guest -%}
+                            <span class="blog-post-contrib-label">Contributed by</span>
+                        {%- endif -%}
                         {%- for author in page.authors %}
                             {%- if author.url -%}
                                 <a href="{{ author.url }}"{% if page.meta.external_links_new_tab %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ author.name }}</a>
