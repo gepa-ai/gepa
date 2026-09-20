@@ -144,43 +144,10 @@ Provide the new instructions within ``` blocks."""
 
     @classmethod
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
-        def extract_instruction_text() -> str:
-            # Find the first and last backtick positions (if any)
-            start = lm_out.find("```") + 3
-            end = lm_out.rfind("```")
-
-            # Handle if the first and last backticks are the same or overlap
-            if start >= end:
-                # Handle incomplete blocks
-                stripped = lm_out.strip()
-                if stripped.startswith("```"):
-                    # Remove opening ``` and optional language specifier
-                    match = re.match(r"^```\S*\n?", lm_out)
-                    if match:
-                        return lm_out[match.end() :].strip()
-                elif stripped.endswith("```"):
-                    # Remove closing ```
-                    return stripped[:-3].strip()
-                return stripped
-
-            # Skip optional language specifier
-            content = lm_out[start:end]
-            match = re.match(r"^\S*\n", content)
-            if match:
-                content = content[match.end() :]
-
-            return content.strip()
-
-        return {"new_instruction": extract_instruction_text()}
-
-    @classmethod
-    def fenced_output_extractor(cls, lm_out: str) -> dict[str, str]:
         """Extract a complete fenced proposal, allowing text outside the fence.
 
         Reflection prompts ask the LM to put the proposed instruction inside a
-        code fence.  Unlike :meth:`output_extractor`, this method does not
-        salvage unfenced or half-fenced output: either can be a generation that
-        ran out of tokens before reaching the proposal.  The legacy extractor
-        remains permissive for callers that intentionally accept raw output.
+        code fence. Unfenced or half-fenced output is not a proposal: either
+        can be a generation that ran out of tokens before reaching it.
         """
         return {"new_instruction": extract_fenced_text(lm_out)}

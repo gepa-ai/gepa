@@ -151,17 +151,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for name in instruction_components:
                     base_instruction = candidate[name]
                     dataset_with_feedback = reflective_dataset[name]
-                    prompt = InstructionProposalSignature.prompt_renderer(
-                        {
-                            "current_instruction_doc": base_instruction,
-                            "dataset_with_feedback": dataset_with_feedback,
-                        }
-                    )
-                    raw_output = self.stripped_lm_call(prompt)[0]
                     try:
-                        results[name] = InstructionProposalSignature.fenced_output_extractor(raw_output)[
-                            "new_instruction"
-                        ]
+                        results[name] = InstructionProposalSignature.run(
+                            lm=(lambda x: self.stripped_lm_call(x)[0]),
+                            input_dict={
+                                "current_instruction_doc": base_instruction,
+                                "dataset_with_feedback": dataset_with_feedback,
+                            },
+                        )["new_instruction"]
                     except InstructionProposalError as exc:
                         logger.warning("Skipping malformed reflection output for component %r: %s", name, exc)
 

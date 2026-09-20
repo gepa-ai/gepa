@@ -184,9 +184,7 @@ class StatelessReflectionLM:
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}) for _ in jobs]
         for (job_idx, name, prompt, _messages), raw_output in zip(rendered, raw_outputs, strict=True):
             try:
-                new_instruction = InstructionProposalSignature.fenced_output_extractor(raw_output.strip())[
-                    "new_instruction"
-                ]
+                new_instruction = InstructionProposalSignature.output_extractor(raw_output.strip())["new_instruction"]
             except InstructionProposalError as exc:
                 self._log(f"Component '{name}' produced no complete fenced instruction; skipping it ({exc}).")
                 proposals[job_idx].metadata.setdefault("rejected_outputs", {})[name] = {

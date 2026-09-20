@@ -321,7 +321,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
             try:
-                new_texts[name] = DSPyProgramProposalSignature.run_with_fenced_output(
+                new_texts[name] = DSPyProgramProposalSignature.run(
                     lm=self.reflection_lm,
                     input_dict={"curr_program": base_instruction, "dataset_with_feedback": dataset_with_feedback},
                 )["new_program"]

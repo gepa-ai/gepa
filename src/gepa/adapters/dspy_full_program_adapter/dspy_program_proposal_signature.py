@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 
 import yaml
 
-from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
+from gepa.proposer.reflective_mutation.base import Signature
 from gepa.strategies.instruction_proposal import extract_fenced_text
 
 
@@ -116,29 +116,4 @@ Output Format:
 
     @staticmethod
     def output_extractor(lm_out: str) -> dict[str, str]:
-        # Extract ``` blocks
-        new_instruction = None
-        if lm_out.count("```") >= 2:
-            start = lm_out.find("```")
-            end = lm_out.rfind("```")
-            if start >= end:
-                new_instruction = lm_out
-            if start == -1 or end == -1:
-                new_instruction = lm_out
-            else:
-                new_instruction = lm_out[start + 3 : end].strip()
-        else:
-            lm_out = lm_out.strip()
-            if lm_out.startswith("```"):
-                lm_out = lm_out[3:]
-            if lm_out.endswith("```"):
-                lm_out = lm_out[:-3]
-            new_instruction = lm_out
-
-        return {"new_program": new_instruction}
-
-    @classmethod
-    def run_with_fenced_output(cls, lm: LanguageModel, input_dict: dict[str, Any]) -> dict[str, str]:
-        """Run the proposal and reject incomplete fenced program output."""
-        prompt = cls.prompt_renderer(input_dict)
-        return {"new_program": extract_fenced_text(lm(prompt).strip())}
+        return {"new_program": extract_fenced_text(lm_out)}

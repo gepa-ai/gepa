@@ -697,7 +697,7 @@ def _generate_seed_candidate(
 
     lm_output = lm(prompt)
     try:
-        extracted = InstructionProposalSignature.fenced_output_extractor(lm_output)
+        extracted = InstructionProposalSignature.output_extractor(lm_output)
     except InstructionProposalError as exc:
         raise InstructionProposalError(f"Could not generate the seed candidate: {exc}") from exc
     generated_text = extracted["new_instruction"]

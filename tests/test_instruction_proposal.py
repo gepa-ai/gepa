@@ -66,34 +66,6 @@ End text
 """,
                 "Begin instructions\n\n```\nInternal block 1\n```\n\n```python\nInternal block 2\n```\n\nEnd instructions",
             ),
-            # Test when the output starts with ``` but doesn't end with it
-            (
-                """```text
-Here are the instructions.""",
-                "Here are the instructions.",
-            ),
-            # Test when the output ends with ``` but doesn't start with it
-            (
-                """Here are the instructions.
-```""",
-                "Here are the instructions.",
-            ),
-            # Test only backticks in the middle
-            (
-                """
-Here are some backticks:
-```
-I hope you didn't get confused.
-                """,
-                "Here are some backticks:\n```\nI hope you didn't get confused.",
-            ),
-            # Test when there are no backticks at all, also strip whitespace
-            (
-                """
-                Here are the instructions.
-                """,
-                "Here are the instructions.",
-            ),
         ],
     )
     def test_extract_code_blocks(self, lm_output, expected_instruction):
@@ -109,8 +81,8 @@ I hope you didn't get confused.
             ("```\nUse this nested block:\n```python\npass\n```\n```", "Use this nested block:\n```python\npass\n```"),
         ],
     )
-    def test_fenced_extractor_accepts_complete_proposals_with_surrounding_text(self, lm_output, expected_instruction):
-        result = InstructionProposalSignature.fenced_output_extractor(lm_output)
+    def test_extractor_accepts_complete_proposals_with_surrounding_text(self, lm_output, expected_instruction):
+        result = InstructionProposalSignature.output_extractor(lm_output)
         assert result["new_instruction"] == expected_instruction
 
     @pytest.mark.parametrize(
@@ -123,11 +95,6 @@ I hope you didn't get confused.
             "```\n```",
         ],
     )
-    def test_fenced_extractor_rejects_outputs_without_a_complete_nonempty_proposal(self, lm_output):
+    def test_extractor_rejects_outputs_without_a_complete_nonempty_proposal(self, lm_output):
         with pytest.raises(InstructionProposalError):
-            InstructionProposalSignature.fenced_output_extractor(lm_output)
-
-    def test_legacy_extractor_remains_permissive(self):
-        assert InstructionProposalSignature.output_extractor("unfenced instruction") == {
-            "new_instruction": "unfenced instruction"
-        }
+            InstructionProposalSignature.output_extractor(lm_output)

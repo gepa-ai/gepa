@@ -323,7 +323,7 @@ class ComBEEReflectionLM:
 
     def _extract_instruction(self, raw_output: str) -> str | None:
         try:
-            return InstructionProposalSignature.fenced_output_extractor(raw_output)["new_instruction"]
+            return InstructionProposalSignature.output_extractor(raw_output)["new_instruction"]
         except InstructionProposalError as exc:
             self._log(f"ComBEE reflection produced no complete fenced instruction; skipping it ({exc}).")
             return None

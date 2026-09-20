@@ -209,8 +209,7 @@ class TestReflectionLmProtocol:
         # The proposal signature will call lm(prompt) and expect a str back.
         # We mock the signature's run method to verify the LM is called.
         with patch(
-            "gepa.adapters.dspy_full_program_adapter.dspy_program_proposal_signature."
-            "DSPyProgramProposalSignature.run_with_fenced_output",
+            "gepa.adapters.dspy_full_program_adapter.dspy_program_proposal_signature.DSPyProgramProposalSignature.run",
             return_value={"new_program": "import dspy\nprogram = dspy.Predict('q -> a')"},
         ) as mock_run:
             result = adapter.propose_new_texts(candidate, reflective_dataset, ["program"])
