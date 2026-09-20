@@ -6,28 +6,80 @@ from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
 from gepa.image import Image
-from gepa.proposer.reflective_mutation.base import Signature
+from gepa.proposer.reflective_mutation.base import Signature, SignatureAdapter
 
 
 class InstructionProposalError(ValueError):
-    """Raised when a reflection output contains no complete instruction proposal."""
+    """Raised when a reflection output is known to be incomplete."""
 
 
-def extract_fenced_text(lm_out: str) -> str:
-    """Extract the outermost complete, non-empty fenced span from ``lm_out``."""
-    start = lm_out.find("```")
-    end = lm_out.rfind("```")
-    if start < 0 or end <= start:
-        raise InstructionProposalError("reflection output is missing a complete ``` fence pair")
+class ProposalAdapter:
+    """Format a signature normally and parse its output compatibly.
 
-    content = lm_out[start + 3 : end]
-    match = re.match(r"^\S*\n", content)
-    if match:
-        content = content[match.end() :]
-    content = content.strip()
-    if not content:
-        raise InstructionProposalError("reflection output contains an empty instruction fence")
-    return content
+    A complete outer fence is authoritative. Without one, the historical GEPA
+    salvage behavior is retained unless the response carries positive evidence
+    that generation was truncated. This matters because an ordinary unfenced
+    instruction and an untagged truncated response are otherwise
+    indistinguishable from text alone.
+    """
+
+    def __init__(self, output_key: str):
+        self.output_key = output_key
+
+    def format(self, signature: type[Signature], input_dict: Mapping[str, Any]) -> str | list[dict[str, Any]]:
+        return signature.prompt_renderer(input_dict)
+
+    @staticmethod
+    def _has_fence_pair(lm_out: str) -> bool:
+        return (lm_out.find("```") + 3) < lm_out.rfind("```")
+
+    @staticmethod
+    def _finish_reason(lm_out: str) -> str | None:
+        finish_reason = getattr(lm_out, "finish_reason", None)
+        return finish_reason if isinstance(finish_reason, str) else None
+
+    @classmethod
+    def _is_known_truncated(cls, signature: type[Signature], lm_out: str) -> bool:
+        if cls._has_fence_pair(lm_out):
+            return False
+        if cls._finish_reason(lm_out) in {"length", "max_tokens"}:
+            return True
+
+        stripped = lm_out.lstrip()
+        reasoning_tags = getattr(signature, "reasoning_tags", ("think",))
+        return any(
+            stripped.startswith(f"<{tag}>") and lm_out.count(f"<{tag}>") > lm_out.count(f"</{tag}>")
+            for tag in reasoning_tags
+        )
+
+    def parse(self, signature: type[Signature], lm_out: str) -> dict[str, str]:
+        if self._is_known_truncated(signature, lm_out):
+            reason = self._finish_reason(lm_out)
+            detail = f"finish_reason={reason!r}" if reason is not None else "unterminated reasoning block"
+            raise InstructionProposalError(f"reflection output is incomplete ({detail})")
+
+        start = lm_out.find("```") + 3
+        end = lm_out.rfind("```")
+        if self._has_fence_pair(lm_out):
+            content = lm_out[start:end]
+            match = re.match(r"^\S*\n", content)
+            if match:
+                content = content[match.end() :]
+            value = content.strip()
+        else:
+            # Preserve GEPA's original permissive contract for custom LMs.
+            value = lm_out.strip()
+            if value.startswith("```"):
+                match = re.match(r"^```\S*\n?", value)
+                if match:
+                    value = value[match.end() :].strip()
+            elif value.endswith("```"):
+                value = value[:-3].strip()
+
+        return {self.output_key: value}
+
+
+_INSTRUCTION_PROPOSAL_ADAPTER = ProposalAdapter("new_instruction")
 
 
 class InstructionProposalSignature(Signature):
@@ -51,6 +103,8 @@ Provide the new instructions within ``` blocks."""
 
     input_keys: ClassVar[list[str]] = ["current_instruction_doc", "dataset_with_feedback", "prompt_template"]
     output_keys: ClassVar[list[str]] = ["new_instruction"]
+    adapter: ClassVar[SignatureAdapter | None] = _INSTRUCTION_PROPOSAL_ADAPTER
+    reasoning_tags: ClassVar[tuple[str, ...]] = ("think",)
 
     @classmethod
     def validate_prompt_template(cls, prompt_template: str | None) -> None:
@@ -144,10 +198,8 @@ Provide the new instructions within ``` blocks."""
 
     @classmethod
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
-        """Extract a complete fenced proposal, allowing text outside the fence.
-
-        Reflection prompts ask the LM to put the proposed instruction inside a
-        code fence. Unfenced or half-fenced output is not a proposal: either
-        can be a generation that ran out of tokens before reaching it.
-        """
-        return {"new_instruction": extract_fenced_text(lm_out)}
+        """Parse one proposal using the signature's configured adapter."""
+        adapter = cls.adapter
+        if adapter is None:  # pragma: no cover - fixed by this signature's contract
+            raise RuntimeError("InstructionProposalSignature requires an adapter")
+        return adapter.parse(cls, lm_out)

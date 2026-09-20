@@ -139,7 +139,34 @@ def test_reflect_many_skips_only_malformed_components_and_records_diagnostics():
 
     assert proposal.new_texts == {"b": "valid update"}
     assert proposal.metadata["rejected_outputs"]["a"]["raw_output"].startswith("<think>")
-    assert any("no complete fenced instruction" in message for message in logger.messages)
+    assert any("incomplete reflection output" in message for message in logger.messages)
+
+
+def test_provider_length_finish_reason_rejects_plausible_unfenced_partial_output():
+    """Exercise real LM response normalization, not a parser-only fake."""
+    from unittest.mock import MagicMock, patch
+
+    from gepa.lm import LM
+
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = "This looks like a valid unfenced instruction but was cut off"
+    response.choices[0].finish_reason = "length"
+    response.usage = None
+
+    with (
+        patch("litellm.completion", return_value=response),
+        patch("litellm.completion_cost", return_value=0.0),
+    ):
+        reflection = StatelessReflectionLM(LM("test/model"))
+        proposal, _ = reflection.reflect(
+            {"a": "old"},
+            _reflective_dataset(["a"]),
+            ["a"],
+        )
+
+    assert proposal.new_texts == {}
+    assert proposal.metadata["rejected_outputs"]["a"]["reason"].endswith("finish_reason='length')")
 
 
 def test_reflect_many_sequential_fallback_without_batch_complete():

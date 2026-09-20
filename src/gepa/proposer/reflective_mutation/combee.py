@@ -325,7 +325,7 @@ class ComBEEReflectionLM:
         try:
             return InstructionProposalSignature.output_extractor(raw_output)["new_instruction"]
         except InstructionProposalError as exc:
-            self._log(f"ComBEE reflection produced no complete fenced instruction; skipping it ({exc}).")
+            self._log(f"ComBEE reflection produced an incomplete output; skipping it ({exc}).")
             return None
 
     def _reflect(

@@ -3,6 +3,7 @@
 
 import pytest
 
+from gepa.lm import LMOutput
 from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
 
 
@@ -66,6 +67,13 @@ End text
 """,
                 "Begin instructions\n\n```\nInternal block 1\n```\n\n```python\nInternal block 2\n```\n\nEnd instructions",
             ),
+            ("```text\nHere are the instructions.", "Here are the instructions."),
+            ("Here are the instructions.\n```", "Here are the instructions."),
+            (
+                "Here are some backticks:\n```\nI hope you didn't get confused.",
+                "Here are some backticks:\n```\nI hope you didn't get confused.",
+            ),
+            ("  Here are the unfenced instructions.  ", "Here are the unfenced instructions."),
         ],
     )
     def test_extract_code_blocks(self, lm_output, expected_instruction):
@@ -79,6 +87,8 @@ End text
             ("Preamble\n```\nNew instruction\n```\nDone.", "New instruction"),
             ("<think>Reasoning</think>\n```markdown\nNew instruction\n```", "New instruction"),
             ("```\nUse this nested block:\n```python\npass\n```\n```", "Use this nested block:\n```python\npass\n```"),
+            ("Do not emit <think> tags in your output.", "Do not emit <think> tags in your output."),
+            (LMOutput("```\nComplete proposal\n```\ntrailing", finish_reason="length"), "Complete proposal"),
         ],
     )
     def test_extractor_accepts_complete_proposals_with_surrounding_text(self, lm_output, expected_instruction):
@@ -89,12 +99,22 @@ End text
         "lm_output",
         [
             "<think>The generation stopped mid-reasoning",
-            "The provider stripped the reasoning tags before truncation",
-            "```text\nThe instruction was cut off",
-            "The model emitted only a closing fence\n```",
-            "```\n```",
+            "<think>first</think>\n<think>The second thought was cut off",
+            LMOutput("The provider stripped reasoning tags", finish_reason="length"),
+            LMOutput("```text\nThe instruction was cut off", finish_reason="max_tokens"),
         ],
     )
     def test_extractor_rejects_outputs_without_a_complete_nonempty_proposal(self, lm_output):
         with pytest.raises(InstructionProposalError):
             InstructionProposalSignature.output_extractor(lm_output)
+
+    def test_reasoning_envelopes_are_extensible_without_changing_the_adapter(self):
+        class ReasoningSignature(InstructionProposalSignature):
+            reasoning_tags = ("think", "reasoning")
+
+        with pytest.raises(InstructionProposalError, match="unterminated reasoning"):
+            ReasoningSignature.output_extractor("<reasoning>unfinished")
+
+        assert InstructionProposalSignature.output_extractor("<reasoning>valid unfenced instruction") == {
+            "new_instruction": "<reasoning>valid unfenced instruction"
+        }

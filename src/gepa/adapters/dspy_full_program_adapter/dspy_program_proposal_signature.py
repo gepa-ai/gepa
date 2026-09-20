@@ -5,8 +5,8 @@ from typing import Any, ClassVar
 
 import yaml
 
-from gepa.proposer.reflective_mutation.base import Signature
-from gepa.strategies.instruction_proposal import extract_fenced_text
+from gepa.proposer.reflective_mutation.base import Signature, SignatureAdapter
+from gepa.strategies.instruction_proposal import ProposalAdapter
 
 
 class DSPyProgramProposalSignature(Signature):
@@ -92,6 +92,8 @@ Output Format:
 - Follow immediately with one code block in triple backticks containing the complete Python code, including assigning a `program` object."""
     input_keys: ClassVar[list[str]] = ["curr_program", "dataset_with_feedback"]
     output_keys: ClassVar[list[str]] = ["new_program"]
+    adapter: ClassVar[SignatureAdapter | None] = ProposalAdapter("new_program")
+    reasoning_tags: ClassVar[tuple[str, ...]] = ("think",)
 
     @classmethod
     def prompt_renderer(cls, input_dict: dict[str, Any]) -> str:
@@ -114,6 +116,9 @@ Output Format:
         prompt = prompt.replace("<dataset_with_feedback>", format_samples(dataset))
         return prompt
 
-    @staticmethod
-    def output_extractor(lm_out: str) -> dict[str, str]:
-        return {"new_program": extract_fenced_text(lm_out)}
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+        adapter = cls.adapter
+        if adapter is None:  # pragma: no cover - fixed by this signature's contract
+            raise RuntimeError("DSPyProgramProposalSignature requires an adapter")
+        return adapter.parse(cls, lm_out)

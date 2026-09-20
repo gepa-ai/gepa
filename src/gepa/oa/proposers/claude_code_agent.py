@@ -76,19 +76,18 @@ from gepa.core.state import SEED_ITERATION_ID
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
-from gepa.strategies.instruction_proposal import InstructionProposalError, extract_fenced_text
+from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
 
 
 def _extract_fenced(text: str) -> str:
     """Pull the outermost complete fenced span out of ``text``.
 
-    Matches the convention in
-    :func:`gepa.strategies.instruction_proposal.InstructionProposalSignature.output_extractor`.
-    An incomplete file returns an empty string so its caller keeps the parent
-    component instead of adopting a partial agent response.
+    Uses the same parsing policy as ordinary reflection. A file positively
+    identified as incomplete returns an empty string so its caller keeps the
+    parent component instead of adopting a partial agent response.
     """
     try:
-        return extract_fenced_text(text)
+        return InstructionProposalSignature.output_extractor(text)["new_instruction"]
     except InstructionProposalError:
         return ""
 

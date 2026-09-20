@@ -186,7 +186,7 @@ class StatelessReflectionLM:
             try:
                 new_instruction = InstructionProposalSignature.output_extractor(raw_output.strip())["new_instruction"]
             except InstructionProposalError as exc:
-                self._log(f"Component '{name}' produced no complete fenced instruction; skipping it ({exc}).")
+                self._log(f"Component '{name}' produced an incomplete reflection output; skipping it ({exc}).")
                 proposals[job_idx].metadata.setdefault("rejected_outputs", {})[name] = {
                     "reason": str(exc),
                     "raw_output": raw_output,
