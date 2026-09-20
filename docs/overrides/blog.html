@@ -5,9 +5,30 @@
       <header class="md-typeset">
         {{ page.content }}
       </header>
+
+      {#- Partition posts: guest frontmatter goes to Community Blogs; everything else is Main -#}
+      {% set ns = namespace(main=[], guest=[]) %}
       {% for post in posts %}
-        {% include "partials/post.html" %}
+        {% if post.meta.get("guest") %}
+          {% set _ = ns.guest.append(post) %}
+        {% else %}
+          {% set _ = ns.main.append(post) %}
+        {% endif %}
       {% endfor %}
+
+      {% if ns.main %}
+        {% for post in ns.main %}
+          {% include "partials/post.html" %}
+        {% endfor %}
+      {% endif %}
+
+      {% if ns.guest %}
+        <h2 class="blog-section-title md-typeset">Community Blogs</h2>
+        {% for post in ns.guest %}
+          {% include "partials/post.html" %}
+        {% endfor %}
+      {% endif %}
+
       {% if pagination %}
         {% block pagination %}
           {% include "partials/pagination.html" %}
