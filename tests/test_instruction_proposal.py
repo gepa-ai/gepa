@@ -3,7 +3,7 @@
 
 import pytest
 
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
 
 
 class TestInstructionProposalSignature:
@@ -100,3 +100,34 @@ I hope you didn't get confused.
         """Test extraction of instructions from various code block formats."""
         result = InstructionProposalSignature.output_extractor(lm_output)
         assert result["new_instruction"] == expected_instruction
+
+    @pytest.mark.parametrize(
+        "lm_output,expected_instruction",
+        [
+            ("Preamble\n```\nNew instruction\n```\nDone.", "New instruction"),
+            ("<think>Reasoning</think>\n```markdown\nNew instruction\n```", "New instruction"),
+            ("```\nUse this nested block:\n```python\npass\n```\n```", "Use this nested block:\n```python\npass\n```"),
+        ],
+    )
+    def test_fenced_extractor_accepts_complete_proposals_with_surrounding_text(self, lm_output, expected_instruction):
+        result = InstructionProposalSignature.fenced_output_extractor(lm_output)
+        assert result["new_instruction"] == expected_instruction
+
+    @pytest.mark.parametrize(
+        "lm_output",
+        [
+            "<think>The generation stopped mid-reasoning",
+            "The provider stripped the reasoning tags before truncation",
+            "```text\nThe instruction was cut off",
+            "The model emitted only a closing fence\n```",
+            "```\n```",
+        ],
+    )
+    def test_fenced_extractor_rejects_outputs_without_a_complete_nonempty_proposal(self, lm_output):
+        with pytest.raises(InstructionProposalError):
+            InstructionProposalSignature.fenced_output_extractor(lm_output)
+
+    def test_legacy_extractor_remains_permissive(self):
+        assert InstructionProposalSignature.output_extractor("unfenced instruction") == {
+            "new_instruction": "unfenced instruction"
+        }

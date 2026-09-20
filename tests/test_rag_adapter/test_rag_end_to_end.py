@@ -214,7 +214,7 @@ def simple_rag_lm(messages):
 
 def simple_reflection_lm(prompt):
     """Simple reflection that suggests a better prompt."""
-    return json.dumps({"answer_generation": PREFERRED_DYNAMIC_PROMPT})
+    return f"```\n{json.dumps({'answer_generation': PREFERRED_DYNAMIC_PROMPT})}\n```"
 
 
 class RAGTestAdapter(GenericRAGAdapter):

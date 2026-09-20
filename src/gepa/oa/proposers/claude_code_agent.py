@@ -76,28 +76,21 @@ from gepa.core.state import SEED_ITERATION_ID
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
-
-_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+from gepa.strategies.instruction_proposal import InstructionProposalError, extract_fenced_text
 
 
 def _extract_fenced(text: str) -> str:
-    """Pull the last fenced ```` ``` ```` block out of ``text``.
+    """Pull the outermost complete fenced span out of ``text``.
 
     Matches the convention in
     :func:`gepa.strategies.instruction_proposal.InstructionProposalSignature.output_extractor`.
-    If there's no complete fence, falls back to the raw text (stripped). If
-    the content is preceded by an optional ``<language>`` spec, that line is
-    dropped.
+    An incomplete file returns an empty string so its caller keeps the parent
+    component instead of adopting a partial agent response.
     """
-    matches = _FENCE_RE.findall(text)
-    if matches:
-        return matches[-1].strip()
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
-    if stripped.endswith("```"):
-        stripped = stripped[:-3]
-    return stripped.strip()
+    try:
+        return extract_fenced_text(text)
+    except InstructionProposalError:
+        return ""
 
 
 def _safe_component_filename(name: str, idx: int) -> str:

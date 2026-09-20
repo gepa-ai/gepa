@@ -1484,3 +1484,53 @@ def test_single_job_reflect_batches_map_wave():
     assert batched_lm.batch_sizes == [3]
     assert proposal_batched.new_texts == proposal_sequential.new_texts == {"comp": "reduced"}
     assert batched_lm.prompts == sequential_lm.prompts
+
+
+def test_batched_map_discards_only_malformed_outputs():
+    class PartiallyMalformedBatchLM:
+        def __init__(self):
+            self.batch_sizes: list[int] = []
+
+        def batch_complete(self, messages_list):
+            self.batch_sizes.append(len(messages_list))
+            return [
+                "<think>The first map ran out of tokens",
+                "```\nmap-2\n```",
+                "Reasoning\n```\nmap-3\n```\nDone",
+            ]
+
+        def __call__(self, prompt):
+            return "```\nreduced\n```"
+
+    lm = PartiallyMalformedBatchLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(0))
+
+    proposal, _ = combee.reflect({"comp": "seed"}, {"comp": RECORDS9}, ["comp"])
+
+    assert lm.batch_sizes == [3]
+    assert proposal.new_texts == {"comp": "reduced"}
+    assert proposal.metadata["combee:comp:rejected_outputs"] == ["<think>The first map ran out of tokens"]
+
+
+def test_malformed_reduce_output_skips_the_component():
+    class MalformedReduceLM:
+        def __init__(self):
+            self.outputs = iter(
+                [
+                    "```\nmap-1\n```",
+                    "```\nmap-2\n```",
+                    "```\nmap-3\n```",
+                    "<think>The reduce ran out of tokens",
+                ]
+            )
+
+        def __call__(self, prompt):
+            return next(self.outputs)
+
+    combee = ComBEEReflectionLM(MalformedReduceLM(), rng=random.Random(0), batch_reflection=False)
+
+    proposal, _ = combee.reflect({"comp": "seed"}, {"comp": RECORDS9}, ["comp"])
+
+    assert proposal.new_texts == {}
+    assert proposal.metadata["combee:comp:mode"] == "invalid_reduce_output"
+    assert proposal.metadata["combee:comp:rejected_outputs"] == ["<think>The reduce ran out of tokens"]

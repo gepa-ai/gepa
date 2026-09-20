@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
 
 # One reflection job = (candidate, reflective_dataset, components_to_update).
 ReflectionJob = tuple[dict[str, str], "Mapping[str, Sequence[Mapping[str, Any]]]", list[str]]
@@ -183,7 +183,17 @@ class StatelessReflectionLM:
 
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}) for _ in jobs]
         for (job_idx, name, prompt, _messages), raw_output in zip(rendered, raw_outputs, strict=True):
-            new_instruction = InstructionProposalSignature.output_extractor(raw_output.strip())["new_instruction"]
+            try:
+                new_instruction = InstructionProposalSignature.fenced_output_extractor(raw_output.strip())[
+                    "new_instruction"
+                ]
+            except InstructionProposalError as exc:
+                self._log(f"Component '{name}' produced no complete fenced instruction; skipping it ({exc}).")
+                proposals[job_idx].metadata.setdefault("rejected_outputs", {})[name] = {
+                    "reason": str(exc),
+                    "raw_output": raw_output,
+                }
+                continue
             proposals[job_idx].new_texts[name] = new_instruction
             proposals[job_idx].prompts[name] = prompt
             proposals[job_idx].raw_lm_outputs[name] = raw_output

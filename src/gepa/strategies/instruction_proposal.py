@@ -9,6 +9,27 @@ from gepa.image import Image
 from gepa.proposer.reflective_mutation.base import Signature
 
 
+class InstructionProposalError(ValueError):
+    """Raised when a reflection output contains no complete instruction proposal."""
+
+
+def extract_fenced_text(lm_out: str) -> str:
+    """Extract the outermost complete, non-empty fenced span from ``lm_out``."""
+    start = lm_out.find("```")
+    end = lm_out.rfind("```")
+    if start < 0 or end <= start:
+        raise InstructionProposalError("reflection output is missing a complete ``` fence pair")
+
+    content = lm_out[start + 3 : end]
+    match = re.match(r"^\S*\n", content)
+    if match:
+        content = content[match.end() :]
+    content = content.strip()
+    if not content:
+        raise InstructionProposalError("reflection output contains an empty instruction fence")
+    return content
+
+
 class InstructionProposalSignature(Signature):
     default_prompt_template = """I provided an assistant with the following instructions to perform a task for me:
 ```
@@ -151,3 +172,15 @@ Provide the new instructions within ``` blocks."""
             return content.strip()
 
         return {"new_instruction": extract_instruction_text()}
+
+    @classmethod
+    def fenced_output_extractor(cls, lm_out: str) -> dict[str, str]:
+        """Extract a complete fenced proposal, allowing text outside the fence.
+
+        Reflection prompts ask the LM to put the proposed instruction inside a
+        code fence.  Unlike :meth:`output_extractor`, this method does not
+        salvage unfenced or half-fenced output: either can be a generation that
+        ran out of tokens before reaching the proposal.  The legacy extractor
+        remains permissive for callers that intentionally accept raw output.
+        """
+        return {"new_instruction": extract_fenced_text(lm_out)}

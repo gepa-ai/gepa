@@ -5,7 +5,8 @@ from typing import Any, ClassVar
 
 import yaml
 
-from gepa.proposer.reflective_mutation.base import Signature
+from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
+from gepa.strategies.instruction_proposal import extract_fenced_text
 
 
 class DSPyProgramProposalSignature(Signature):
@@ -135,3 +136,9 @@ Output Format:
             new_instruction = lm_out
 
         return {"new_program": new_instruction}
+
+    @classmethod
+    def run_with_fenced_output(cls, lm: LanguageModel, input_dict: dict[str, Any]) -> dict[str, str]:
+        """Run the proposal and reject incomplete fenced program output."""
+        prompt = cls.prompt_renderer(input_dict)
+        return {"new_program": extract_fenced_text(lm(prompt).strip())}

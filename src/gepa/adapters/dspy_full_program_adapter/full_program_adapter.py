@@ -1,3 +1,4 @@
+import logging
 import random
 from typing import Any, Callable
 
@@ -9,6 +10,9 @@ from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
+from gepa.strategies.instruction_proposal import InstructionProposalError
+
+logger = logging.getLogger(__name__)
 
 # One DSPy trace entry: (predictor, inputs, outputs). outputs may be a FailedPrediction.
 _TraceInstance = tuple[Any, dict[str, Any], Any]
@@ -316,8 +320,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for name in components_to_update:
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
-            new_texts[name] = DSPyProgramProposalSignature.run(
-                lm=self.reflection_lm,
-                input_dict={"curr_program": base_instruction, "dataset_with_feedback": dataset_with_feedback},
-            )["new_program"]
+            try:
+                new_texts[name] = DSPyProgramProposalSignature.run_with_fenced_output(
+                    lm=self.reflection_lm,
+                    input_dict={"curr_program": base_instruction, "dataset_with_feedback": dataset_with_feedback},
+                )["new_program"]
+            except InstructionProposalError as exc:
+                logger.warning("Skipping malformed full-program reflection output for component %r: %s", name, exc)
         return new_texts

@@ -13,6 +13,7 @@ from gepa.gepa_launcher import (
     _generate_seed_candidate,
     optimize_anything,
 )
+from gepa.strategies.instruction_proposal import InstructionProposalError
 
 # ---------------------------------------------------------------------------
 # _build_seed_generation_prompt
@@ -94,6 +95,12 @@ class TestGenerateSeedCandidate:
             objective="Write code.",
         )
         assert result[_STR_CANDIDATE_KEY] == "def solve():\n    return 42"
+
+    def test_rejects_truncated_seed_output_with_a_clear_error(self):
+        mock_lm = MagicMock(return_value="<think>The seed generation stopped before the proposal")
+
+        with pytest.raises(InstructionProposalError, match="Could not generate the seed candidate"):
+            _generate_seed_candidate(lm=mock_lm, objective="Write code.")
 
     def test_passes_objective_and_background_to_prompt(self):
         mock_lm = MagicMock(return_value="```\nresult\n```")

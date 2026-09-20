@@ -51,7 +51,7 @@ from typing import Any, cast
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionJob, ReflectionProposal
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
 
 DEFAULT_AGGREGATION_PROMPT_TEMPLATE = """I provided an assistant with the following current instruction:
 ```
@@ -314,13 +314,19 @@ class ComBEEReflectionLM:
         dataset_with_feedback: Any,
         prompt_template: str | None,
         completion_id: _CompletionId | None = None,
-    ) -> tuple[str, str | list[dict[str, Any]], str]:
+    ) -> tuple[str | None, str | list[dict[str, Any]], str]:
         # Equivalent to InstructionProposalSignature.run_with_metadata (render
         # -> complete -> strip -> extract), routed through the completion memo.
         prompt, _messages = self._render_prompt(current_instruction, dataset_with_feedback, prompt_template)
         raw_output = self._complete_one(prompt, completion_id)
-        result = InstructionProposalSignature.output_extractor(raw_output)
-        return result["new_instruction"], prompt, raw_output
+        return self._extract_instruction(raw_output), prompt, raw_output
+
+    def _extract_instruction(self, raw_output: str) -> str | None:
+        try:
+            return InstructionProposalSignature.fenced_output_extractor(raw_output)["new_instruction"]
+        except InstructionProposalError as exc:
+            self._log(f"ComBEE reflection produced no complete fenced instruction; skipping it ({exc}).")
+            return None
 
     def _reflect(
         self,
@@ -359,12 +365,17 @@ class ComBEEReflectionLM:
                     level1_template,
                     self._completion_id(job_idx, component_idx, "fallback", 0),
                 )
+                total_lm_calls += 1
+                if new_text is None:
+                    proposal.metadata[f"combee:{comp}:rejected_outputs"] = [raw_output]
+                    proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                    proposal.metadata[f"combee:{comp}:mode"] = "invalid_fallback_output"
+                    continue
                 proposal.new_texts[comp] = new_text
                 proposal.prompts[comp] = lm_prompt
                 proposal.raw_lm_outputs[comp] = raw_output
                 proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
                 proposal.metadata[f"combee:{comp}:mode"] = "fallback_single_call"
-                total_lm_calls += 1
                 continue
 
             # --- Augmented shuffle (§3.2): duplicate each record p times, shuffle.
@@ -394,10 +405,13 @@ class ComBEEReflectionLM:
                     level1_template,
                     self._completion_id(job_idx, component_idx, "map", i),
                 )
+                total_lm_calls += 1
+                if new_text is None:
+                    proposal.metadata.setdefault(f"combee:{comp}:rejected_outputs", []).append(raw_output)
+                    continue
                 group_proposals.append(new_text)
                 level1_prompts.append(lm_prompt)
                 level1_outputs.append(raw_output)
-                total_lm_calls += 1
 
             proposal.metadata[f"combee:{comp}:level1_prompts"] = level1_prompts
             proposal.metadata[f"combee:{comp}:level1_outputs"] = level1_outputs
@@ -433,6 +447,11 @@ class ComBEEReflectionLM:
                 self._completion_id(job_idx, component_idx, "reduce", 0),
             )
             total_lm_calls += 1
+            if final_text is None:
+                proposal.metadata.setdefault(f"combee:{comp}:rejected_outputs", []).append(agg_output)
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = len(group_proposals) + 1
+                proposal.metadata[f"combee:{comp}:mode"] = "invalid_reduce_output"
+                continue
             proposal.new_texts[comp] = final_text
             proposal.prompts[comp] = agg_prompt
             proposal.raw_lm_outputs[comp] = agg_output
@@ -607,6 +626,7 @@ class ComBEEReflectionLM:
                     "level1_prompts": [],
                     "level1_outputs": [],
                     "group_proposals": [],
+                    "rejected_outputs": [],
                     "candidate_text": candidate[comp],
                 }
                 plans.append(plan)
@@ -648,8 +668,11 @@ class ComBEEReflectionLM:
         wave1_outputs = self._batch_complete([e[1] for e in wave1], [e[2] for e in wave1], [e[3] for e in wave1])
         for (plan, prompt, _messages, _completion_id), raw in zip(wave1, wave1_outputs, strict=True):
             raw = raw.strip()
-            new_instruction = InstructionProposalSignature.output_extractor(raw)["new_instruction"]
             job_call_totals[plan["job_idx"]] += 1
+            new_instruction = self._extract_instruction(raw)
+            if new_instruction is None:
+                plan["rejected_outputs"].append(raw)
+                continue
             plan["group_proposals"].append(new_instruction)
             plan["level1_prompts"].append(prompt)
             plan["level1_outputs"].append(raw)
@@ -675,15 +698,23 @@ class ComBEEReflectionLM:
             raw = raw.strip()
             plan["reduce_prompt"] = prompt
             plan["reduce_output"] = raw
-            plan["final_text"] = InstructionProposalSignature.output_extractor(raw)["new_instruction"]
             job_call_totals[plan["job_idx"]] += 1
+            plan["final_text"] = self._extract_instruction(raw)
+            if plan["final_text"] is None:
+                plan["rejected_outputs"].append(raw)
 
         # --- Finalize in plan order (duplicate components overwrite exactly
         # --- as sequential reflect() would) ---
         for plan in plans:
             proposal = proposals[plan["job_idx"]]
             comp = plan["comp"]
+            if plan["rejected_outputs"]:
+                proposal.metadata[f"combee:{comp}:rejected_outputs"] = plan["rejected_outputs"]
             if plan["mode"] == "fallback_single_call":
+                if not plan["group_proposals"]:
+                    proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                    proposal.metadata[f"combee:{comp}:mode"] = "invalid_fallback_output"
+                    continue
                 proposal.new_texts[comp] = plan["group_proposals"][0]
                 proposal.prompts[comp] = plan["level1_prompts"][0]
                 proposal.raw_lm_outputs[comp] = plan["level1_outputs"][0]
@@ -709,6 +740,10 @@ class ComBEEReflectionLM:
                 proposal.raw_lm_outputs[comp] = plan["level1_outputs"][0]
                 proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
                 proposal.metadata[f"combee:{comp}:mode"] = "single_group"
+                continue
+            if plan.get("final_text") is None:
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = n_props + 1
+                proposal.metadata[f"combee:{comp}:mode"] = "invalid_reduce_output"
                 continue
             proposal.new_texts[comp] = plan["final_text"]
             proposal.prompts[comp] = plan["reduce_prompt"]

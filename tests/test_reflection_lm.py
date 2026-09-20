@@ -120,6 +120,28 @@ def test_reflect_many_scatters_results_per_job():
     assert len(fake.batch_calls[0]) == 3
 
 
+def test_reflect_many_skips_only_malformed_components_and_records_diagnostics():
+    class MixedBatchLM:
+        def __call__(self, prompt):
+            raise AssertionError("expected the batched path")
+
+        def batch_complete(self, messages_list):
+            assert len(messages_list) == 2
+            return ["<think>The generation stopped mid-reasoning", "Reasoning\n```\nvalid update\n```\nDone"]
+
+    logger = CollectingLogger()
+    lm = StatelessReflectionLM(MixedBatchLM(), logger=logger)
+    proposal, _ = lm.reflect(
+        {"a": "old_a", "b": "old_b"},
+        _reflective_dataset(["a", "b"]),
+        ["a", "b"],
+    )
+
+    assert proposal.new_texts == {"b": "valid update"}
+    assert proposal.metadata["rejected_outputs"]["a"]["raw_output"].startswith("<think>")
+    assert any("no complete fenced instruction" in message for message in logger.messages)
+
+
 def test_reflect_many_sequential_fallback_without_batch_complete():
     """A plain callable LM (no batch_complete) still works, one call per prompt."""
     fake = RecordingLM(reply="Y")
@@ -598,3 +620,16 @@ def test_max_reflection_cost_with_costless_strategy_raises():
             max_reflection_cost=5.0,
             max_metric_calls=10,
         )
+
+
+def test_malformed_reflection_produces_no_child_or_metric_calls():
+    class TruncatedLM:
+        def __call__(self, prompt):
+            return "<think>The reflection ran out of tokens"
+
+    proposer, adapter = _make_propose_harness(StatelessReflectionLM(TruncatedLM()))
+
+    assert proposer.propose(_make_state()) == []
+    # Only the parent minibatch is evaluated; the malformed proposal never
+    # becomes a child candidate.
+    assert adapter.batch_evaluate.call_count == 1
