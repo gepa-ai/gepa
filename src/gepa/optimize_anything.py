@@ -59,6 +59,7 @@ from gepa.gepa_launcher import (
     make_litellm_lm,
     set_log_context,
 )
+from gepa.lm import make_vllm_lm
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
@@ -489,6 +490,7 @@ __all__ = [
     "list_tasks",
     "log",
     "make_litellm_lm",
+    "make_vllm_lm",
     "optimize_adaptive_sequential",
     "optimize_adaptive_sequential_with_server",
     "optimize_anything",

@@ -1125,6 +1125,20 @@ test = [
     { name = "tqdm" },
     { name = "wandb" },
 ]
+vllm = [
+    { name = "cloudpickle" },
+    { name = "datasets", version = "4.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "datasets", version = "4.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "litellm" },
+    { name = "mlflow", marker = "python_full_version < '3.14'" },
+    { name = "mlflow-skinny", marker = "python_full_version >= '3.14'" },
+    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "pyarrow", version = "23.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "tiktoken", version = "0.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "tqdm" },
+    { name = "wandb" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1137,6 +1151,7 @@ requires-dist = [
     { name = "gepa", extras = ["build"], marker = "extra == 'dev'" },
     { name = "gepa", extras = ["full"], marker = "extra == 'gskill'" },
     { name = "gepa", extras = ["full"], marker = "extra == 'test'" },
+    { name = "gepa", extras = ["full"], marker = "extra == 'vllm'" },
     { name = "gepa", extras = ["test"], marker = "extra == 'dev'" },
     { name = "langchain", marker = "extra == 'langchain'", specifier = ">=1.0" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=1.0" },
@@ -1168,7 +1183,7 @@ requires-dist = [
     { name = "wandb", marker = "python_full_version < '3.14' and extra == 'full'" },
     { name = "wheel", marker = "extra == 'build'" },
 ]
-provides-extras = ["full", "confidence", "dspy", "test", "build", "dev", "gskill", "langchain"]
+provides-extras = ["full", "confidence", "dspy", "test", "build", "dev", "gskill", "langchain", "vllm"]
 
 [[package]]
 name = "gitdb"
