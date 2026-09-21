@@ -1126,16 +1126,23 @@ div.person-avatar {
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.35);
 }
 
-/* Blog index: Main / Guest blogs section headings */
+/* Blog index: Community section heading + lede */
 .blog-section-title {
-    margin: 1.75rem 0 0.75rem;
+    margin: 1.75rem 0 0.5rem;
     font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: -0.01em;
+    scroll-margin-top: 5rem;
 }
 
 .blog-section-title:first-of-type {
-    margin-top: 1rem;
+    margin-top: 0.75rem;
+}
+
+.blog-section-lede {
+    margin: 0 0 1rem;
+    color: var(--md-default-fg-color--light);
+    font-size: 0.85rem;
 }
 
 /* Guest post byline */
