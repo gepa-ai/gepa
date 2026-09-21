@@ -684,7 +684,7 @@ def _generate_seed_candidate(
 
     Returns a single-key candidate dict ``{_STR_CANDIDATE_KEY: generated_text}``.
     """
-    from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
+    from gepa.strategies.instruction_proposal import InstructionProposalSignature, parse_proposal
 
     prompt = _build_seed_generation_prompt(
         objective=objective,
@@ -696,11 +696,9 @@ def _generate_seed_candidate(
         logger.log("Generating initial seed candidate via LLM...")
 
     lm_output = lm(prompt)
-    try:
-        extracted = InstructionProposalSignature.output_extractor(lm_output)
-    except InstructionProposalError as exc:
-        raise InstructionProposalError(f"Could not generate the seed candidate: {exc}") from exc
-    generated_text = extracted["new_instruction"]
+    generated_text = parse_proposal(InstructionProposalSignature, lm_output).require(
+        "Could not generate the seed candidate"
+    )
 
     if logger:
         logger.log(f"Generated seed candidate ({len(generated_text)} chars)")

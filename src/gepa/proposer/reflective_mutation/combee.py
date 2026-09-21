@@ -51,7 +51,7 @@ from typing import Any, cast
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionJob, ReflectionProposal
-from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionProposalSignature, parse_proposal
 
 DEFAULT_AGGREGATION_PROMPT_TEMPLATE = """I provided an assistant with the following current instruction:
 ```
@@ -322,11 +322,10 @@ class ComBEEReflectionLM:
         return self._extract_instruction(raw_output), prompt, raw_output
 
     def _extract_instruction(self, raw_output: str) -> str | None:
-        try:
-            return InstructionProposalSignature.output_extractor(raw_output)["new_instruction"]
-        except InstructionProposalError as exc:
-            self._log(f"ComBEE reflection produced an incomplete output; skipping it ({exc}).")
-            return None
+        parsed = parse_proposal(InstructionProposalSignature, raw_output)
+        if parsed.text is None:
+            self._log(f"ComBEE reflection produced an incomplete output; skipping it ({parsed.error}).")
+        return parsed.text
 
     def _reflect(
         self,

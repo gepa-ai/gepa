@@ -76,7 +76,7 @@ from gepa.core.state import SEED_ITERATION_ID
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
-from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionProposalSignature, parse_proposal
 
 _FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
@@ -92,10 +92,7 @@ def _extract_fenced(text: str) -> str:
     matches = _FENCE_RE.findall(text)
     if matches:
         return matches[-1].strip()
-    try:
-        return InstructionProposalSignature.output_extractor(text)["new_instruction"]
-    except InstructionProposalError:
-        return ""
+    return parse_proposal(InstructionProposalSignature, text).text or ""
 
 
 def _safe_component_filename(name: str, idx: int) -> str:

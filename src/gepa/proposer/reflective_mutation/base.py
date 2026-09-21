@@ -28,6 +28,28 @@ class LanguageModel(Protocol):
     def __call__(self, prompt: str | list[dict[str, Any]]) -> str: ...
 
 
+@dataclass(frozen=True)
+class SignatureParseResult:
+    """Non-throwing result returned by signature adapters."""
+
+    output: dict[str, str] | None
+    error: str | None = None
+
+    @classmethod
+    def success(cls, output: dict[str, str]) -> "SignatureParseResult":
+        return cls(output=output)
+
+    @classmethod
+    def failure(cls, error: str) -> "SignatureParseResult":
+        return cls(output=None, error=error)
+
+    def require(self, error_type: type[Exception] = ValueError) -> dict[str, str]:
+        """Return the output or raise at an explicitly hard-fail boundary."""
+        if self.output is None:
+            raise error_type(self.error or "signature output could not be parsed")
+        return self.output
+
+
 class SignatureAdapter(Protocol):
     """Translate between a signature's inputs and an LM's wire format.
 
@@ -37,7 +59,7 @@ class SignatureAdapter(Protocol):
 
     def format(self, signature: type["Signature"], input_dict: Mapping[str, Any]) -> str | list[dict[str, Any]]: ...
 
-    def parse(self, signature: type["Signature"], lm_out: str) -> dict[str, str]: ...
+    def parse(self, signature: type["Signature"], lm_out: str) -> SignatureParseResult: ...
 
 
 @dataclass
@@ -67,7 +89,7 @@ class Signature:
     def _parse(cls, lm_out: str) -> dict[str, str]:
         if cls.adapter is None or "output_extractor" in cls.__dict__:
             return cls.output_extractor(lm_out)
-        return cls.adapter.parse(cls, lm_out)
+        return cls.adapter.parse(cls, lm_out).require()
 
     @classmethod
     def run(cls, lm: LanguageModel, input_dict: Mapping[str, Any]) -> dict[str, str]:

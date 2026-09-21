@@ -10,7 +10,7 @@ from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
-from gepa.strategies.instruction_proposal import InstructionProposalError
+from gepa.strategies.instruction_proposal import run_proposal
 
 logger = logging.getLogger(__name__)
 
@@ -320,11 +320,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for name in components_to_update:
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
-            try:
-                new_texts[name] = DSPyProgramProposalSignature.run(
-                    lm=self.reflection_lm,
-                    input_dict={"curr_program": base_instruction, "dataset_with_feedback": dataset_with_feedback},
-                )["new_program"]
-            except InstructionProposalError as exc:
-                logger.warning("Skipping malformed full-program reflection output for component %r: %s", name, exc)
+            parsed, _prompt, _raw_output = run_proposal(
+                DSPyProgramProposalSignature,
+                lm=self.reflection_lm,
+                input_dict={"curr_program": base_instruction, "dataset_with_feedback": dataset_with_feedback},
+            )
+            if parsed.text is None:
+                logger.warning(
+                    "Skipping malformed full-program reflection output for component %r: %s", name, parsed.error
+                )
+                continue
+            new_texts[name] = parsed.text
         return new_texts

@@ -3,14 +3,34 @@
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from gepa.image import Image
-from gepa.proposer.reflective_mutation.base import Signature, SignatureAdapter
+from gepa.proposer.reflective_mutation.base import (
+    LanguageModel,
+    Signature,
+    SignatureAdapter,
+    SignatureParseResult,
+)
 
 
 class InstructionProposalError(ValueError):
     """Raised when a reflection output is known to be incomplete."""
+
+
+@dataclass(frozen=True)
+class ProposalParseResult:
+    """A parsed proposal or a diagnostic explaining why it should be skipped."""
+
+    text: str | None
+    error: str | None = None
+
+    def require(self, context: str = "Could not parse instruction proposal") -> str:
+        if self.text is None:
+            detail = f": {self.error}" if self.error else ""
+            raise InstructionProposalError(f"{context}{detail}")
+        return self.text
 
 
 class ProposalAdapter:
@@ -52,11 +72,11 @@ class ProposalAdapter:
             for tag in reasoning_tags
         )
 
-    def parse(self, signature: type[Signature], lm_out: str) -> dict[str, str]:
+    def parse(self, signature: type[Signature], lm_out: str) -> SignatureParseResult:
         if self._is_known_truncated(signature, lm_out):
             reason = self._finish_reason(lm_out)
             detail = f"finish_reason={reason!r}" if reason is not None else "unterminated reasoning block"
-            raise InstructionProposalError(f"reflection output is incomplete ({detail})")
+            return SignatureParseResult.failure(f"reflection output is incomplete ({detail})")
 
         start = lm_out.find("```") + 3
         end = lm_out.rfind("```")
@@ -76,10 +96,33 @@ class ProposalAdapter:
             elif value.endswith("```"):
                 value = value[:-3].strip()
 
-        return {self.output_key: value}
+        return SignatureParseResult.success({self.output_key: value})
 
 
 _INSTRUCTION_PROPOSAL_ADAPTER = ProposalAdapter("new_instruction")
+
+
+def parse_proposal(signature: type[Signature], lm_out: str) -> ProposalParseResult:
+    """Parse one single-output proposal without raising on an invalid completion."""
+    adapter = signature.adapter
+    if adapter is None:
+        raise TypeError(f"{signature.__name__} does not define a proposal adapter")
+    if len(signature.output_keys) != 1:
+        raise TypeError(f"{signature.__name__} must define exactly one output key")
+
+    parsed = adapter.parse(signature, lm_out)
+    if parsed.output is None:
+        return ProposalParseResult(text=None, error=parsed.error)
+    return ProposalParseResult(text=parsed.output[signature.output_keys[0]])
+
+
+def run_proposal(
+    signature: type[Signature], lm: LanguageModel, input_dict: Mapping[str, Any]
+) -> tuple[ProposalParseResult, str | list[dict[str, Any]], str]:
+    """Render, complete, and parse a proposal through the non-throwing facade."""
+    prompt = signature.prompt_renderer(input_dict)
+    raw_output = lm(prompt).strip()
+    return parse_proposal(signature, raw_output), prompt, raw_output
 
 
 class InstructionProposalSignature(Signature):
@@ -198,8 +241,5 @@ Provide the new instructions within ``` blocks."""
 
     @classmethod
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
-        """Parse one proposal using the signature's configured adapter."""
-        adapter = cls.adapter
-        if adapter is None:  # pragma: no cover - fixed by this signature's contract
-            raise RuntimeError("InstructionProposalSignature requires an adapter")
-        return adapter.parse(cls, lm_out)
+        """Compatibility boundary for callers that require a proposal or error."""
+        return {"new_instruction": parse_proposal(cls, lm_out).require()}

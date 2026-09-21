@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from gepa.proposer.reflective_mutation.base import Signature
+from gepa.proposer.reflective_mutation.base import Signature, SignatureParseResult
 
 
 class MockSignature(Signature):
@@ -78,7 +78,7 @@ class TestSignatureRun:
                 return f"adapter prompt: {input_dict['value']}"
 
             def parse(self, signature, lm_out):
-                return {"adapted": lm_out.upper()}
+                return SignatureParseResult.success({"adapted": lm_out.upper()})
 
         class AdapterSignature(Signature):
             adapter = Adapter()

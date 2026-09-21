@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 import yaml
 
 from gepa.proposer.reflective_mutation.base import Signature, SignatureAdapter
-from gepa.strategies.instruction_proposal import ProposalAdapter
+from gepa.strategies.instruction_proposal import ProposalAdapter, parse_proposal
 
 
 class DSPyProgramProposalSignature(Signature):
@@ -118,7 +118,4 @@ Output Format:
 
     @classmethod
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
-        adapter = cls.adapter
-        if adapter is None:  # pragma: no cover - fixed by this signature's contract
-            raise RuntimeError("DSPyProgramProposalSignature requires an adapter")
-        return adapter.parse(cls, lm_out)
+        return {"new_program": parse_proposal(cls, lm_out).require()}

@@ -4,7 +4,11 @@
 import pytest
 
 from gepa.lm import LMOutput
-from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
+from gepa.strategies.instruction_proposal import (
+    InstructionProposalError,
+    InstructionProposalSignature,
+    parse_proposal,
+)
 
 
 class TestInstructionProposalSignature:
@@ -104,16 +108,23 @@ End text
             LMOutput("```text\nThe instruction was cut off", finish_reason="max_tokens"),
         ],
     )
-    def test_extractor_rejects_outputs_without_a_complete_nonempty_proposal(self, lm_output):
-        with pytest.raises(InstructionProposalError):
-            InstructionProposalSignature.output_extractor(lm_output)
+    def test_parser_returns_a_typed_miss_for_incomplete_proposals(self, lm_output):
+        result = parse_proposal(InstructionProposalSignature, lm_output)
+
+        assert result.text is None
+        assert result.error is not None
+
+    def test_legacy_extractor_raises_only_at_its_hard_fail_boundary(self):
+        with pytest.raises(InstructionProposalError, match="incomplete"):
+            InstructionProposalSignature.output_extractor("<think>unfinished")
 
     def test_reasoning_envelopes_are_extensible_without_changing_the_adapter(self):
         class ReasoningSignature(InstructionProposalSignature):
             reasoning_tags = ("think", "reasoning")
 
-        with pytest.raises(InstructionProposalError, match="unterminated reasoning"):
-            ReasoningSignature.output_extractor("<reasoning>unfinished")
+        rejected = parse_proposal(ReasoningSignature, "<reasoning>unfinished")
+        assert rejected.text is None
+        assert rejected.error is not None and "unterminated reasoning" in rejected.error
 
         assert InstructionProposalSignature.output_extractor("<reasoning>valid unfenced instruction") == {
             "new_instruction": "<reasoning>valid unfenced instruction"
