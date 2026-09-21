@@ -154,8 +154,7 @@ class BatchEvaluatorWrapper:
                     # Mirror the evaluator path's loudness instead of silently
                     # discarding user diagnostics.
                     raise TypeError(
-                        f"batch_evaluator result {idx}: side_info must be a dict or None, "
-                        f"got {type(si_raw).__name__}"
+                        f"batch_evaluator result {idx}: side_info must be a dict or None, got {type(si_raw).__name__}"
                     )
                 # Defensive copy (mirror of EvaluatorWrapper): the user may
                 # retain and mutate their dict; the cache, best-evals history,
@@ -414,6 +413,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
             num_metric_calls=num_metric_calls,
+            cacheable=[not side_info.get("_gepa_transient_failure", False) for side_info in side_infos],
         )
 
     def batch_evaluate(
@@ -734,6 +734,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
             num_metric_calls=len(batch),
+            cacheable=[not side_info.get("_gepa_transient_failure", False) for side_info in side_infos],
         )
 
     def _evaluate_parallel(self, batch, candidate):
