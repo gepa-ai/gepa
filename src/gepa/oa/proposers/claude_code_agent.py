@@ -78,14 +78,20 @@ from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args, preflight_claude_engine
 from gepa.strategies.instruction_proposal import InstructionProposalError, InstructionProposalSignature
 
+_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+
 
 def _extract_fenced(text: str) -> str:
-    """Pull the outermost complete fenced span out of ``text``.
+    """Pull the last complete fenced block out of ``text``.
 
-    Uses the same parsing policy as ordinary reflection. A file positively
-    identified as incomplete returns an empty string so its caller keeps the
-    parent component instead of adopting a partial agent response.
+    File bodies historically selected the last complete block, which lets an
+    agent include an earlier example or explanation without merging the two.
+    If there is no complete block, use the ordinary reflection policy for
+    legacy unfenced salvage and positive truncation detection.
     """
+    matches = _FENCE_RE.findall(text)
+    if matches:
+        return matches[-1].strip()
     try:
         return InstructionProposalSignature.output_extractor(text)["new_instruction"]
     except InstructionProposalError:

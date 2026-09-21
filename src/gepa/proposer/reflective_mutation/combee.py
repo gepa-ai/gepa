@@ -347,6 +347,7 @@ class ComBEEReflectionLM:
                 continue
 
             records = list(reflective_dataset[comp])
+            component_lm_calls = 0
             n = len(records)
             # k = ⌊√n⌋ — ComBEE paper §3.1 default.
             k = max(1, int(n**0.5))
@@ -366,15 +367,16 @@ class ComBEEReflectionLM:
                     self._completion_id(job_idx, component_idx, "fallback", 0),
                 )
                 total_lm_calls += 1
+                component_lm_calls += 1
                 if new_text is None:
                     proposal.metadata[f"combee:{comp}:rejected_outputs"] = [raw_output]
-                    proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                    proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
                     proposal.metadata[f"combee:{comp}:mode"] = "invalid_fallback_output"
                     continue
                 proposal.new_texts[comp] = new_text
                 proposal.prompts[comp] = lm_prompt
                 proposal.raw_lm_outputs[comp] = raw_output
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
                 proposal.metadata[f"combee:{comp}:mode"] = "fallback_single_call"
                 continue
 
@@ -406,6 +408,7 @@ class ComBEEReflectionLM:
                     self._completion_id(job_idx, component_idx, "map", i),
                 )
                 total_lm_calls += 1
+                component_lm_calls += 1
                 if new_text is None:
                     proposal.metadata.setdefault(f"combee:{comp}:rejected_outputs", []).append(raw_output)
                     continue
@@ -419,7 +422,7 @@ class ComBEEReflectionLM:
 
             if not group_proposals:
                 self._log(f"ComBEE: component '{comp}' produced no group proposals. Skipping.")
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = total_lm_calls
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
                 proposal.metadata[f"combee:{comp}:mode"] = "no_group_proposals"
                 continue
 
@@ -432,7 +435,7 @@ class ComBEEReflectionLM:
                 proposal.new_texts[comp] = group_proposals[0]
                 proposal.prompts[comp] = level1_prompts[0]
                 proposal.raw_lm_outputs[comp] = level1_outputs[0]
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
                 proposal.metadata[f"combee:{comp}:mode"] = "single_group"
                 continue
 
@@ -447,15 +450,16 @@ class ComBEEReflectionLM:
                 self._completion_id(job_idx, component_idx, "reduce", 0),
             )
             total_lm_calls += 1
+            component_lm_calls += 1
             if final_text is None:
                 proposal.metadata.setdefault(f"combee:{comp}:rejected_outputs", []).append(agg_output)
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = len(group_proposals) + 1
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
                 proposal.metadata[f"combee:{comp}:mode"] = "invalid_reduce_output"
                 continue
             proposal.new_texts[comp] = final_text
             proposal.prompts[comp] = agg_prompt
             proposal.raw_lm_outputs[comp] = agg_output
-            proposal.metadata[f"combee:{comp}:num_lm_calls"] = len(group_proposals) + 1
+            proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
             proposal.metadata[f"combee:{comp}:mode"] = "map_reduce"
 
         proposal.metadata["combee:total_lm_calls"] = total_lm_calls
@@ -627,6 +631,7 @@ class ComBEEReflectionLM:
                     "level1_outputs": [],
                     "group_proposals": [],
                     "rejected_outputs": [],
+                    "num_lm_calls": 0,
                     "candidate_text": candidate[comp],
                 }
                 plans.append(plan)
@@ -669,6 +674,7 @@ class ComBEEReflectionLM:
         for (plan, prompt, _messages, _completion_id), raw in zip(wave1, wave1_outputs, strict=True):
             raw = raw.strip()
             job_call_totals[plan["job_idx"]] += 1
+            plan["num_lm_calls"] += 1
             new_instruction = self._extract_instruction(raw)
             if new_instruction is None:
                 plan["rejected_outputs"].append(raw)
@@ -699,6 +705,7 @@ class ComBEEReflectionLM:
             plan["reduce_prompt"] = prompt
             plan["reduce_output"] = raw
             job_call_totals[plan["job_idx"]] += 1
+            plan["num_lm_calls"] += 1
             plan["final_text"] = self._extract_instruction(raw)
             if plan["final_text"] is None:
                 plan["rejected_outputs"].append(raw)
@@ -712,13 +719,13 @@ class ComBEEReflectionLM:
                 proposal.metadata[f"combee:{comp}:rejected_outputs"] = plan["rejected_outputs"]
             if plan["mode"] == "fallback_single_call":
                 if not plan["group_proposals"]:
-                    proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                    proposal.metadata[f"combee:{comp}:num_lm_calls"] = plan["num_lm_calls"]
                     proposal.metadata[f"combee:{comp}:mode"] = "invalid_fallback_output"
                     continue
                 proposal.new_texts[comp] = plan["group_proposals"][0]
                 proposal.prompts[comp] = plan["level1_prompts"][0]
                 proposal.raw_lm_outputs[comp] = plan["level1_outputs"][0]
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = plan["num_lm_calls"]
                 proposal.metadata[f"combee:{comp}:mode"] = "fallback_single_call"
                 continue
             proposal.metadata[f"combee:{comp}:level1_prompts"] = plan["level1_prompts"]
@@ -727,7 +734,7 @@ class ComBEEReflectionLM:
             n_props = len(plan["group_proposals"])
             if n_props == 0:
                 self._log(f"ComBEE: component '{comp}' produced no group proposals. Skipping.")
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 0
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = plan["num_lm_calls"]
                 proposal.metadata[f"combee:{comp}:mode"] = "no_group_proposals"
                 continue
             if n_props == 1:
@@ -738,17 +745,17 @@ class ComBEEReflectionLM:
                 proposal.new_texts[comp] = plan["group_proposals"][0]
                 proposal.prompts[comp] = plan["level1_prompts"][0]
                 proposal.raw_lm_outputs[comp] = plan["level1_outputs"][0]
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = plan["num_lm_calls"]
                 proposal.metadata[f"combee:{comp}:mode"] = "single_group"
                 continue
             if plan.get("final_text") is None:
-                proposal.metadata[f"combee:{comp}:num_lm_calls"] = n_props + 1
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = plan["num_lm_calls"]
                 proposal.metadata[f"combee:{comp}:mode"] = "invalid_reduce_output"
                 continue
             proposal.new_texts[comp] = plan["final_text"]
             proposal.prompts[comp] = plan["reduce_prompt"]
             proposal.raw_lm_outputs[comp] = plan["reduce_output"]
-            proposal.metadata[f"combee:{comp}:num_lm_calls"] = n_props + 1
+            proposal.metadata[f"combee:{comp}:num_lm_calls"] = plan["num_lm_calls"]
             proposal.metadata[f"combee:{comp}:mode"] = "map_reduce"
 
         for job_idx, proposal in enumerate(proposals):

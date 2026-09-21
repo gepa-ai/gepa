@@ -1510,6 +1510,29 @@ def test_batched_map_discards_only_malformed_outputs():
     assert lm.batch_sizes == [3]
     assert proposal.new_texts == {"comp": "reduced"}
     assert proposal.metadata["combee:comp:rejected_outputs"] == ["<think>The first map ran out of tokens"]
+    assert proposal.metadata["combee:comp:num_lm_calls"] == 4
+
+
+def test_partial_map_rejects_count_attempts_not_only_survivors():
+    class MostlyMalformedBatchLM:
+        def batch_complete(self, messages_list):
+            assert len(messages_list) == 3
+            return [
+                "<think>The first map ran out of tokens",
+                "<think>The second map ran out of tokens",
+                "```\nonly survivor\n```",
+            ]
+
+        def __call__(self, prompt):
+            raise AssertionError("one surviving map should not trigger a reduce call")
+
+    combee = ComBEEReflectionLM(MostlyMalformedBatchLM(), rng=random.Random(0))
+
+    proposal, _ = combee.reflect({"comp": "seed"}, {"comp": RECORDS9}, ["comp"])
+
+    assert proposal.new_texts == {"comp": "only survivor"}
+    assert proposal.metadata["combee:comp:mode"] == "single_group"
+    assert proposal.metadata["combee:comp:num_lm_calls"] == 3
 
 
 def test_malformed_reduce_output_skips_the_component():
@@ -1534,3 +1557,4 @@ def test_malformed_reduce_output_skips_the_component():
     assert proposal.new_texts == {}
     assert proposal.metadata["combee:comp:mode"] == "invalid_reduce_output"
     assert proposal.metadata["combee:comp:rejected_outputs"] == ["<think>The reduce ran out of tokens"]
+    assert proposal.metadata["combee:comp:num_lm_calls"] == 4
