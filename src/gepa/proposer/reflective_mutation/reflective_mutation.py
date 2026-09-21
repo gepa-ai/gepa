@@ -688,8 +688,25 @@ class ReflectiveMutationProposer:
         for (_, (task, new_candidate, eval_curr, _lm_metadata)), child_eval in zip(
             valid_children, child_evals, strict=True
         ):
+            # Prefer the candidate the adapter actually evaluated (e.g. a
+            # refiner-produced replacement) over the pre-evaluation
+            # `new_candidate`, so the stored candidate and its recorded
+            # score refer to the same artifact.
+            # `evaluated_candidates` is per minibatch example within this
+            # child's EvaluationBatch — not indexed by the parallel-child ordinal.
+            evaluated_candidate = new_candidate
+            winners = child_eval.evaluated_candidates
+            if winners is not None:
+                if len(winners) != len(child_eval.scores):
+                    self.logger.log(
+                        "evaluated_candidates length does not match scores; falling back to pre-refinement candidate."
+                    )
+                elif winners and all(c == winners[0] for c in winners):
+                    evaluated_candidate = winners[0]
+                # Per-example winners disagree: keep pre-refinement `new_candidate`
+                # rather than silently picking winners[0] with mismatched scores.
             proposal = CandidateProposal(
-                candidate=new_candidate,
+                candidate=evaluated_candidate,
                 parent_program_ids=[task.parent_idx],
                 subsample_indices=task.minibatch_ids,
                 subsample_scores_before=eval_curr.scores,
