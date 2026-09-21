@@ -474,3 +474,30 @@ def test_config_validation():
     with pytest.raises(ValueError):
         AsyncEngineConfig(validate_prefix_fraction=1.5)
     assert AsyncEngineConfig.sequential().max_pipeline_items == 1
+
+
+def test_budget_tail_does_not_strand_accepted_children(tmp_path):
+    """Near the end of the budget the engine must stop sampling orders it cannot validate."""
+    run_dir = str(tmp_path / "run")
+    result = optimize(
+        seed_candidate=dict(SEED),
+        trainset=TRAIN,
+        valset=VAL,
+        adapter=TokenAdapter(eval_sleep=0.002),
+        custom_candidate_proposer=_token_proposer,
+        max_metric_calls=400,
+        run_dir=run_dir,
+        logger=_silent_logger(),
+        async_config=_wide("full", 0),
+    )
+    events = [json.loads(line) for line in open(os.path.join(run_dir, "async_events.jsonl"))]
+    finishes = [e for e in events if e["kind"] == "finish"]
+    stranded = [e for e in finishes if e["outcome"] == "budget" and e.get("at") == "validate"]
+    budget_drops = [e for e in finishes if e["outcome"] == "budget"]
+    assert result.total_metric_calls <= 400
+    assert len(stranded) <= 1, f"{len(stranded)} accepted children were dropped for lack of validation budget"
+    assert len(budget_drops) <= 0.15 * len(finishes), (
+        f"{len(budget_drops)} of {len(finishes)} orders hit the budget wall"
+    )
+    # The budget should still be nearly used up, not abandoned early.
+    assert result.total_metric_calls >= 400 - (len(VAL) + 6)

@@ -203,6 +203,10 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self._stop_requested = False
         self._fatal: BaseException | None = None
         self._budget_blocked = False
+        self._gate_seen = 0
+        self._gate_accepted = 0
+        self._last_minibatch_size = 1
+        self._last_val_cost = len(self.valset)
         self._validating: set[tuple] = set()
         self._val_pass_streak: dict[Any, int] = {}
         self._max_metric_calls = self._find_max_metric_calls(stop_callback)
@@ -500,14 +504,33 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             free = (rollout.workers - rollout.inflight_tasks) * rollout.config.batch_size
             if len(rollout.buffer) >= max(free, 0):
                 break
-            left = self._budget_left(state)
-            if self.config.reserve_budget and left is not None and left <= 0:
+            if not self._can_fund_new_order(state):
                 break
             self._new_order(state)
             sampled += 1
             if self.stop_callback(state):
                 break
         return sampled
+
+    def _can_fund_new_order(self, state: GEPAState) -> bool:
+        """Whether the remaining budget can carry one more order through to a committed candidate.
+
+        An order costs a parent rollout and a child screen, and with probability ``a`` (the running
+        acceptance rate) a validation. Orders already in the pipeline that have not reached the gate
+        will claim validation budget at the same rate, so that expected claim is set aside first.
+        Without this, the tail of a run keeps sampling orders it can screen but never validate.
+        """
+        if not self.config.reserve_budget:
+            return True
+        left = self._budget_left(state)
+        if left is None:
+            return True
+        accept_rate = (self._gate_accepted + 1) / (self._gate_seen + 2)
+        unscreened = sum(
+            len(self.pools[s].buffer) + self.pools[s].inflight_items for s in ("rollout", "propose", "patch", "screen")
+        )
+        expected_claims = unscreened * accept_rate * self._last_val_cost
+        return left - expected_claims >= 2 * self._last_minibatch_size + self._last_val_cost
 
     def _new_order(self, state: GEPAState) -> None:
         state.i += 1
@@ -552,6 +575,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             f"Iteration {iteration}: Selected program {parent_idx} score: "
             f"{state.program_full_scores_val_set[parent_idx]} (pool version {self._version})"
         )
+        self._last_minibatch_size = len(mb_ids)
         self._orders += 1
         self._pipeline_items += 1
         self.pools["rollout"].put(item)
@@ -606,7 +630,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ):
                 self._finish(state, item, "discarded_stale", gap=item.gap(self._version), at=stage)
                 continue
-            if stage in _EVAL_STAGES:
+            if stage in _EVAL_STAGES and not item.reserved:
                 if stage == "validate":
                     n = len(self._validate_ids_now(item))
                 else:
@@ -941,6 +965,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             step=item.order_id,
         )
 
+        self._gate_seen += 1
         if not self.acceptance_criterion.should_accept(proposal, state):
             custom = getattr(self.acceptance_criterion, "reject_reason", None)
             reason = (
@@ -970,7 +995,15 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.logger.log(
             f"Iteration {item.order_id}: Accepted candidate (subsample score {old_sum} -> {new_sum}); running full eval."
         )
+        self._gate_accepted += 1
         self._plan_validation(state, item)
+        self._last_val_cost = len(item.val_todo)
+        # Claim the validation budget now, while the child waits its turn, so upstream stages
+        # cannot spend what this accepted child needs.
+        if not self._reserve(state, item, len(item.val_todo)):
+            self._validating.discard(key)
+            self._finish(state, item, "budget", at="validate")
+            return
         self.pools["validate"].put(item)
 
     def _plan_validation(self, state: GEPAState, item: WorkItem) -> None:
