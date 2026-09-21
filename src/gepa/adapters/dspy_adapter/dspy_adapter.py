@@ -19,7 +19,7 @@ from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionProposalSignature, run_proposal
 
 logger = logging.getLogger(__name__)
 
@@ -151,13 +151,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for name in instruction_components:
                     base_instruction = candidate[name]
                     dataset_with_feedback = reflective_dataset[name]
-                    results[name] = InstructionProposalSignature.run(
+                    parsed, _prompt, _raw_output = run_proposal(
+                        InstructionProposalSignature,
                         lm=(lambda x: self.stripped_lm_call(x)[0]),
                         input_dict={
                             "current_instruction_doc": base_instruction,
                             "dataset_with_feedback": dataset_with_feedback,
                         },
-                    )["new_instruction"]
+                    )
+                    if parsed.text is None:
+                        logger.warning("Skipping malformed reflection output for component %r: %s", name, parsed.error)
+                        continue
+                    results[name] = parsed.text
 
             # Handle ReAct modules
             if tool_components:
@@ -479,9 +484,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         raw_outputs = self.reflection_lm(x)
         outputs = []
         for raw_output in raw_outputs:
-            if type(raw_output) == str:
+            if isinstance(raw_output, str):
                 outputs.append(raw_output)
-            elif type(raw_output) == dict:
+            elif isinstance(raw_output, dict):
                 if "text" not in raw_output:
                     raise KeyError("Missing 'text' field in the output from the base LM!")
                 outputs.append(raw_output["text"])
