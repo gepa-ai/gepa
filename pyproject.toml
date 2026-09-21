@@ -19,6 +19,9 @@ requires-python = ">=3.10, <3.15"
 
 dependencies = []
 
+[project.scripts]
+gepa-rpc = "gepa.rpc.cli:main"
+
 [project.optional-dependencies]
 full = [
     # Common dependencies (all Python versions)
@@ -87,6 +90,18 @@ langchain = [
     "tqdm>=4.66",
 ]
 
+rpc = [
+    "grpcio>=1.80.0",
+    "grpcio-tools>=1.80.0",
+    # reflection_lm goes through litellm; see the litellm cap comment in the
+    # `full` extra above for why it's bounded at <1.92.
+    "litellm>=1.83.0,<1.92",
+    # litellm's completion_with_retries lazily imports tenacity but never
+    # declares it as a dependency; without it, reflection LM retries silently
+    # no-op instead of retrying.
+    "tenacity>=8.0.0",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/gepa-ai/gepa"
 "Bug Tracker" = "https://github.com/gepa-ai/gepa/issues"
@@ -102,6 +117,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 include = ["src/**/*.py"]
+exclude = ["src/gepa/rpc/generated/**"]  # protoc output, not hand-maintained
 line-length = 120
 indent-width = 4
 target-version = "py310"
@@ -156,6 +172,10 @@ ban-relative-imports = "all"
     "S101",    # Allow assert statements in tests
     "TID252",  # Allow relative imports in tests
     "ARG001",  # Allow unused arguments in tests (like pytest fixtures)
+]
+"src/gepa/rpc/servicer.py" = [
+    "N802",  # RunOptimization/RunOptimizationOmni/GetStatus must match the .proto service's RPC names
+    "C901",  # threading setup for each RPC handler is inherently a bit long
 ]
 "__init__.py" = ["F401"]  # Init files can be empty
 "src/gepa/gskill/**/*.py" = ["E402"]  # gskill suppresses logging before imports
