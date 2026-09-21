@@ -501,3 +501,43 @@ def test_budget_tail_does_not_strand_accepted_children(tmp_path):
     )
     # The budget should still be nearly used up, not abandoned early.
     assert result.total_metric_calls >= 400 - (len(VAL) + 6)
+
+
+def test_orders_per_version_cap_restores_lineage_depth():
+    """Without a cap a fast proposer samples most orders from the seed; the cap forces generations."""
+
+    def depths(result):
+        d = [0] * len(result.parents)
+        for i, ps in enumerate(result.parents):
+            ps = [p for p in ps if p is not None]
+            d[i] = 0 if not ps else 1 + max(d[p] for p in ps)
+        return d
+
+    def run(cap):
+        config = _wide("full", 0)
+        config.max_orders_per_version = cap
+        config.max_pipeline_items = 64
+        # Validation is slow relative to proposing, as on a real task with a large validation set.
+        adapter = TokenAdapter()
+        original = adapter.evaluate
+
+        def slow_validation(batch, candidate, capture_traces=False):
+            if len(batch) > 3:
+                time.sleep(0.15)
+            return original(batch, candidate, capture_traces)
+
+        adapter.evaluate = slow_validation  # type: ignore[method-assign]
+        return optimize(
+            seed_candidate=dict(SEED),
+            trainset=TRAIN,
+            valset=VAL,
+            adapter=adapter,
+            custom_candidate_proposer=_token_proposer,
+            max_metric_calls=500,
+            logger=_silent_logger(),
+            async_config=config,
+        )
+
+    uncapped, capped = run(None), run(2)
+    assert max(depths(capped)) > max(depths(uncapped))
+    assert max(depths(capped)) >= 3

@@ -110,6 +110,14 @@ class AsyncEngineConfig:
     #: twice the total worker count.
     max_pipeline_items: int | None = None
 
+    #: Upper bound on work orders sampled from one pool version. Commit-based staleness cannot see
+    #: orders that were all drawn before the first commit landed: when validation is much slower
+    #: than proposing, an uncapped pipeline samples most of a run's orders from the seed and the
+    #: search collapses into one generation. With a cap of ``k`` the engine draws at most ``k``
+    #: orders, then waits for the pool to move (or for the pipeline to drain) before drawing more.
+    #: This is the asynchronous counterpart of a synchronous step's width. ``None`` means no cap.
+    max_orders_per_version: int | None = None
+
     staleness_policy: StalenessPolicy = "guarded"
     max_staleness: int = 4
 
@@ -153,6 +161,8 @@ class AsyncEngineConfig:
             self.max_pipeline_items = 2 * total
         if self.max_pipeline_items < 1:
             raise ValueError("max_pipeline_items must be >= 1")
+        if self.max_orders_per_version is not None and self.max_orders_per_version < 1:
+            raise ValueError("max_orders_per_version must be >= 1")
 
     def stage(self, name: str) -> StageConfig:
         return getattr(self, name)

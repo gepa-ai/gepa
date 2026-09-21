@@ -203,6 +203,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self._stop_requested = False
         self._fatal: BaseException | None = None
         self._budget_blocked = False
+        self._orders_this_version = 0
         self._gate_seen = 0
         self._gate_accepted = 0
         self._last_minibatch_size = 1
@@ -506,6 +507,11 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 break
             if not self._can_fund_new_order(state):
                 break
+            cap = self.config.max_orders_per_version
+            if cap is not None and self._orders_this_version >= cap:
+                if self._pipeline_items > 0:
+                    break  # wait for this generation to move the pool
+                self._orders_this_version = 0  # the generation produced no commit; start another
             self._new_order(state)
             sampled += 1
             if self.stop_callback(state):
@@ -576,6 +582,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             f"{state.program_full_scores_val_set[parent_idx]} (pool version {self._version})"
         )
         self._last_minibatch_size = len(mb_ids)
+        self._orders_this_version += 1
         self._orders += 1
         self._pipeline_items += 1
         self.pools["rollout"].put(item)
@@ -1128,6 +1135,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
         gap = item.gap(self._version)
         self._version += 1
+        self._orders_this_version = 0
         self._commits += 1
         self.events.gaps_at_commit.append(gap)
         after = {p for front in state.get_pareto_front_mapping().values() for p in front}
