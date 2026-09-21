@@ -10,6 +10,7 @@ docs_dir: "docs/"
 
 hooks:
     - hooks/scholarly_pdf.py
+    - hooks/blog_sections.py
 
 watch:
     - docs/blog/posts
