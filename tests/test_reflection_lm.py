@@ -329,6 +329,31 @@ def test_nonempty_new_texts_still_produces_a_proposal():
     assert adapter.batch_evaluate.call_count == 2  # parent stage + child stage
 
 
+def test_reflective_dataset_enricher_runs_after_adapter_and_before_reflection():
+    seen = {}
+
+    def enrich(*, candidate, eval_batch, components_to_update, reflective_dataset):
+        seen["candidate"] = candidate
+        seen["trajectories"] = eval_batch.trajectories
+        seen["components"] = components_to_update
+        return {"c": [{**reflective_dataset["c"][0], "failure_modes": [{"name": "Dropped_Context"}]}]}
+
+    class RecordingStrategy:
+        def reflect(self, candidate, reflective_dataset, components_to_update):
+            seen["reflection_dataset"] = reflective_dataset
+            return ReflectionProposal(new_texts={"c": "improved"}), self
+
+    proposer, _adapter = _make_propose_harness(RecordingStrategy())
+    proposer.reflective_dataset_enricher = enrich
+    proposals = proposer.propose(_make_state())
+
+    assert len(proposals) == 1
+    assert seen["candidate"] == {"c": "seed"}
+    assert seen["trajectories"] == [{"step": 1}]
+    assert seen["components"] == ["c"]
+    assert seen["reflection_dataset"]["c"][0]["failure_modes"] == [{"name": "Dropped_Context"}]
+
+
 # ---------------------------------------------------------------------------
 # H2: optimize_anything exposes reflection_strategy via ReflectionConfig
 # ---------------------------------------------------------------------------
