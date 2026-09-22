@@ -87,6 +87,12 @@ langchain = [
     "tqdm>=4.66",
 ]
 
+opik = [
+    "opik>=1.0",
+    "litellm>=1.64.0; python_version < '3.14'",
+    "litellm>=1.81.0; python_version >= '3.14'",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/gepa-ai/gepa"
 "Bug Tracker" = "https://github.com/gepa-ai/gepa/issues"
