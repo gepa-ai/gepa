@@ -110,6 +110,11 @@ class AsyncEngineConfig:
     #: twice the total worker count.
     max_pipeline_items: int | None = None
 
+    #: Order in which accepted children leave the validation buffer. ``fifo`` is arrival order.
+    #: ``score`` validates the child with the highest minibatch score first; ``improvement`` the one
+    #: with the largest gain over its parent. Ties fall back to arrival order, so nothing starves.
+    validate_priority: Literal["fifo", "score", "improvement"] = "fifo"
+
     #: Upper bound on work orders sampled from one pool version. Commit-based staleness cannot see
     #: orders that were all drawn before the first commit landed: when validation is much slower
     #: than proposing, an uncapped pipeline samples most of a run's orders from the seed and the
@@ -161,6 +166,8 @@ class AsyncEngineConfig:
             self.max_pipeline_items = 2 * total
         if self.max_pipeline_items < 1:
             raise ValueError("max_pipeline_items must be >= 1")
+        if self.validate_priority not in ("fifo", "score", "improvement"):
+            raise ValueError(f"unknown validate_priority {self.validate_priority!r}")
         if self.max_orders_per_version is not None and self.max_orders_per_version < 1:
             raise ValueError("max_orders_per_version must be >= 1")
 

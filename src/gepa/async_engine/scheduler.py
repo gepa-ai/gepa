@@ -34,8 +34,17 @@ class Completion:
 class StagePool:
     """One stage: a bounded input buffer and a pool of workers with a movable concurrency cap."""
 
-    def __init__(self, name: str, resource: str, config: StageConfig, completions: queue.Queue[Completion]):
+    def __init__(
+        self,
+        name: str,
+        resource: str,
+        config: StageConfig,
+        completions: queue.Queue[Completion],
+        priority: Callable[[WorkItem], float] | None = None,
+    ):
+        """``priority`` ranks buffered items when a batch is taken: higher first, arrival order on ties."""
         self.name = name
+        self.priority = priority
         self.resource = resource
         self.config = config
         self.workers = config.workers
@@ -60,7 +69,13 @@ class StagePool:
 
     def take_batch(self) -> list[WorkItem]:
         n = min(self.config.batch_size, len(self.buffer))
-        return [self.buffer.popleft() for _ in range(n)]
+        priority = self.priority
+        if priority is None or n == len(self.buffer) == 1:
+            return [self.buffer.popleft() for _ in range(n)]
+        ranked = sorted(self.buffer, key=lambda it: (-priority(it), it.enqueued_at))
+        chosen = ranked[:n]
+        self.buffer = deque(it for it in self.buffer if not any(it is c for c in chosen))
+        return chosen
 
     # -- workers --------------------------------------------------------
 

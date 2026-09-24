@@ -224,7 +224,10 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state = self._initialize()
         self._version = len(state.program_candidates) - 1
         for name in ALL_STAGES:
-            self.pools[name] = StagePool(name, STAGE_RESOURCE[name], self.config.stage(name), self._completions)
+            priority = self._validate_priority_fn() if name == "validate" else None
+            self.pools[name] = StagePool(
+                name, STAGE_RESOURCE[name], self.config.stage(name), self._completions, priority=priority
+            )
             self.events.stage(name)
         controller = (
             WorkerController(self.pools, self.config.adjust_interval_seconds) if self.config.adaptive_workers else None
@@ -297,6 +300,21 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         }
         self.experiment_tracker.log_summary(summary)
         return state
+
+    def _validate_priority_fn(self):
+        """Ranking for the validation buffer; ``None`` keeps arrival order."""
+        mode = self.config.validate_priority
+        if mode == "fifo":
+            return None
+
+        def score(item: WorkItem) -> float:
+            after = sum(item.child_eval.scores) if item.child_eval is not None else float("-inf")
+            if mode == "score":
+                return after
+            before = sum(item.parent_eval.scores) if item.parent_eval is not None else 0.0
+            return after - before
+
+        return score
 
     # ------------------------------------------------------------------
     # initialization (seed evaluation, state, resume)

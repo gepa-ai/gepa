@@ -541,3 +541,33 @@ def test_orders_per_version_cap_restores_lineage_depth():
     uncapped, capped = run(None), run(2)
     assert max(depths(capped)) > max(depths(uncapped))
     assert max(depths(capped)) >= 3
+
+
+def test_validate_priority_orders_by_minibatch_score():
+    """With a priority mode, a queued child with the higher minibatch score is validated first."""
+    import queue
+
+    from gepa.async_engine.items import WorkItem
+    from gepa.core.adapter import EvaluationBatch
+
+    def item(order, before, after):
+        it = WorkItem(order, f"id{order}", 0, 0, {}, [], [], {}, created_at=0.0)
+        it.parent_eval = EvaluationBatch(outputs=[], scores=before)
+        it.child_eval = EvaluationBatch(outputs=[], scores=after)
+        return it
+
+    for mode, expected in (("fifo", [1, 2, 3]), ("score", [3, 2, 1]), ("improvement", [2, 3, 1])):
+        cfg = AsyncEngineConfig(validate_priority=mode)  # type: ignore[arg-type]
+        # Reuse the engine's ranking without constructing an engine.
+        from gepa.async_engine.engine import AsyncStageEngine
+
+        fn = AsyncStageEngine._validate_priority_fn(type("E", (), {"config": cfg})())
+        pool = StagePool("validate", "evaluator", StageConfig(workers=1, batch_size=1), queue.Queue(), priority=fn)
+        # order 1: score 1.0, gain 0.5; order 2: score 2.0, gain 2.0; order 3: score 3.0, gain 1.0
+        for it in (item(1, [0.5], [1.0]), item(2, [0.0], [2.0]), item(3, [2.0], [3.0])):
+            pool.put(it)
+        got = [pool.take_batch()[0].order_id for _ in range(3)]
+        assert got == expected, (mode, got)
+        pool.shutdown()
+    with pytest.raises(ValueError):
+        AsyncEngineConfig(validate_priority="random")  # type: ignore[arg-type]
