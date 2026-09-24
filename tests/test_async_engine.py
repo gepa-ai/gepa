@@ -573,3 +573,67 @@ def test_validate_priority_orders_by_minibatch_score():
         pool.shutdown()
     with pytest.raises(ValueError):
         AsyncEngineConfig(validate_priority="random")  # type: ignore[arg-type]
+
+
+def test_stage_selection_layers_rank_and_cap():
+    """Each stage's selector ranks its buffer; the rollout cap re-samples an over-used parent."""
+    import queue
+    import types
+
+    from gepa.async_engine.engine import AsyncStageEngine
+    from gepa.async_engine.items import WorkItem
+    from gepa.core.adapter import EvaluationBatch
+
+    state = types.SimpleNamespace(program_full_scores_val_set=[0.5, 0.9, 0.7])
+
+    def item(order, parent, parent_scores):
+        it = WorkItem(order, f"id{order}", 0, parent, {}, [], [], {}, created_at=0.0)
+        it.parent_eval = EvaluationBatch(outputs=[], scores=parent_scores)
+        return it
+
+    items = [item(1, 0, [1.0, 1.0, 0.0]), item(2, 1, [0.0, 0.0, 0.0]), item(3, 2, [1.0, 0.0, 0.0])]
+
+    def order_with(stage, **cfg):
+        engine = types.SimpleNamespace(config=AsyncEngineConfig(**cfg))
+        fn = AsyncStageEngine._stage_priority_fn(engine, stage, state)  # type: ignore[arg-type]
+        pool = StagePool(stage, "r", StageConfig(workers=1, batch_size=1), queue.Queue(), priority=fn)
+        for it in items:
+            pool.put(it)
+        got = [pool.take_batch()[0].order_id for _ in range(3)]
+        pool.shutdown()
+        return got
+
+    assert order_with("propose") == [1, 2, 3]
+    assert order_with("propose", propose_priority="headroom") == [2, 3, 1]
+    assert order_with("propose", propose_priority="parent_score") == [2, 3, 1]
+    assert order_with("screen", screen_priority="parent_score") == [2, 3, 1]
+    with pytest.raises(ValueError):
+        AsyncEngineConfig(propose_priority="luck")  # type: ignore[arg-type]
+
+    # Rollout cap: with one dominant parent, the cap spreads orders across parents.
+    class AlwaysZeroThenOthers:
+        def __init__(self):
+            self.calls = 0
+
+        def select_candidate_idx(self, state):
+            self.calls += 1
+            n = len(state.program_candidates)
+            return 0 if self.calls % 3 != 0 or n < 2 else (self.calls // 3) % (n - 1) + 1
+
+    for cap, expect_spread in ((None, False), (1, True)):
+        config = _wide("full", 0)
+        config.max_inflight_per_parent = cap
+        result = optimize(
+            seed_candidate=dict(SEED),
+            trainset=TRAIN,
+            valset=VAL,
+            adapter=TokenAdapter(eval_sleep=0.01),
+            custom_candidate_proposer=_token_proposer,
+            candidate_selection_strategy=AlwaysZeroThenOthers(),  # type: ignore[arg-type]
+            max_metric_calls=300,
+            logger=_silent_logger(),
+            async_config=config,
+        )
+        seed_children = sum(1 for ps in result.parents[1:] if ps and ps[0] == 0)
+        share = seed_children / max(len(result.parents) - 1, 1)
+        assert (share < 0.9) == expect_spread or cap is None, (cap, share)

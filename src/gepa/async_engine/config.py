@@ -110,6 +110,18 @@ class AsyncEngineConfig:
     #: twice the total worker count.
     max_pipeline_items: int | None = None
 
+    #: Selection layers, one per stage. Each buffer can pick what its resource works on next instead of
+    #: taking items in arrival order. ``fifo`` everywhere reproduces the plain pipeline.
+    #:
+    #: rollout: the parent is sampled from the live frontier when a rollout worker is free. With
+    #: ``max_inflight_per_parent`` set, a parent that already has that many orders in the pipeline is
+    #: re-sampled (up to a few tries), so one parent cannot fill a whole generation.
+    max_inflight_per_parent: int | None = None
+    #: propose: ``headroom`` reflects first on the parent with the lowest minibatch score (most failures
+    #: to learn from); ``parent_score`` on the child of the best-validated parent.
+    propose_priority: Literal["fifo", "headroom", "parent_score"] = "fifo"
+    #: screen: ``parent_score`` screens children of the best-validated parents first.
+    screen_priority: Literal["fifo", "parent_score"] = "fifo"
     #: Order in which accepted children leave the validation buffer. ``fifo`` is arrival order.
     #: ``score`` validates the child with the highest minibatch score first; ``improvement`` the one
     #: with the largest gain over its parent. Ties fall back to arrival order, so nothing starves.
@@ -168,6 +180,12 @@ class AsyncEngineConfig:
             raise ValueError("max_pipeline_items must be >= 1")
         if self.validate_priority not in ("fifo", "score", "improvement"):
             raise ValueError(f"unknown validate_priority {self.validate_priority!r}")
+        if self.propose_priority not in ("fifo", "headroom", "parent_score"):
+            raise ValueError(f"unknown propose_priority {self.propose_priority!r}")
+        if self.screen_priority not in ("fifo", "parent_score"):
+            raise ValueError(f"unknown screen_priority {self.screen_priority!r}")
+        if self.max_inflight_per_parent is not None and self.max_inflight_per_parent < 1:
+            raise ValueError("max_inflight_per_parent must be >= 1")
         if self.max_orders_per_version is not None and self.max_orders_per_version < 1:
             raise ValueError("max_orders_per_version must be >= 1")
 

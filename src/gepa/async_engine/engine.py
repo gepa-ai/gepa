@@ -204,6 +204,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self._fatal: BaseException | None = None
         self._budget_blocked = False
         self._orders_this_version = 0
+        self._inflight_by_parent: dict[int, int] = {}
         self._gate_seen = 0
         self._gate_accepted = 0
         self._last_minibatch_size = 1
@@ -224,7 +225,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state = self._initialize()
         self._version = len(state.program_candidates) - 1
         for name in ALL_STAGES:
-            priority = self._validate_priority_fn() if name == "validate" else None
+            priority = self._stage_priority_fn(name, state)
             self.pools[name] = StagePool(
                 name, STAGE_RESOURCE[name], self.config.stage(name), self._completions, priority=priority
             )
@@ -300,6 +301,19 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         }
         self.experiment_tracker.log_summary(summary)
         return state
+
+    def _stage_priority_fn(self, stage: str, state: GEPAState):
+        """The selection layer of ``stage``: ranks buffered items, higher first. ``None`` keeps arrival order."""
+        cfg = self.config
+        if stage == "validate":
+            return self._validate_priority_fn()
+        if stage == "propose" and cfg.propose_priority != "fifo":
+            if cfg.propose_priority == "headroom":
+                return lambda it: -(sum(it.parent_eval.scores) if it.parent_eval is not None else 0.0)
+            return lambda it: state.program_full_scores_val_set[it.parent_idx]
+        if stage == "screen" and cfg.screen_priority == "parent_score":
+            return lambda it: state.program_full_scores_val_set[it.parent_idx]
+        return None
 
     def _validate_priority_fn(self):
         """Ranking for the validation buffer; ``None`` keeps arrival order."""
@@ -567,6 +581,13 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             IterationStartEvent(iteration=iteration, state=state, trainset_loader=self.trainset),
         )
         parent_idx = self.candidate_selector.select_candidate_idx(state)
+        cap = self.config.max_inflight_per_parent
+        if cap is not None:
+            for _ in range(8):
+                if self._inflight_by_parent.get(parent_idx, 0) < cap:
+                    break
+                parent_idx = self.candidate_selector.select_candidate_idx(state)
+        self._inflight_by_parent[parent_idx] = self._inflight_by_parent.get(parent_idx, 0) + 1
         mb_ids = list(self.batch_sampler.next_minibatch_ids(self.trainset, state))
         item = WorkItem(
             order_id=iteration,
@@ -1235,6 +1256,12 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # ------------------------------------------------------------------
 
     def _finish(self, state: GEPAState, item: WorkItem, outcome: str, **fields: Any) -> None:
+        origin = item.trace.get("selected_program_candidate", item.parent_idx)
+        left = self._inflight_by_parent.get(origin, 0) - 1
+        if left > 0:
+            self._inflight_by_parent[origin] = left
+        else:
+            self._inflight_by_parent.pop(origin, None)
         if item.reserved:
             self._reserved -= item.reserved
             item.reserved = 0
