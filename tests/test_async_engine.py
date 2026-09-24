@@ -610,30 +610,26 @@ def test_stage_selection_layers_rank_and_cap():
     with pytest.raises(ValueError):
         AsyncEngineConfig(propose_priority="luck")  # type: ignore[arg-type]
 
-    # Rollout cap: with one dominant parent, the cap spreads orders across parents.
-    class AlwaysZeroThenOthers:
-        def __init__(self):
-            self.calls = 0
+    # Rollout cap: the selector keeps returning parent 0; with a cap the engine re-draws until a
+    # parent with room comes up, and gives up after bounded retries when none does.
+    class Cycle:
+        def __init__(self, seq):
+            self.seq, self.i = seq, 0
 
-        def select_candidate_idx(self, state):
-            self.calls += 1
-            n = len(state.program_candidates)
-            return 0 if self.calls % 3 != 0 or n < 2 else (self.calls // 3) % (n - 1) + 1
+        def select_candidate_idx(self, _state):
+            v = self.seq[self.i % len(self.seq)]
+            self.i += 1
+            return v
 
-    for cap, expect_spread in ((None, False), (1, True)):
-        config = _wide("full", 0)
-        config.max_inflight_per_parent = cap
-        result = optimize(
-            seed_candidate=dict(SEED),
-            trainset=TRAIN,
-            valset=VAL,
-            adapter=TokenAdapter(eval_sleep=0.01),
-            custom_candidate_proposer=_token_proposer,
-            candidate_selection_strategy=AlwaysZeroThenOthers(),  # type: ignore[arg-type]
-            max_metric_calls=300,
-            logger=_silent_logger(),
-            async_config=config,
+    def pick(cap, inflight, seq):
+        engine = types.SimpleNamespace(
+            config=AsyncEngineConfig(max_inflight_per_parent=cap),
+            candidate_selector=Cycle(seq),
+            _inflight_by_parent=dict(inflight),
         )
-        seed_children = sum(1 for ps in result.parents[1:] if ps and ps[0] == 0)
-        share = seed_children / max(len(result.parents) - 1, 1)
-        assert (share < 0.9) == expect_spread or cap is None, (cap, share)
+        return AsyncStageEngine._select_parent(engine, state)  # type: ignore[arg-type]
+
+    assert pick(None, {0: 5}, [0, 0, 1]) == 0  # no cap: first draw stands
+    assert pick(2, {0: 1}, [0, 0, 1]) == 0  # parent 0 has room
+    assert pick(2, {0: 2}, [0, 0, 1]) == 1  # parent 0 is full: re-drawn until parent 1
+    assert pick(1, {0: 1, 1: 1}, [0, 1]) in (0, 1)  # every parent full: bounded retries, then accept

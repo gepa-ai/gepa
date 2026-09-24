@@ -570,6 +570,18 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         expected_claims = unscreened * accept_rate * self._last_val_cost
         return left - expected_claims >= 2 * self._last_minibatch_size + self._last_val_cost
 
+    def _select_parent(self, state: GEPAState) -> int:
+        """The rollout stage's selection layer: the configured selector, re-drawn while the chosen
+        parent already has ``max_inflight_per_parent`` orders in the pipeline (bounded retries)."""
+        parent_idx = self.candidate_selector.select_candidate_idx(state)
+        cap = self.config.max_inflight_per_parent
+        if cap is not None:
+            for _ in range(8):
+                if self._inflight_by_parent.get(parent_idx, 0) < cap:
+                    break
+                parent_idx = self.candidate_selector.select_candidate_idx(state)
+        return parent_idx
+
     def _new_order(self, state: GEPAState) -> None:
         state.i += 1
         trace: dict[str, Any] = {"i": state.i, "iteration_id": new_iteration_id(), "engine": "async_stage"}
@@ -580,13 +592,7 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             "on_iteration_start",
             IterationStartEvent(iteration=iteration, state=state, trainset_loader=self.trainset),
         )
-        parent_idx = self.candidate_selector.select_candidate_idx(state)
-        cap = self.config.max_inflight_per_parent
-        if cap is not None:
-            for _ in range(8):
-                if self._inflight_by_parent.get(parent_idx, 0) < cap:
-                    break
-                parent_idx = self.candidate_selector.select_candidate_idx(state)
+        parent_idx = self._select_parent(state)
         self._inflight_by_parent[parent_idx] = self._inflight_by_parent.get(parent_idx, 0) + 1
         mb_ids = list(self.batch_sampler.next_minibatch_ids(self.trainset, state))
         item = WorkItem(
