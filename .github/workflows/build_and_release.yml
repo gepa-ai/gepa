@@ -15,7 +15,7 @@ jobs:
     outputs:
       version: ${{ steps.extract_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: extract_tag
         name: Extract tag name
         run: |
@@ -41,7 +41,7 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ssh-key: ${{ secrets.PUSH_KEY }}
       - name: Configure git
@@ -49,11 +49,11 @@ jobs:
           git config --global user.email "lakshyaaagrawal+gepabot@berkeley.edu"
           git config --global user.name "gepa-bot"
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Set up latest uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: latest
       - name: Create virtual environment
@@ -79,6 +79,8 @@ jobs:
           uv lock
       - name: Build a binary wheel
         run: uv run python -m build
+      - name: Validate built distributions
+        run: uv run python -m twine check --strict dist/*
       - name: List built distributions
         run: ls -la dist/
       - name: Show package metadata
@@ -92,10 +94,10 @@ jobs:
           WHEEL_FILE=$(ls dist/*.whl | head -1)
           uv pip install --python test_before_testpypi/bin/python "$WHEEL_FILE[dev]" pytest
           # Use the wheel environment without syncing the source checkout into it
-          VIRTUAL_ENV="$PWD/test_before_testpypi" uv run --active --no-sync pytest tests/
+          VIRTUAL_ENV="$PWD/test_before_testpypi" uv run --active --no-sync pytest -m "not llm_live and not extra" tests/
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -120,7 +122,7 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ssh-key: ${{ secrets.PUSH_KEY }}
           fetch-depth: 0
@@ -129,11 +131,11 @@ jobs:
           git config --global user.email "lakshyaaagrawal+gepabot@berkeley.edu"
           git config --global user.name "gepa-bot"
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Set up latest uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: latest
       - name: Create virtual environment
@@ -170,6 +172,8 @@ jobs:
           uv lock
       - name: Build a binary wheel
         run: uv run python -m build
+      - name: Validate built distributions
+        run: uv run python -m twine check --strict dist/*
       # Test the locally built wheel before publishing to pypi
       - name: Create test environment
         run: uv venv test_before_pypi
@@ -179,10 +183,10 @@ jobs:
           WHEEL_FILE=$(ls dist/*.whl | head -1)
           uv pip install --python test_before_pypi/bin/python "$WHEEL_FILE[dev]" pytest
           # Use the wheel environment without syncing the source checkout into it
-          VIRTUAL_ENV="$PWD/test_before_pypi" uv run --active --no-sync pytest tests/
+          VIRTUAL_ENV="$PWD/test_before_pypi" uv run --active --no-sync pytest -m "not llm_live and not extra" tests/
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (gepa)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: false
       
