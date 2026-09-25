@@ -633,3 +633,92 @@ def test_stage_selection_layers_rank_and_cap():
     assert pick(2, {0: 1}, [0, 0, 1]) == 0  # parent 0 has room
     assert pick(2, {0: 2}, [0, 0, 1]) == 1  # parent 0 is full: re-drawn until parent 1
     assert pick(1, {0: 1, 1: 1}, [0, 1]) in (0, 1)  # every parent full: bounded retries, then accept
+
+
+# ----------------------------------------------------------------------
+# multi-proposal reflection
+# ----------------------------------------------------------------------
+
+
+class MultiFakeReflectionLM(FakeReflectionLM):
+    """Answers a multi-proposal prompt with one alternative per distinct token the feedback asks for."""
+
+    def __call__(self, prompt) -> str:
+        text = prompt if isinstance(prompt, str) else prompt[-1]["content"]
+        m = re.search(r"produce (\d+) alternative", text)
+        if m is None:
+            return super().__call__(prompt)
+        with self._lock:
+            self.reflect_calls += 1
+        blocks = re.findall(r"```\n(.*?)\n```", text, flags=re.S)
+        current = blocks[0] if blocks else ""
+        wanted: list[str] = []
+        for t in re.findall(r"add token (k\d+)", text):
+            if t not in _tokens(current) and t not in wanted:
+                wanted.append(t)
+        wanted = wanted[: int(m.group(1))] or [""]
+        return "\n".join(
+            f"### Alternative {i + 1}\n```\n{(current + ' ' + t).strip()}\n```" for i, t in enumerate(wanted)
+        )
+
+
+def test_parse_proposal_variants():
+    from gepa.async_engine.stages import parse_proposal_variants, render_multi_proposal_prompt
+
+    raw = "### Alternative 1\n```python\ndef f():\n    return 1\n```\n\n### Alternative 2\n```\nx = 2\n```\n"
+    assert parse_proposal_variants(raw, 3) == ["def f():\n    return 1", "x = 2"]
+    # nested fences inside an alternative survive because sections split on headers first
+    raw = "### Alternative 1\n```\nuse ```code``` blocks\n```\n### Alternative 2\n```\nplain\n```"
+    assert parse_proposal_variants(raw, 2) == ["use ```code``` blocks", "plain"]
+    # no headers: consecutive fenced blocks; duplicates dropped; a single block is one variant
+    assert parse_proposal_variants("```\na\n```\n```\na\n```\n```\nb\n```", 4) == ["a", "b"]
+    assert parse_proposal_variants("here\n```\nonly\n```", 3) == ["only"]
+    assert parse_proposal_variants("bare text", 2) == ["bare text"]
+    assert "produce 3 alternative" in render_multi_proposal_prompt("p", 3)
+    msgs = render_multi_proposal_prompt([{"role": "user", "content": "p"}], 2)
+    assert isinstance(msgs, list) and "Alternative 2" in msgs[0]["content"]
+
+
+def _multi_run(m: int, policy: str, budget: int = 240):
+    lm = MultiFakeReflectionLM()
+    config = _wide("full", 0)
+    config.proposals_per_reflection = m
+    config.sibling_policy = policy
+    result = optimize(
+        seed_candidate=dict(SEED),
+        trainset=TRAIN,
+        valset=VAL,
+        adapter=TokenAdapter(),
+        reflection_lm=lm,
+        max_metric_calls=budget,
+        logger=_silent_logger(),
+        async_config=config,
+    )
+    return result, lm
+
+
+def test_multi_proposal_fans_out_each_reflection():
+    single, lm1 = _multi_run(1, "all")
+    multi, lm3 = _multi_run(3, "all")
+    s1, s3 = single.metadata["async"], multi.metadata["async"]
+    assert s1["proposals"] == s1["orders"]
+    assert s3["proposals"] > s3["orders"], s3
+    assert s3["proposals"] <= 3 * s3["orders"]
+    assert s3["proposals_per_reflection"] == 3
+    # the same budget buys the pool with fewer reflection calls per commit
+    assert lm3.reflect_calls / max(s3["commits"], 1) < lm1.reflect_calls / max(s1["commits"], 1)
+    assert multi.total_metric_calls <= 240
+    # siblings are real orders: distinct ids, all finished, callbacks balanced by the engine's own counters
+    assert sum(s3["outcomes"].values()) == s3["proposals"] + s3["outcomes"].get("skipped", 0) + s3["outcomes"].get(
+        "no_proposal", 0
+    ) + s3["outcomes"].get("error", 0)
+
+
+def test_sibling_policy_best_validates_one_sibling_per_order():
+    result, _ = _multi_run(3, "best")
+    stats = result.metadata["async"]
+    assert stats["outcomes"].get("sibling_dropped", 0) > 0, stats["outcomes"]
+    # at most one validation per reflected order
+    assert stats["outcomes"].get("accepted", 0) + stats["outcomes"].get("validation_rejected", 0) <= stats["orders"]
+    assert result.total_metric_calls <= 240
+    assert len(result.candidates) > 1

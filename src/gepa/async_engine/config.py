@@ -135,6 +135,18 @@ class AsyncEngineConfig:
     #: This is the asynchronous counterpart of a synchronous step's width. ``None`` means no cap.
     max_orders_per_version: int | None = None
 
+    #: Multi-proposal reflection. When greater than 1, one reflection call asks the reflection LM for
+    #: this many alternative revisions that differ from each other in a meaningful way, and the order
+    #: fans out into that many sibling candidates (same parent, minibatch and pool version), each
+    #: screened on its own. It multiplies proposals per reflection call on proposer-bound tasks. 1
+    #: reproduces one proposal per reflection. ``max_orders_per_version`` still counts orders
+    #: (reflection calls), so the proposals drawn per pool version become cap x this value.
+    proposals_per_reflection: int = 1
+    #: Which siblings of one order go on to validation once screened: ``all`` validates every sibling
+    #: that passes the screen; ``best`` validates only the accepted sibling with the highest minibatch
+    #: score and finishes the others as ``sibling_dropped``.
+    sibling_policy: Literal["all", "best"] = "all"
+
     staleness_policy: StalenessPolicy = "guarded"
     max_staleness: int = 4
 
@@ -188,6 +200,10 @@ class AsyncEngineConfig:
             raise ValueError("max_inflight_per_parent must be >= 1")
         if self.max_orders_per_version is not None and self.max_orders_per_version < 1:
             raise ValueError("max_orders_per_version must be >= 1")
+        if self.proposals_per_reflection < 1:
+            raise ValueError("proposals_per_reflection must be >= 1")
+        if self.sibling_policy not in ("all", "best"):
+            raise ValueError(f"unknown sibling_policy {self.sibling_policy!r}")
 
     def stage(self, name: str) -> StageConfig:
         return getattr(self, name)

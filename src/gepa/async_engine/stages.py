@@ -21,7 +21,8 @@ from gepa.async_engine.items import WorkItem
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter, ProposalFn, invoke_batch_evaluate
 from gepa.core.data_loader import DataLoader
 from gepa.proposer.reflective_mutation.base import LanguageModel
-from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM, StatelessReflectionLM
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 
 def metric_calls(batch: EvaluationBatch, fallback: int) -> int:
@@ -51,6 +52,77 @@ class ProposeResult:
     raw_lm_outputs: dict[str, str]
     metadata: dict[str, Any]
     error: BaseException | None = None
+    #: Alternative revisions from one multi-proposal reflection call; ``variants[0]`` is ``new_texts``.
+    variants: list[dict[str, str]] | None = None
+
+
+MULTI_PROPOSAL_INSTRUCTIONS = """\
+Instead of a single new version, produce {m} alternative new versions. The alternatives must differ from \
+each other in a meaningful way: each should pursue a distinct hypothesis about what to change (a different \
+failure pattern to fix, a different strategy, or a different trade-off), not a rewording of the same idea. \
+Every alternative must be complete and usable on its own, as it will be evaluated independently.
+
+Format the answer exactly as follows, one section per alternative:
+
+### Alternative 1
+```
+<complete text of alternative 1>
+```
+
+### Alternative 2
+```
+<complete text of alternative 2>
+```
+
+and so on up to Alternative {m}."""
+
+_ALTERNATIVE_HEADER = re.compile(r"^[ \t]*#{1,6}[ \t]*Alternative[ \t]*(\d+)\b.*$", re.IGNORECASE | re.MULTILINE)
+_FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+
+
+def render_multi_proposal_prompt(prompt: str | list[dict[str, Any]], m: int) -> str | list[dict[str, Any]]:
+    """Append the multi-proposal instructions to a rendered reflection prompt (text or chat messages)."""
+    suffix = MULTI_PROPOSAL_INSTRUCTIONS.format(m=m)
+    if isinstance(prompt, str):
+        return prompt.rstrip() + "\n\n" + suffix
+    messages = [dict(msg) for msg in prompt]
+    last = messages[-1]
+    content = last.get("content")
+    if isinstance(content, str):
+        last["content"] = content.rstrip() + "\n\n" + suffix
+    elif isinstance(content, list):
+        last["content"] = [*content, {"type": "text", "text": suffix}]
+    return messages
+
+
+def parse_proposal_variants(raw: str, m: int) -> list[str]:
+    """Extract up to ``m`` alternative texts from a multi-proposal reflection output.
+
+    Sections headed ``### Alternative k`` are split first and each section is parsed with the standard
+    single-proposal extractor (first fence to last fence), so code fences inside an alternative survive.
+    Without such headers, consecutive fenced blocks are taken. A reply with a single text yields one
+    variant. Empty and duplicate texts are dropped, order preserved.
+    """
+    sections: list[str] = []
+    heads = list(_ALTERNATIVE_HEADER.finditer(raw))
+    if heads:
+        for i, h in enumerate(heads):
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(raw)
+            sections.append(raw[h.end() : end])
+    else:
+        fenced = _FENCE.findall(raw)
+        if len(fenced) > 1:
+            sections = [f"```\n{b}\n```" for b in fenced]
+        else:
+            sections = [raw]
+    out: list[str] = []
+    for sec in sections:
+        text = InstructionProposalSignature.output_extractor(sec.strip())["new_instruction"].strip()
+        if text and text not in out:
+            out.append(text)
+        if len(out) >= m:
+            break
+    return out
 
 
 class Reflector:
@@ -67,10 +139,12 @@ class Reflector:
         adapter: GEPAAdapter,
         reflection_lm: ReflectionLM | None,
         custom_candidate_proposer: ProposalFn | None,
+        proposals_per_reflection: int = 1,
     ):
         self.adapter = adapter
         self._lm = reflection_lm
         self.custom = custom_candidate_proposer
+        self.proposals_per_reflection = max(1, proposals_per_reflection)
         self._lock = threading.Lock()
         self._custom_accepts_metadata = False
         if custom_candidate_proposer is not None:
@@ -105,6 +179,61 @@ class Reflector:
                 self._lm = next_lm
         return proposal.new_texts, dict(proposal.prompts), dict(proposal.raw_lm_outputs), dict(proposal.metadata)
 
+    def reflect_variants(
+        self,
+        candidate: dict[str, str],
+        dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+        components: list[str],
+        metadata: Mapping[str, Any],
+    ) -> tuple[list[dict[str, str]], dict[str, Any], dict[str, str], dict[str, Any]]:
+        """Multi-proposal reflection: ``proposals_per_reflection`` alternative revisions from one call.
+
+        With the stateless reflection LM, each selected component gets one call whose prompt asks for
+        ``m`` meaningfully different alternatives; variant ``k`` combines the ``k``-th alternative of
+        every component. Adapter- or user-supplied proposers do not take a prompt, so they are called
+        ``m`` times and identical outputs are collapsed.
+        """
+        m = self.proposals_per_reflection
+        if m == 1:
+            texts, prompts, raw, meta = self.reflect(candidate, dataset, components, metadata)
+            return [texts], prompts, raw, meta
+        with self._lock:
+            lm = self._lm
+        if (
+            self.adapter.propose_new_texts is not None
+            or self.custom is not None
+            or not isinstance(lm, StatelessReflectionLM)
+        ):
+            variants: list[dict[str, str]] = []
+            prompts0: dict[str, Any] = {}
+            raw0: dict[str, str] = {}
+            meta0: dict[str, Any] = {}
+            for _ in range(m):
+                texts, prompts, raw, meta = self.reflect(candidate, dataset, components, metadata)
+                if texts and texts not in variants:
+                    variants.append(dict(texts))
+                prompts0, raw0, meta0 = prompts0 or prompts, raw0 or raw, meta0 or meta
+            return variants, prompts0, raw0, meta0
+        per_component: dict[str, list[str]] = {}
+        prompts_out: dict[str, Any] = {}
+        raw_out: dict[str, str] = {}
+        for name in components:
+            if name not in dataset or not dataset.get(name):
+                continue
+            prompt, _messages = lm._render(candidate[name], dataset[name], lm._resolve_template(name))
+            prompt = render_multi_proposal_prompt(prompt, m)
+            raw = lm.lm(prompt)
+            per_component[name] = parse_proposal_variants(raw, m)
+            prompts_out[name] = prompt
+            raw_out[name] = raw
+        if not per_component:
+            return [], prompts_out, raw_out, {}
+        width = max(len(v) for v in per_component.values())
+        variants = []
+        for k in range(width):
+            variants.append({name: alts[min(k, len(alts) - 1)] for name, alts in per_component.items() if alts})
+        return variants, prompts_out, raw_out, {"variants_returned": {n: len(v) for n, v in per_component.items()}}
+
 
 def run_propose(
     adapter: GEPAAdapter,
@@ -118,6 +247,13 @@ def run_propose(
         assert item.parent_eval is not None and item.components is not None
         try:
             dataset = adapter.make_reflective_dataset(item.parent_candidate, item.parent_eval, item.components)
+            if reflector.proposals_per_reflection > 1:
+                variants, prompts, raw, meta = reflector.reflect_variants(
+                    item.parent_candidate, dataset, item.components, md
+                )
+                first = dict(variants[0]) if variants else {}
+                results.append(ProposeResult(dataset, first, prompts, raw, meta, variants=[dict(v) for v in variants]))
+                continue
             new_texts, prompts, raw, meta = reflector.reflect(item.parent_candidate, dataset, item.components, md)
             results.append(ProposeResult(dataset, dict(new_texts or {}), prompts, raw, meta))
         except Exception as e:

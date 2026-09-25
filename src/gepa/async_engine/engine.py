@@ -178,7 +178,12 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self._initial_evaluation_cache = evaluation_cache
         self.config = config or AsyncEngineConfig()
 
-        self.reflector = Reflector(adapter, reflection_lm, custom_candidate_proposer)
+        self.reflector = Reflector(
+            adapter,
+            reflection_lm,
+            custom_candidate_proposer,
+            proposals_per_reflection=self.config.proposals_per_reflection,
+        )
         self.raw_reflection_lm = raw_reflection_lm
         self.staleness_policy = self.config.staleness_policy
         if self.staleness_policy == "reflective" and raw_reflection_lm is None:
@@ -205,6 +210,8 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self._budget_blocked = False
         self._orders_this_version = 0
         self._inflight_by_parent: dict[int, int] = {}
+        self._proposals = 0
+        self._sibling_groups: dict[int, dict[str, Any]] = {}
         self._gate_seen = 0
         self._gate_accepted = 0
         self._last_minibatch_size = 1
@@ -272,6 +279,8 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             total_metric_calls=state.total_num_evals, commits=self._commits, orders=self._orders
         )
         self.stats["final_workers"] = {n: p.workers for n, p in self.pools.items()}
+        self.stats["proposals"] = self._proposals
+        self.stats["proposals_per_reflection"] = self.config.proposals_per_reflection
         self.events.emit("run_end", **{k: v for k, v in self.stats.items() if k != "stages"})
         self.events.close()
         if self.run_dir is not None:
@@ -860,19 +869,91 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 reflective_dataset=concrete,
             ),
         )
-        if not result.new_texts:
+        variants = [dict(v) for v in (result.variants if result.variants is not None else [result.new_texts]) if v]
+        # A variant that leaves every selected component unchanged, or repeats an earlier one, is no proposal.
+        unique: list[dict[str, str]] = []
+        for texts in variants:
+            if all(item.parent_candidate.get(n) == t for n, t in texts.items()):
+                continue
+            if texts not in unique:
+                unique.append(texts)
+        if not unique:
             self.logger.log(f"Iteration {iteration}: Reflection returned no text updates; skipping.")
             self._finish(state, item, "no_proposal")
             return
 
-        meta: dict[str, Any] = {"proposal_id": f"{iteration}-0"}
-        for comp in result.new_texts:
+        siblings: list[WorkItem] = [item]
+        for k in range(1, len(unique)):
+            siblings.append(self._spawn_sibling(state, item, k))
+        if len(siblings) > 1:
+            item.group = item.order_id
+            item.variant = 0
+            self._sibling_groups[item.order_id] = {"pending": len(siblings), "best": None}
+            self.events.emit("fanout", order=iteration, siblings=[s.order_id for s in siblings[1:]], n=len(siblings))
+        for k, (sib, texts) in enumerate(zip(siblings, unique, strict=True)):
+            self._proposals += 1
+            self._attach_proposal(state, sib, texts, result, proposal_id=f"{iteration}-{k}")
+            self._route_after_propose(state, sib)
+
+    def _spawn_sibling(self, state: GEPAState, item: WorkItem, k: int) -> WorkItem:
+        """A sibling work order for the ``k``-th alternative of a multi-proposal reflection.
+
+        It shares the parent, minibatch, rollout and pool version of ``item`` and gets its own order id,
+        trace and callbacks, so everything downstream treats it as an ordinary order.
+        """
+        state.i += 1
+        trace: dict[str, Any] = {
+            "i": state.i,
+            "iteration_id": new_iteration_id(),
+            "engine": "async_stage",
+            "selected_program_candidate": item.parent_idx,
+            "subsample_ids": list(item.minibatch_ids),
+            "pool_version": item.version,
+            "subsample_scores": list(item.trace.get("subsample_scores", [])),
+            "sibling_of": item.order_id,
+            "variant": k,
+        }
+        state.full_program_trace.append(trace)
+        order_id = state.i + 1
+        notify_callbacks(
+            self.callbacks,
+            "on_iteration_start",
+            IterationStartEvent(iteration=order_id, state=state, trainset_loader=self.trainset),
+        )
+        sib = WorkItem(
+            order_id=order_id,
+            iteration_id=trace["iteration_id"],
+            version=item.version,
+            parent_idx=item.parent_idx,
+            parent_candidate=item.parent_candidate,
+            minibatch_ids=list(item.minibatch_ids),
+            minibatch=item.minibatch,
+            trace=trace,
+            created_at=item.created_at,
+            parent_eval=item.parent_eval,
+            components=list(item.components or []),
+            reflective_dataset=item.reflective_dataset,
+            group=item.order_id,
+            variant=k,
+        )
+        sib.stage_seconds = dict(item.stage_seconds)
+        sib.wait_seconds = dict(item.wait_seconds)
+        self._inflight_by_parent[item.parent_idx] = self._inflight_by_parent.get(item.parent_idx, 0) + 1
+        self._pipeline_items += 1
+        return sib
+
+    def _attach_proposal(
+        self, state: GEPAState, item: WorkItem, texts: dict[str, str], result: ProposeResult, *, proposal_id: str
+    ) -> None:
+        iteration = item.order_id
+        meta: dict[str, Any] = {"proposal_id": proposal_id}
+        for comp in texts:
             meta[f"prompt:{comp}"] = result.prompts.get(comp, "")
             meta[f"raw_lm_output:{comp}"] = result.raw_lm_outputs.get(comp, "")
         for k, v in (result.metadata or {}).items():
             meta[f"reflection_meta:{k}" if k.startswith(("prompt:", "raw_lm_output:")) else k] = v
         item.lm_metadata = meta
-        item.new_texts = dict(result.new_texts)
+        item.new_texts = dict(texts)
         for name, text in item.new_texts.items():
             self.logger.log(f"Iteration {iteration}: Proposed new text for {name}: {text}")
         notify_callbacks(
@@ -893,11 +974,12 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             child[name] = text
         item.child_candidate = child
 
+    def _route_after_propose(self, state: GEPAState, item: WorkItem) -> None:
         gap = item.gap(self._version)
         if self.staleness_policy == "reflective" and gap > self.config.max_staleness:
             best_idx = self.val_evaluation_policy.get_best_program(state)
             if best_idx != item.parent_idx:
-                self.events.emit("route_patch", order=iteration, gap=gap, target=best_idx)
+                self.events.emit("route_patch", order=item.order_id, gap=gap, target=best_idx)
                 self.pools["patch"].put(item)
                 return
         self.pools["screen"].put(item)
@@ -1042,6 +1124,15 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.logger.log(f"Iteration {item.order_id}: Candidate already in the pool or being validated; skipping.")
             self._finish(state, item, "duplicate")
             return
+        if self.config.sibling_policy == "best" and item.group is not None:
+            # Hold the accepted sibling until every sibling of its order is screened; only the best goes on.
+            self._hold_sibling(state, item, new_sum)
+            return
+        self._send_to_validate(state, item, key, gap, old_sum, new_sum)
+
+    def _send_to_validate(
+        self, state: GEPAState, item: WorkItem, key: tuple, gap: int, old_sum: float, new_sum: float
+    ) -> None:
         self._validating.add(key)
         self.events.gaps_at_validate.append(gap)
         self.logger.log(
@@ -1057,6 +1148,51 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self._finish(state, item, "budget", at="validate")
             return
         self.pools["validate"].put(item)
+
+    # -- multi-proposal siblings ------------------------------------------
+
+    def _hold_sibling(self, state: GEPAState, item: WorkItem, score: float) -> None:
+        group = self._sibling_groups.get(item.group or -1)
+        if group is None:  # the group was already released (should not happen); validate as usual
+            self._release_candidate(state, item)
+            return
+        best = group["best"]
+        if best is None or score > best[0]:
+            if best is not None:
+                self._finish(state, best[1], "sibling_dropped", group=item.group)
+            group["best"] = (score, item)
+        else:
+            self._finish(state, item, "sibling_dropped", group=item.group)
+        self._group_settle(state, item)
+
+    def _group_settle(self, state: GEPAState, item: WorkItem) -> None:
+        """Count ``item`` as screened for its sibling group; release the group's best when all are in."""
+        if item.group is None or item.group_settled:
+            return
+        item.group_settled = True
+        group = self._sibling_groups.get(item.group)
+        if group is None:
+            return
+        group["pending"] -= 1
+        if group["pending"] > 0:
+            return
+        del self._sibling_groups[item.group]
+        best = group["best"]
+        if best is not None:
+            self._release_candidate(state, best[1])
+
+    def _release_candidate(self, state: GEPAState, item: WorkItem) -> None:
+        assert item.child_candidate is not None and item.proposal is not None
+        key = tuple(sorted(item.child_candidate.items()))
+        if item.child_candidate in state.program_candidates or key in self._validating:
+            self._finish(state, item, "duplicate")
+            return
+        gap = item.gap(self._version)
+        if self.staleness_policy == "guarded" and gap > self.config.max_staleness:
+            self._finish(state, item, "discarded_stale", gap=gap, at="validate")
+            return
+        before, after = item.proposal.subsample_scores_before, item.proposal.subsample_scores_after
+        self._send_to_validate(state, item, key, gap, sum(before or []), sum(after or []))
 
     def _plan_validation(self, state: GEPAState, item: WorkItem) -> None:
         assert item.child_candidate is not None
@@ -1262,6 +1398,8 @@ class AsyncStageEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # ------------------------------------------------------------------
 
     def _finish(self, state: GEPAState, item: WorkItem, outcome: str, **fields: Any) -> None:
+        if item.group is not None and not item.group_settled:
+            self._group_settle(state, item)
         origin = item.trace.get("selected_program_candidate", item.parent_idx)
         left = self._inflight_by_parent.get(origin, 0) - 1
         if left > 0:

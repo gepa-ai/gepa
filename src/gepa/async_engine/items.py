@@ -21,6 +21,7 @@ OUTCOMES = (
     "no_proposal",
     "duplicate",
     "discarded_stale",
+    "sibling_dropped",
     "validation_rejected",
     "budget",
     "cancelled",
@@ -72,6 +73,11 @@ class WorkItem:
     val_partial: dict[Any, tuple[Any, float, Any]] = field(default_factory=dict)
     valset_evaluation: ValsetEvaluation | None = None
     val_metric_calls: int = 0
+
+    # multi-proposal reflection: siblings share ``group`` (the order that was reflected on)
+    group: int | None = None
+    variant: int = 0
+    group_settled: bool = False
 
     # bookkeeping
     reserved: int = 0
