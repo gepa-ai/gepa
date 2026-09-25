@@ -99,6 +99,10 @@ gepa = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "llm_live: calls a live language model; skipped by default CI",
+    "extra: needs optional extra dependencies; skipped by default CI",
+]
 
 [tool.ruff]
 include = ["src/**/*.py"]
