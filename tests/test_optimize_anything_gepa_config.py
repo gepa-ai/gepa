@@ -125,6 +125,29 @@ def test_legacy_max_workers_none_falls_back_to_cpu_count():
     assert converted.max_concurrency == (os.cpu_count() or 32)
 
 
+def test_legacy_run_dir_also_holds_the_eval_output(tmp_path, monkeypatch):
+    """A legacy ``run_dir`` doubles as the eval server's ``output_dir``: the
+    eval records land next to ``gepa_state.bin`` and nothing is created under
+    the current directory (#448)."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    run_dir = tmp_path / "run"
+    monkeypatch.chdir(tmp_path)
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4, run_dir=str(run_dir)),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+        ),
+    )
+
+    assert not (tmp_path / "outputs").exists()
+    assert (run_dir / "gepa_state.bin").exists()
+    assert list((run_dir / "evals").glob("*.json"))
+
+
 def test_legacy_gepa_config_accepts_test_set():
     """With the single unified GEPAResult, ``test_set`` works on every path —
     including a legacy ``GEPAConfig`` — because the result now carries a
