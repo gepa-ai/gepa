@@ -283,6 +283,10 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
     ``max_workers`` maps to itself, and ``max_workers=None`` falls back to
     ``os.cpu_count() or 32`` (the same fallback as ``EngineConfig.max_workers``'s
     default factory).
+
+    ``EngineConfig.run_dir``, when set, is also the eval server's ``output_dir``,
+    so a legacy run writes its eval records there instead of creating
+    ``outputs/`` under the current directory.
     """
     from gepa.gepa_launcher import GEPAConfig
 
@@ -296,6 +300,7 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
         engine="gepa",
         max_evals=config.engine.max_metric_calls,
         max_concurrency=max_concurrency,
+        output_dir=config.engine.run_dir,
         engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
     )
 
