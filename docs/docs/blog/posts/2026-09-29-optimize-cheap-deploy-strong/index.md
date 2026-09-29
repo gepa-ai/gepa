@@ -7,6 +7,7 @@ authors:
  - oshri
  - udi
  - lakshya
+guest: true
 slug: optimize-cheap-deploy-strong
 readtime: 10
 title: "Optimize Cheap, Deploy Strong: A Recipe for Cost-Efficient GEPA"
