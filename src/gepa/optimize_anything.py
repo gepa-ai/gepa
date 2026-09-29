@@ -284,9 +284,12 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
     ``os.cpu_count() or 32`` (the same fallback as ``EngineConfig.max_workers``'s
     default factory).
 
-    ``EngineConfig.run_dir``, when set, is also the eval server's ``output_dir``,
-    so a legacy run writes its eval records there instead of creating
-    ``outputs/`` under the current directory.
+    ``EngineConfig.run_dir``, when set, nests the eval server under
+    ``<run_dir>/eval_server`` (``evals/``, ``progress_log.jsonl``,
+    ``summary.json``) so those artifacts live inside the engine workspace
+    without sharing the ``run_dir`` root with ``gepa_state.bin``. When
+    ``run_dir`` is unset, ``output_dir`` stays ``None`` and the eval server
+    keeps its default ``outputs/`` tree.
     """
     from gepa.gepa_launcher import GEPAConfig
 
@@ -296,11 +299,13 @@ def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
         max_concurrency = 1
     else:
         max_concurrency = config.engine.max_workers or (os.cpu_count() or 32)
+    run_dir = config.engine.run_dir
+    output_dir = None if run_dir is None else Path(run_dir) / "eval_server"
     return OptimizeAnythingConfig(
         engine="gepa",
         max_evals=config.engine.max_metric_calls,
         max_concurrency=max_concurrency,
-        output_dir=config.engine.run_dir,
+        output_dir=output_dir,
         engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
     )
 
