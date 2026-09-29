@@ -10,6 +10,7 @@ on:
       - omni-blog
       - jialin-blog
       - workbench
+      - ibm-cheap-deploy-strong
 
 jobs:
   build-and-deploy:
