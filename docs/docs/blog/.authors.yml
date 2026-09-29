@@ -197,6 +197,7 @@ authors:
   oshri:
     name: Oshri Naparstek
     description: IBM Research
+    avatar: https://research-website-prod-ibmers-images.s3.us-east.cloud-object-storage.appdomain.cloud/2857
     url: https://oshrinaparstek.com/
   udi:
     name: Udi Barzelay
