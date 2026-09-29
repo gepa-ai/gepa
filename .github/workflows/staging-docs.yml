@@ -85,15 +85,19 @@ jobs:
           cd docs
           uv run -p ../.venv python scripts/generate_social_screenshots.py
 
+      # pages-action was removed on 2026-09-18. wrangler-action is the
+      # replacement and still deploys this branch as a Pages preview alias.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         id: deploy
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: gepa-docs-staging
-          directory: docs/site
-          branch: ${{ github.ref_name }}
+          packageManager: npm
+          wranglerVersion: "3"
+          command: pages deploy docs/site --project-name=gepa-docs-staging --branch=${{ github.ref_name }}
 
       - name: Output deployment URL
-        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
+        run: |
+          echo "Deployed to ${{ steps.deploy.outputs.deployment-url }}"
+          echo "Alias ${{ steps.deploy.outputs.pages-deployment-alias-url }}"
