@@ -1,0 +1,39 @@
+name: gepa.rpc - Build Docker image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/gepa/rpc/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/gepa/rpc/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f src/gepa/rpc/Dockerfile -t gepa-rpc:latest .
+      - name: Run the image and confirm the server starts and listens
+        run: |
+          docker run -d --name gepa-rpc-test -p 50051:50051 gepa-rpc:latest
+          for i in $(seq 1 10); do
+            if (echo > /dev/tcp/127.0.0.1/50051) 2>/dev/null; then
+              echo "port 50051 is open, server is listening"
+              docker logs gepa-rpc-test
+              docker stop gepa-rpc-test
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server never started listening on port 50051" >&2
+          docker logs gepa-rpc-test
+          exit 1
