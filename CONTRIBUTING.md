@@ -107,3 +107,7 @@ You can target specific modules while iterating:
 ```shell
 uv run pyright src/gepa/strategies/
 ```
+
+## Releases
+
+Cutting a release is a maintainer task. `main` stays on a `.dev0` version, release candidates publish to TestPyPI only, and PyPI accepts only stable `vX.Y.Z` tags. See [RELEASE.md](RELEASE.md).
