@@ -1113,11 +1113,16 @@ def initialize_gepa_state(
     run_dir: str | None,
     logger: LoggerProtocol,
     seed_candidate: dict[str, str],
-    seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
+    seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId] | None,
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
 ) -> GEPAState[RolloutOutput, DataId]:
+    """Load the saved state from ``run_dir`` if one exists, otherwise build a fresh state.
+
+    ``seed_valset_evaluation`` is only read on the fresh path. Callers that know the
+    state will be loaded may pass ``None`` and skip evaluating the seed candidate.
+    """
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
@@ -1138,6 +1143,8 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
+        if seed_valset_evaluation is None:
+            raise ValueError("seed_valset_evaluation is required when no saved state exists in run_dir")
         if run_dir is not None:
             write_eval_outputs_to_directory(
                 seed_valset_evaluation.outputs_by_val_id,

@@ -125,6 +125,44 @@ def test_legacy_max_workers_none_falls_back_to_cpu_count():
     assert converted.max_concurrency == (os.cpu_count() or 32)
 
 
+def test_legacy_run_dir_unset_leaves_output_dir_none():
+    """No ``run_dir`` leaves ``output_dir`` unset, so the eval server keeps its
+    default ``outputs/`` tree."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig()))
+    assert converted.output_dir is None
+
+
+def test_legacy_run_dir_also_holds_the_eval_output(tmp_path, monkeypatch):
+    """A legacy ``run_dir`` nests the eval server at ``run_dir/eval_server``:
+    ``gepa_state.bin`` stays at the run root, and the eval server's records
+    (``evals/`` plus ``summary.json``) land one level down. Nothing is created
+    under the current directory (#448)."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    run_dir = tmp_path / "run"
+    monkeypatch.chdir(tmp_path)
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4, run_dir=str(run_dir)),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+        ),
+    )
+
+    eval_dir = run_dir / "eval_server"
+    assert not (tmp_path / "outputs").exists()
+    assert (run_dir / "gepa_state.bin").exists()
+    assert not (eval_dir / "gepa_state.bin").exists()
+    assert list((eval_dir / "evals").glob("*.json"))
+    assert (eval_dir / "summary.json").is_file()
+    assert not (run_dir / "evals").exists()
+    assert not (run_dir / "summary.json").exists()
+
+
 def test_legacy_gepa_config_accepts_test_set():
     """With the single unified GEPAResult, ``test_set`` works on every path —
     including a legacy ``GEPAConfig`` — because the result now carries a

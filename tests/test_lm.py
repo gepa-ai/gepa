@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gepa.lm import LM
+from gepa.lm import LM, LMOutput
 
 
 class TestLMInit:
@@ -89,6 +89,9 @@ class TestLMCall:
         result = lm("hello")
 
         assert result == "truncated"
+        assert isinstance(result, LMOutput)
+        assert result.finish_reason == "length"
+        assert result.strip().finish_reason == "length"
         assert "truncated" in caplog.text.lower()
 
 
@@ -115,6 +118,7 @@ class TestLMBatchComplete:
         results = lm.batch_complete(msgs, max_workers=5)
 
         assert results == ["answer1", "answer2"]
+        assert [result.finish_reason for result in results] == ["stop", "stop"]
         mock_batch.assert_called_once_with(
             model="openai/gpt-4.1",
             messages=msgs,
