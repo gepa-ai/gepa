@@ -697,14 +697,13 @@ class ReflectiveMutationProposer:
             evaluated_candidate = new_candidate
             winners = child_eval.evaluated_candidates
             if winners is not None:
-                if len(winners) != len(child_eval.scores):
-                    self.logger.log(
-                        "evaluated_candidates length does not match scores; falling back to pre-refinement candidate."
-                    )
-                elif winners and all(c == winners[0] for c in winners):
+                if len(winners) == len(child_eval.scores) and winners and all(c == winners[0] for c in winners):
                     evaluated_candidate = winners[0]
-                # Per-example winners disagree: keep pre-refinement `new_candidate`
-                # rather than silently picking winners[0] with mismatched scores.
+                else:
+                    self.logger.log(
+                        f"Iteration {i}: evaluated_candidates do not name a single candidate for this minibatch; "
+                        "storing the pre-refinement candidate."
+                    )
             proposal = CandidateProposal(
                 candidate=evaluated_candidate,
                 parent_program_ids=[task.parent_idx],

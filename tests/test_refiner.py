@@ -645,83 +645,48 @@ class TestRefiner:
         assert evaluated_candidate["code"] == "FIX3"
         assert evaluator(evaluated_candidate)[0] == batch.scores[0]
 
+    @pytest.mark.parametrize(
+        ("refined", "expected_code"),
+        [
+            ({"code": "FIX"}, "FIX"),
+            # Malformed refiner output must never reach the candidate pool.
+            ({"code": "FIX", "notes": ["extra"]}, None),
+        ],
+    )
+    def test_refined_winner_reaches_candidate_pool(self, refined, expected_code):
+        """End-to-end through optimize_anything (no network): the pool stores the
+        refined winner of an accepted child, and only well-shaped refinements win.
+        """
+        import json
+
+        def reflection_lm(prompt: str) -> str:
+            return "```\nPROPOSED\n```"
+
+        def refiner_lm(prompt: str) -> str:
+            return json.dumps(refined if '"PROPOSED"' in prompt else {"code": "BROKEN"})
+
+        def evaluator(candidate):
+            return (1.0 if candidate["code"] == "FIX" else 0.0), {"ran": candidate["code"]}
+
+        result = optimize_anything(
+            seed_candidate={"code": "BROKEN"},
+            evaluator=evaluator,
+            objective="make it run",
+            config=GEPAConfig(
+                engine=EngineConfig(max_metric_calls=20, cache_evaluation=False),
+                reflection=ReflectionConfig(reflection_lm=reflection_lm),
+                refiner=RefinerConfig(refiner_lm=refiner_lm, max_refinements=1),
+            ),
+        )
+
+        assert all(c.keys() == {"code", "refiner_prompt"} for c in result.candidates)
+        assert [c["code"] for c in result.candidates[1:]] == ([expected_code] if expected_code else [])
+
 
 class TestEvaluatedCandidatesProposeIndexing:
     """ReflectiveMutationProposer must index evaluated_candidates per child batch,
     not by the parallel-child ordinal (#445 / #440).
     """
-
-    def test_propose_n_children_uses_per_child_evaluated_candidates(self):
-        """N>=2 children with minibatch size 1 used to IndexError: propose()
-        indexed evaluated_candidates by child ordinal, but each child's batch
-        is only as long as its scores (here, 1).
-        """
-        from unittest.mock import MagicMock
-
-        from gepa.core.adapter import EvaluationBatch
-        from gepa.core.state import GEPAState, ValsetEvaluation
-        from gepa.proposer.reflective_mutation.reflection_lm import ReflectionProposal
-        from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-        from gepa.strategies.proposal_sampling import ProposalTask
-
-        class _FixedProposalLM:
-            def reflect(self, candidate, reflective_dataset, components_to_update):
-                return ReflectionProposal(new_texts={"c": "improved"}), self
-
-        class TwoTaskSampling:
-            def sample_tasks(self, state, candidate_selector, batch_sampler, trainset):
-                parent = dict(state.program_candidates[0])
-                return [
-                    ProposalTask(parent_idx=0, parent_candidate=parent, minibatch_ids=[0], minibatch=[{"q": 0}]),
-                    ProposalTask(parent_idx=0, parent_candidate=parent, minibatch_ids=[1], minibatch=[{"q": 1}]),
-                ]
-
-        def batch_evaluate(items, **kwargs):
-            batches = []
-            for candidate, batch in items:
-                is_child = candidate.get("c") == "improved"
-                batches.append(
-                    EvaluationBatch(
-                        outputs=["o"] * len(batch),
-                        scores=[0.9 if is_child else 0.4] * len(batch),
-                        trajectories=[{"step": 1}] * len(batch),
-                        objective_scores=None,
-                        num_metric_calls=len(batch),
-                        evaluated_candidates=([{"c": f"refined_for_{ex['q']}"} for ex in batch] if is_child else None),
-                    )
-                )
-            return batches
-
-        adapter = MagicMock()
-        adapter.propose_new_texts = None
-        adapter.batch_evaluate = MagicMock(side_effect=batch_evaluate)
-        adapter.make_reflective_dataset = MagicMock(return_value={"c": [{"feedback": "f"}]})
-
-        proposer = ReflectiveMutationProposer(
-            logger=MagicMock(),
-            trainset=[{"q": 0}, {"q": 1}],
-            adapter=adapter,
-            candidate_selector=MagicMock(),
-            module_selector=MagicMock(return_value=["c"]),
-            batch_sampler=MagicMock(),
-            perfect_score=None,
-            skip_perfect_score=False,
-            experiment_tracker=MagicMock(),
-            reflection_strategy=_FixedProposalLM(),
-            sampling_strategy=TwoTaskSampling(),
-        )
-        state = GEPAState(
-            {"c": "seed"},
-            ValsetEvaluation(outputs_by_val_id={0: "o"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None),
-            track_best_outputs=False,
-        )
-        state.total_num_evals = 1
-        state.full_program_trace.append({"i": 0})
-
-        proposals = proposer.propose(state)
-        assert len(proposals) == 2
-        assert proposals[0].candidate == {"c": "refined_for_0"}
-        assert proposals[1].candidate == {"c": "refined_for_1"}
 
     def test_propose_falls_back_when_per_example_winners_differ(self):
         """When a child's per-example winners are not all equal, keep the

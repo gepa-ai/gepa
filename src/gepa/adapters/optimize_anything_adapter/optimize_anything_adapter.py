@@ -815,6 +815,11 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     parsed_refined = json.loads(raw_output)
                     if not isinstance(parsed_refined, dict):
                         raise ValueError(f"Expected JSON dict, got {type(parsed_refined).__name__}")
+                    # The winner may be stored in the candidate pool, so it must keep the candidate's shape.
+                    if parsed_refined.keys() != params_dict.keys() or not all(
+                        isinstance(v, str) for v in parsed_refined.values()
+                    ):
+                        raise ValueError(f"Expected exactly the keys {sorted(params_dict)} with string values")
                 except (json.JSONDecodeError, ValueError) as parse_err:
                     # JSON parse failed: record error so refiner can learn, continue to next iteration
                     all_attempts.append(
