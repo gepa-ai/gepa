@@ -23,7 +23,7 @@ def _enricher(record):
 
     def enrich(*, candidate, eval_batch, components_to_update, reflective_dataset):
         record["calls"] += 1
-        record["components"].append(sorted(reflective_dataset))
+        record["components"].append(list(components_to_update))
         return {
             component: [{**row, "failure_modes": [{"name": FINDING, "evidence": "e"}]} for row in rows]
             for component, rows in reflective_dataset.items()
@@ -79,7 +79,9 @@ class TestReflectionConfigField:
         record, prompts = {"calls": 0, "components": []}, []
         _run(_config(record, prompts))
 
-        assert all(components for components in record["components"])
+        assert record["calls"] > 0
+        # A string seed is optimized as a single component, "current_candidate".
+        assert all(components == ["current_candidate"] for components in record["components"])
 
     def test_without_the_field_nothing_is_injected(self):
         record, prompts = {"calls": 0, "components": []}, []
