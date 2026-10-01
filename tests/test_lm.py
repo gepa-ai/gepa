@@ -1,8 +1,12 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import uuid
 from unittest.mock import MagicMock, patch
 
+import httpx
+import litellm
+import openai
 import pytest
 
 from gepa.lm import LM, LMOutput
@@ -182,3 +186,26 @@ class TestLMConformsToProtocol:
         lm = LM("openai/gpt-4.1")
         assert callable(lm)
         assert hasattr(lm, "__call__")
+
+
+class TestLMRetries:
+    """Exercise the retries that ``num_retries`` asks of LiteLLM, without mocking LiteLLM."""
+
+    def test_failed_call_is_retried_and_raises_the_provider_error(self, monkeypatch):
+        requests = []
+
+        def not_found(request):
+            requests.append(request)
+            return httpx.Response(404, json={"error": {"message": "model not found", "type": "invalid_request_error"}})
+
+        monkeypatch.setattr(litellm, "client_session", httpx.Client(transport=httpx.MockTransport(not_found)))
+        # A fresh api_base keeps LiteLLM from reusing a client cached by another test.
+        lm = LM("openai/gpt-4.1", api_key="sk-test", api_base=f"http://{uuid.uuid4().hex}.invalid/v1")
+
+        # LiteLLM maps the provider's error to one of its own, which subclass OpenAI's.
+        with pytest.raises(openai.APIStatusError, match="model not found"):
+            lm("hello")
+
+        # The OpenAI SDK does not resend a 404, so the first attempt sends one request.
+        # LiteLLM then retries the call itself, which needs tenacity, with three more.
+        assert len(requests) == 4

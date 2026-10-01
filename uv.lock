@@ -1046,6 +1046,7 @@ build = [
 confidence = [
     { name = "litellm" },
     { name = "llm-structured-confidence" },
+    { name = "tenacity" },
 ]
 dev = [
     { name = "build" },
@@ -1067,6 +1068,7 @@ dev = [
     { name = "ruff" },
     { name = "semver" },
     { name = "setuptools" },
+    { name = "tenacity" },
     { name = "tiktoken", version = "0.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "tqdm" },
     { name = "twine" },
@@ -1083,6 +1085,7 @@ full = [
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pyarrow", version = "23.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "tenacity" },
     { name = "tiktoken", version = "0.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "tqdm" },
     { name = "wandb" },
@@ -1101,6 +1104,7 @@ gskill = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "swesmith" },
+    { name = "tenacity" },
     { name = "tiktoken", version = "0.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "tqdm" },
     { name = "wandb" },
@@ -1123,6 +1127,7 @@ test = [
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pyright" },
     { name = "pytest" },
+    { name = "tenacity" },
     { name = "tiktoken", version = "0.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "tqdm" },
     { name = "wandb" },
@@ -1163,6 +1168,8 @@ requires-dist = [
     { name = "semver", marker = "extra == 'build'" },
     { name = "setuptools", marker = "extra == 'build'", specifier = ">=77.0.1" },
     { name = "swesmith", marker = "extra == 'gskill'" },
+    { name = "tenacity", marker = "extra == 'confidence'", specifier = ">=8.0.0" },
+    { name = "tenacity", marker = "extra == 'full'", specifier = ">=8.0.0" },
     { name = "tiktoken", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=0.12.0" },
     { name = "tqdm", marker = "extra == 'full'", specifier = ">=4.66.1" },
     { name = "tqdm", marker = "extra == 'langchain'", specifier = ">=4.66" },
