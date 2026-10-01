@@ -3,8 +3,8 @@
 # with pip, which resolves the latest matching versions for THEIR interpreter.
 # A universal lockfile cannot simulate that: uv unifies a package to a single
 # version whenever one version satisfies every marker branch, so a cap that
-# targets only Python >= 3.14 (like litellm<1.92) also holds the locked
-# version down for 3.10-3.13. This workflow therefore uses `uv pip install`
+# targets only one interpreter also holds the locked version down for the
+# others. This workflow therefore uses `uv pip install`
 # — per-interpreter, pip-semantics resolution against latest PyPI — so each
 # matrix leg tests exactly what a fresh `pip install gepa[...]` would pull
 # for that interpreter. A failing leg means users on that interpreter are

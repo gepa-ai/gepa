@@ -22,14 +22,18 @@ dependencies = []
 [project.optional-dependencies]
 full = [
     # Common dependencies (all Python versions)
-    # litellm 1.92.0 introduced a native extension and publishes manylinux
-    # wheels only (cp310-cp313): no macOS, no Windows, no cp314. Everyone else
-    # falls back to the sdist, which needs Cargo >= 1.85 (edition2024) and a
-    # PyO3 that caps at Python 3.13 — so fresh installs break on macOS/Windows
-    # (all Pythons) and on 3.14 (all platforms). Cap unconditionally; lift once
-    # litellm ships a complete wheel matrix (or a pure-Python build) — check
-    # https://pypi.org/pypi/litellm/<version>/json artifact list first.
-    "litellm>=1.83.0,<1.92",
+    # litellm 1.92.0 added a native extension and shipped manylinux wheels only.
+    # Later releases publish Linux (manylinux + musl), macOS (x86_64 and
+    # arm64), and Windows amd64 wheels, including Python 3.14 (cp314 from
+    # 1.93.2, cp310-abi3 from 1.96.2; requires-python >=3.10,<3.15). These
+    # releases still omit macOS and musl wheels, and 1.92.0, 1.92.1, and
+    # 1.93.0 omit Windows too, so pip builds an sdist that needs Rust:
+    #   1.92.0, 1.92.1, 1.93.0, 1.93.1, 1.94.0, 1.94.1, 1.95.0
+    # 1.92.2 stays allowed: full platform wheels and requires-python <3.14.
+    # No win_arm64 wheel exists; Windows on ARM still builds from source.
+    # Re-check https://pypi.org/pypi/litellm/<version>/json before dropping
+    # an exclusion.
+    "litellm>=1.83.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0",
     # gepa.lm.LM passes num_retries to litellm, whose retry path imports tenacity
     # without declaring it as a dependency.
     "tenacity>=8.0.0",
@@ -50,9 +54,9 @@ full = [
 ]
 confidence = [
     "llm-structured-confidence>=0.4.5",
-    # See the litellm cap comment in the `full` extra (incomplete 1.92 wheels).
-    "litellm>=1.64.0,<1.92; python_version < '3.14'",
-    "litellm>=1.81.0,<1.92; python_version >= '3.14'",
+    # See the litellm comment in the `full` extra (exclude incomplete wheels).
+    "litellm>=1.64.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0; python_version < '3.14'",
+    "litellm>=1.81.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0; python_version >= '3.14'",
     "tenacity>=8.0.0",
 ]
 dspy = []
