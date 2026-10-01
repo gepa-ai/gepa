@@ -1,7 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, cast
 
 
 class ExperimentTracker:
@@ -54,7 +55,7 @@ class ExperimentTracker:
         # table, not just the latest row.  Without this, commit=False causes
         # the pending dict to overwrite earlier single-row tables with the
         # newest one, and only the last row per commit cycle survives.
-        self._wandb_table_rows: dict[str, tuple[list[str], list[list]]] = {}
+        self._wandb_table_rows: dict[str, tuple[list[str], list[list[Any]]]] = {}
 
     def _p(self, key: str) -> str:
         """Prepend key_prefix to a key/name, if one is set."""
@@ -304,7 +305,13 @@ class ExperimentTracker:
                 else:
                     self._wandb_table_rows[key][1].extend(data)
                 all_columns, all_rows = self._wandb_table_rows[key]
-                table = wandb.Table(columns=all_columns, data=all_rows)
+                # wandb.Table takes invariant list[ColumnKey] (str | int) and
+                # list[InputRow] (Iterable[Any]). list[str] / list[list[Any]]
+                # are the values we store; cast only adjusts the static types.
+                table = wandb.Table(
+                    columns=cast(list[str | int], all_columns),
+                    data=cast(list[Iterable[Any]], all_rows),
+                )
                 wandb.log({key: table}, commit=False)
             except Exception as e:
                 print(f"Warning: Failed to log table to wandb: {e}")
