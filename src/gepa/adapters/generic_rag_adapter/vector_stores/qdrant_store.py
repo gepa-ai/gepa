@@ -204,8 +204,15 @@ class QdrantVectorStore(VectorStoreInterface):
             }
 
     def supports_hybrid_search(self) -> bool:
-        """Qdrant supports hybrid search through payload filtering."""
-        return True
+        """Report no hybrid-search support.
+
+        ``hybrid_search`` below is currently a filtered vector-similarity
+        fallback that ignores ``alpha`` and never blends keyword scores, so
+        advertising support would let callers believe ``hybrid_alpha`` is being
+        honored when it is not. Return ``False`` until real keyword/BM25 blending
+        is implemented; the pipeline then transparently uses ``similarity_search``.
+        """
+        return False
 
     def hybrid_search(
         self,
@@ -219,6 +226,7 @@ class QdrantVectorStore(VectorStoreInterface):
 
         Note: Qdrant doesn't have built-in hybrid search like some other databases,
         but we can combine vector search with payload filtering for similar functionality.
+        This fallback ignores ``alpha`` (see ``supports_hybrid_search``).
         """
         # For now, implement as filtered vector search
         # In the future, this could be enhanced with text search capabilities
