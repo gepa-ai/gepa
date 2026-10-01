@@ -153,10 +153,13 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         objective_scores_list: Sequence[ObjectiveScores] | None = None,
         *,
         split: str,
+        cacheable: Sequence[bool] | None = None,
     ) -> None:
         """Store evaluation results for a batch of examples."""
         h = _candidate_hash(candidate)
         for i, eid in enumerate(example_ids):
+            if cacheable is not None and not cacheable[i]:
+                continue
             self._cache[self._key(h, eid, split)] = CachedEvaluation(
                 outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
             )
@@ -212,6 +215,7 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     # Populated only when the engine is run with ``write_agent_state=True`` —
     # full valset trajectories are expensive, so default eval paths skip them.
     trajectories_by_val_id: dict[DataId, Any] | None = None
+    cacheable_by_val_id: dict[DataId, bool] | None = None
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
