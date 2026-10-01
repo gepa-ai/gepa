@@ -233,9 +233,16 @@ class EvalServer:
     def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate with budget enforcement.
 
-        Failed attempts consume budget (launcher parity). Extra kwargs (e.g.
-        ``opt_state``) are forwarded to the evaluator only if its signature
-        accepts them.
+        The budget gates the call up front (``check()``); the call is then
+        recorded whether it succeeded or failed — failed attempts consume
+        budget (launcher parity). Extra kwargs (e.g. ``opt_state``) are
+        forwarded to the evaluator only if its signature accepts them.
+
+        The returned ``info`` is the evaluator's own side info, untouched:
+        nothing server-side is injected into it, since it flows into the
+        engine's reflective dataset (and so the reflection LM's prompt).
+        Budget status is reported out-of-band — on ``/status``, in the
+        ``evaluate_examples`` envelope, and on the final result.
 
         Raises:
             BudgetExhausted: When the budget has been used up.
@@ -250,16 +257,12 @@ class EvalServer:
                 else:
                     score, info = self.eval_fn(candidate, **kwargs)
             except Exception:
-                # check() passed above, so this record cannot itself raise.
                 self.budget.record(0.0)
                 raise
 
             self.budget.record(score)
             self._track(candidate, score, info)
-
-            info = dict(info) if info else {}
-            info["_budget"] = self.budget.status()
-            return score, info
+            return score, dict(info) if info else {}
         finally:
             self._eval_semaphore.release()
 
@@ -273,10 +276,12 @@ class EvalServer:
         The grouped analogue of :meth:`evaluate` (e.g. to submit a provider
         batch job): the user function receives all pairs at once; each pair is
         then recorded against the budget and tracked individually. The budget
-        is checked once up front, so a batch may overshoot the cap by at most
-        ``len(pairs) - 1`` — mirroring the launcher's iteration-boundary stops.
-        Failed attempts consume budget (launcher parity): a failed grouped
-        call records one tick per pair.
+        is checked once up front and the whole batch is recorded afterwards
+        (``record`` never raises), so a batch may overshoot the cap by at most
+        ``len(pairs) - 1`` — mirroring the launcher's iteration-boundary stops
+        — and no result the user already paid for is dropped. Failed attempts
+        consume budget (launcher parity): a failed grouped call records one
+        tick per pair.
 
         Raises:
             BudgetExhausted: When the budget is already used up.
@@ -290,13 +295,8 @@ class EvalServer:
             try:
                 results = self.batch_fn(pairs, opt_states=opt_states)
             except Exception:
-                # Guard each record so crossing the cap while recording
-                # failures never masks the user's original exception.
                 for _ in pairs:
-                    try:
-                        self.budget.record(0.0)
-                    except BudgetExhausted:
-                        break
+                    self.budget.record(0.0)
                 raise
         finally:
             self._eval_semaphore.release()
@@ -304,9 +304,7 @@ class EvalServer:
         for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
             self.budget.record(score)
             self._track(candidate, score, info)
-            info = dict(info)
-            info["_budget"] = self.budget.status()
-            out.append((score, info))
+            out.append((score, dict(info)))
         return out
 
     def evaluate_examples(
@@ -359,10 +357,7 @@ class EvalServer:
                 "_budget": self.budget.status(),
             }
 
-        if self.budget.remaining is not None and self.budget.remaining < len(examples):
-            raise BudgetExhausted(
-                f"Not enough budget to evaluate all examples: {self.budget.remaining} remaining, {len(examples)} needed"
-            )
+        self.budget.check(needed=len(examples))
 
         scores: dict[str, float] = {}
         infos: dict[str, dict[str, Any]] = {}

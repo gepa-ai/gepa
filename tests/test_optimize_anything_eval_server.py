@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from gepa.oa.budget import BudgetTracker
+from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.eval_server import EvalServer
 from gepa.oa.task import Task
 
@@ -55,6 +55,53 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
             self.assertTrue((output_dir / "summary.json").exists())
             self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
+
+    def test_evaluate_batch_crossing_the_cap_records_every_pair(self) -> None:
+        """A grouped call is gated once up front and recorded in full: the user
+        already paid for every pair, so none is dropped (issue #448)."""
+        task = Task(name="task", seed_candidate="seed", train_set=[1, 2, 3, 4])
+        seen: list[list[int]] = []
+
+        def batch_fn(pairs, opt_states=None):
+            seen.append([ex for _c, ex in pairs])
+            return [(float(ex), {"ex": ex}) for _c, ex in pairs]
+
+        budget = BudgetTracker(max_evals=3)
+        server = EvalServer(task, lambda candidate, example: (0.0, {}), budget, batch_evaluate=batch_fn)
+        try:
+            out = server.evaluate_batch([("seed", ex) for ex in (1, 2, 3, 4)])
+        finally:
+            server.stop()
+
+        self.assertEqual([score for score, _info in out], [1.0, 2.0, 3.0, 4.0])
+        self.assertEqual(seen, [[1, 2, 3, 4]])
+        self.assertEqual(budget.used, 4)
+        self.assertTrue(budget.exhausted)
+        with self.assertRaises(BudgetExhausted):
+            server.evaluate_batch([("seed", 1)])
+
+    def test_per_example_info_carries_no_server_bookkeeping(self) -> None:
+        """``_budget`` used to be injected into every per-example ``info`` and
+        reached the reflection LM through the adapter's reflective dataset.
+        Budget status belongs in the ``evaluate_examples`` envelope and
+        ``/status`` only."""
+        task = Task(name="task", seed_candidate="seed", train_set=[1, 2])
+        server = EvalServer(
+            task,
+            lambda candidate, example: (1.0, {"note": example}),
+            BudgetTracker(max_evals=10),
+            batch_evaluate=lambda pairs, opt_states=None: [(1.0, {"note": ex}) for _c, ex in pairs],
+        )
+        try:
+            _score, info = server.evaluate("seed", 1)
+            self.assertEqual(info, {"note": 1})
+            batch = server.evaluate_batch([("seed", 1), ("seed", 2)])
+            self.assertEqual([i for _s, i in batch], [{"note": 1}, {"note": 2}])
+            _avg, envelope = server.evaluate_examples("seed", split="train")
+            self.assertIn("_budget", envelope)
+            self.assertEqual(envelope["infos"]["train_0"], {"note": 1})
+        finally:
+            server.stop()
 
     def test_http_evaluate_examples_logs_aggregate_progress(self) -> None:
         import urllib.request

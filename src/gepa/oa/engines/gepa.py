@@ -1,8 +1,10 @@
 """GEPA engine: runs the archived GEPA optimizer against the optimize_anything eval server.
 
-In-process — calls ``server.evaluate(candidate, example)`` directly. Budget is
-enforced by the server. ``max_token_cost`` is enforced via the GEPA engine's
-``max_reflection_cost`` stopper.
+In-process — calls ``server.evaluate(candidate, example)`` directly. The eval
+budget is counted by the server but enforced by GEPA core's
+``MaxMetricCallsStopper`` at iteration boundaries (see ``run``).
+``max_token_cost`` is enforced via the GEPA engine's ``max_reflection_cost``
+stopper.
 
 ``OptimizeAnythingConfig.engine_config`` maps directly to a
 :class:`~gepa.gepa_launcher.GEPAConfig`; the OA layer only overlays the eval
@@ -64,13 +66,20 @@ class GepaEngine:
         # limits — set them as EngineConfig fields; GEPA core installs the
         # matching stoppers. The eval-call cap must win over any user value.
         gepa_config.engine.max_metric_calls = budget.max_evals
+        # Core's MaxMetricCallsStopper enforces that cap at iteration
+        # boundaries (the launcher's semantics: the iteration that crosses the
+        # cap finishes and its child is recorded). The server-side tracker
+        # therefore only keeps the ledger here; a hard mid-iteration stop
+        # would abort a partially-scored candidate and discard evals the user
+        # already paid for.
+        budget.enforce = False
         if self.run_dir is not None:
             gepa_config.engine.run_dir = self.run_dir
         if gepa_config.engine.run_dir is None:
             # Always persist GEPA state (gepa_state.bin, saved by core at each
-            # iteration boundary): on BudgetExhausted the val-aggregate/Pareto
-            # best is reloaded from it instead of falling back to the server's
-            # per-example argmax.
+            # iteration boundary): should a BudgetExhausted still escape, the
+            # val-aggregate/Pareto best is reloaded from it instead of falling
+            # back to the server's per-example argmax.
             if server.output_dir is not None:
                 gepa_config.engine.run_dir = str(server.output_dir / "gepa_state")
             else:
@@ -126,6 +135,8 @@ class GepaEngine:
         try:
             gepa_result = optimize_anything(**oa_kwargs)
         except BudgetExhausted:
+            # Defensive: with enforcement off the server no longer raises, but
+            # a caller-supplied stopper/evaluator still might.
             gepa_result = self._load_result_from_state(
                 run_dir=run_dir,
                 seed=gepa_config.engine.seed,
