@@ -29,11 +29,11 @@ full = [
     # (all Pythons) and on 3.14 (all platforms). Cap unconditionally; lift once
     # litellm ships a complete wheel matrix (or a pure-Python build) — check
     # https://pypi.org/pypi/litellm/<version>/json artifact list first.
-    "litellm>=1.83.0,<1.92",
+    "litellm<1.92,>=1.81.0",
     # gepa.lm.LM passes num_retries to litellm, whose retry path imports tenacity
     # without declaring it as a dependency.
     "tenacity>=8.0.0",
-    "tqdm>=4.66.1",
+    "tqdm>=4.66",
     "cloudpickle>=3.0.0",
     # Python < 3.14
     "datasets>=2.14.6; python_version < '3.14'",
