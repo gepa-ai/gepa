@@ -50,6 +50,7 @@ def _run(dataset, valset, produced_by):
         return score, {"ran": content}
 
     counter = iter(range(1000))
+
     optimize_anything(
         seed_candidate=json.dumps({"text": "seed"}),
         evaluator=evaluator,

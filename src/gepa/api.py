@@ -174,7 +174,7 @@ def optimize(
     # Logging and Callbacks
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
     - callbacks: Optional list of callback objects for observing optimization progress. Callbacks receive events like on_optimization_start, on_iteration_start, on_candidate_accepted, etc. See `gepa.core.callbacks.GEPACallback` for the full protocol.
-    - run_dir: The directory to save the results to. Optimization state and results will be saved to this directory. If the directory already exists, GEPA will read the state from this directory and resume the optimization from the last saved state. If provided, a FileStopper is automatically created which checks for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process upon its presence.
+    - run_dir: The directory to save the results to. Optimization state and results will be saved to this directory. If the directory already contains ``gepa_state.bin``, GEPA resumes from that state: the saved seed is not re-evaluated on the valset. A ``seed_candidate`` that is not already in the saved pool is full-valset-evaluated and added as a child of the saved seed (like an accepted proposal); an identical seed does no extra seed eval. If provided, a FileStopper is automatically created which checks for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process upon its presence.
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.

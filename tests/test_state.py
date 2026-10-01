@@ -76,6 +76,16 @@ def test_initialize_gepa_state_no_run_dir():
     fake_logger.log.assert_not_called()
 
 
+def test_initialize_gepa_state_none_eval_raises_without_saved_state(run_dir):
+    """seed_valset_evaluation=None is only valid when a saved gepa_state.bin exists."""
+    msg = "seed_valset_evaluation is required when no saved state exists in run_dir"
+    kwargs = {"logger": MagicMock(), "seed_candidate": {"model": "m"}, "seed_valset_evaluation": None}
+    with pytest.raises(ValueError, match=msg):
+        state_mod.initialize_gepa_state(run_dir=str(run_dir), **kwargs)
+    with pytest.raises(ValueError, match=msg):
+        state_mod.initialize_gepa_state(run_dir=None, **kwargs)
+
+
 def test_gepa_state_save_and_initialize(run_dir):
     """With a run dir that contains a saved state, the state is saved and initialized from it."""
     seed = {"model": "m"}
@@ -763,3 +773,153 @@ def test_e2e_resume_run(mocked_lms, run_dir):
         run_dir=run_dir,
     )
     assert second_run.total_metric_calls == first_run.total_metric_calls
+
+
+class _CountingAdapter:
+    """Adapter that counts valset evaluations and proposes candidates without an LM."""
+
+    def __init__(self):
+        self.evaluate_calls = 0
+        self.examples_evaluated = 0
+        self.propose_new_texts = self._propose_new_texts
+
+    def evaluate(self, batch, candidate, capture_traces=False):
+        self.evaluate_calls += 1
+        self.examples_evaluated += len(batch)
+        weight = int(candidate["system_prompt"].split("=")[-1])
+        outputs = [{"id": item["id"], "weight": weight} for item in batch]
+        scores = [min(1.0, (weight + 1) / item["difficulty"]) for item in batch]
+        trajectories = [{"score": score} for score in scores] if capture_traces else None
+        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+
+    def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+        return {name: [{"score": score} for score in eval_batch.scores] for name in components_to_update}
+
+    def _propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+        weight = int(candidate["system_prompt"].split("=")[-1])
+        return dict.fromkeys(components_to_update, f"weight={weight + 1}")
+
+
+def test_resume_skips_seed_valset_evaluation(run_dir):
+    """Resuming from a saved gepa_state.bin must not re-evaluate the seed candidate on the valset."""
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
+    valset = [{"id": i, "difficulty": i + 2} for i in range(10)]
+    seed_candidate = {"system_prompt": "weight=0"}
+
+    first_run = gepa.optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=_CountingAdapter(),
+        reflection_lm=None,
+        max_metric_calls=25,
+        run_dir=str(run_dir),
+    )
+    assert (run_dir / "gepa_state.bin").exists()
+    saved_state = state_mod.GEPAState.load(str(run_dir))
+    assert saved_state.total_num_evals == first_run.total_metric_calls
+
+    resume_adapter = _CountingAdapter()
+    second_run = gepa.optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=resume_adapter,
+        reflection_lm=None,
+        max_metric_calls=0,
+        run_dir=str(run_dir),
+    )
+
+    assert resume_adapter.evaluate_calls == 0
+    assert resume_adapter.examples_evaluated == 0
+    assert second_run.total_metric_calls == saved_state.total_num_evals
+    assert second_run.num_full_val_evals == saved_state.num_full_ds_evals
+
+
+def test_resume_different_seed_is_full_eval_and_added(run_dir):
+    """Resuming with a different seed_candidate full-evals it and adds it like an accepted proposal."""
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
+    valset = [{"id": i, "difficulty": i + 2} for i in range(10)]
+    seed_candidate = {"system_prompt": "weight=0"}
+    new_seed = {"system_prompt": "weight=99"}
+
+    gepa.optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=_CountingAdapter(),
+        reflection_lm=None,
+        max_metric_calls=10,
+        run_dir=str(run_dir),
+    )
+    saved_state = state_mod.GEPAState.load(str(run_dir))
+    n_candidates = len(saved_state.program_candidates)
+    n_evals = saved_state.total_num_evals
+    n_full = saved_state.num_full_ds_evals
+
+    resume_adapter = _CountingAdapter()
+    second_run = gepa.optimize(
+        seed_candidate=new_seed,
+        trainset=trainset,
+        valset=valset,
+        adapter=resume_adapter,
+        reflection_lm=None,
+        max_metric_calls=0,
+        run_dir=str(run_dir),
+    )
+
+    assert new_seed in second_run.candidates
+    assert second_run.candidates[0] == seed_candidate
+    assert len(second_run.candidates) == n_candidates + 1
+    assert second_run.parents[-1] == [0]
+    assert second_run.val_subscores[-1] == dict.fromkeys(range(10), 1.0)
+    assert second_run.total_metric_calls == n_evals + 10
+    assert second_run.num_full_val_evals == n_full + 1
+    assert resume_adapter.evaluate_calls >= 1
+    assert resume_adapter.examples_evaluated == 10
+
+
+def test_resume_different_seed_not_readded_on_third_call(run_dir):
+    """A previously ingested resume seed must not be full-eval-and-added again."""
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
+    valset = [{"id": i, "difficulty": i + 2} for i in range(10)]
+    seed_candidate = {"system_prompt": "weight=0"}
+    new_seed = {"system_prompt": "weight=99"}
+
+    gepa.optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=_CountingAdapter(),
+        reflection_lm=None,
+        max_metric_calls=10,
+        run_dir=str(run_dir),
+    )
+    second = gepa.optimize(
+        seed_candidate=new_seed,
+        trainset=trainset,
+        valset=valset,
+        adapter=_CountingAdapter(),
+        reflection_lm=None,
+        max_metric_calls=30,
+        run_dir=str(run_dir),
+    )
+    new_seed_count = sum(1 for c in second.candidates if c == new_seed)
+    assert new_seed_count == 1
+
+    resume_adapter = _CountingAdapter()
+    third = gepa.optimize(
+        seed_candidate=new_seed,
+        trainset=trainset,
+        valset=valset,
+        adapter=resume_adapter,
+        reflection_lm=None,
+        max_metric_calls=0,
+        run_dir=str(run_dir),
+    )
+
+    assert sum(1 for c in third.candidates if c == new_seed) == 1
+    assert len(third.candidates) == len(second.candidates)
+    assert third.total_metric_calls == second.total_metric_calls
+    assert resume_adapter.evaluate_calls == 0
+    assert resume_adapter.examples_evaluated == 0
