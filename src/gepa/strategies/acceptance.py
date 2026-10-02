@@ -64,3 +64,16 @@ class ImprovementOrEqualAcceptance:
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         return new_sum >= old_sum
+
+
+class AlwaysAcceptance:
+    """Accept every proposal unconditionally.
+
+    Removes selection pressure at the acceptance step entirely; the search
+    becomes a walk directed only by the proposer. Useful as an ablation
+    control for measuring how much of GEPA's progress comes from the
+    acceptance gate versus the reflective proposals themselves.
+    """
+
+    def should_accept(self, proposal: CandidateProposal, state: GEPAState) -> bool:
+        return True
