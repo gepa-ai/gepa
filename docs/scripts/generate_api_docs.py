@@ -44,6 +44,7 @@ API_MAPPING = {
         ("gepa.gepa_launcher", "get_log_context", "get_log_context"),
         ("gepa.gepa_launcher", "set_log_context", "set_log_context"),
         ("gepa.gepa_launcher", "make_litellm_lm", "make_litellm_lm"),
+        ("gepa.gepa_launcher", "make_atlascloud_lm", "make_atlascloud_lm"),
     ],
     "core": [
         ("gepa.api", "optimize", "optimize"),
@@ -137,7 +138,7 @@ CATEGORY_INFO = {
     },
     "gepa_engine": {
         "title": "GEPA Engine",
-        "description": "Configuration for the built-in GEPA engine (`engine=\"gepa\"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.",
+        "description": 'Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.',
         "dir": "optimize_anything",
     },
     "core": {
