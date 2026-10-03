@@ -24,6 +24,8 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     - trajectories: optional per-example traces used by make_reflective_dataset to build
       a reflective dataset (See `GEPAAdapter.make_reflective_dataset`). If capture_traces=True is passed to `evaluate`, trajectories
       should be provided and align one-to-one with `outputs` and `scores`.
+    - num_metric_calls: actual metric calls, including repeated rollouts. None defaults to one per example;
+      an explicit zero is respected. This count applies to training, seed, validation, and merge evaluation.
     - objective_scores: optional per-example maps of objective name -> score. Leave None when
       the evaluator does not expose multi-objective metrics.
     """
@@ -33,6 +35,11 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     trajectories: list[Trajectory] | None = None
     objective_scores: list[dict[str, float]] | None = None
     num_metric_calls: int | None = None
+
+    @property
+    def metric_calls(self) -> int:
+        """Actual metric calls, defaulting to one call per scored example."""
+        return len(self.scores) if self.num_metric_calls is None else self.num_metric_calls
 
 
 class BatchEvaluateFn(Protocol):

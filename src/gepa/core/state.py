@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
-from gepa.core.adapter import RolloutOutput
+from gepa.core.adapter import EvaluationBatch, RolloutOutput
 from gepa.core.data_loader import DataId
 from gepa.gepa_utils import json_default
 from gepa.logging.logger import LoggerProtocol
@@ -21,6 +21,17 @@ ProgramIdx = int
 
 # Type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
+EvaluationResult: TypeAlias = EvaluationBatch[Any, Any] | tuple[Any, list[float], Sequence[ObjectiveScores] | None]
+
+
+def _unpack_evaluation(result: EvaluationResult, size: int):
+    """Keep legacy tuple evaluators compatible while retaining adapter metric counts."""
+    if isinstance(result, EvaluationBatch):
+        return result.outputs, result.scores, result.objective_scores, result.metric_calls
+    outputs, scores, objectives = result
+    return outputs, scores, objectives, size
+
+
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
 """Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example x objective)."""
 FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
@@ -166,7 +177,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         candidate: dict[str, str],
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        evaluator: Callable[[Any, dict[str, str]], EvaluationResult],
         *,
         split: str,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
@@ -188,9 +199,12 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
                 objective_by_id[eid] = c.objective_scores
 
         # Evaluate uncached examples
+        metric_calls = 0
         if uncached_ids:
             batch = fetcher(uncached_ids)
-            outputs, scores, obj_scores = evaluator(batch, candidate)
+            outputs, scores, obj_scores, metric_calls = _unpack_evaluation(
+                evaluator(batch, candidate), len(uncached_ids)
+            )
             for idx, eid in enumerate(uncached_ids):
                 outputs_by_id[eid] = outputs[idx]
                 scores_by_id[eid] = scores[idx]
@@ -199,7 +213,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
                     objective_by_id[eid] = obj_scores[idx]
             self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores, split=split)
 
-        return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
+        return outputs_by_id, scores_by_id, objective_by_id, metric_calls
 
 
 @dataclass(slots=True)
@@ -212,6 +226,7 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     # Populated only when the engine is run with ``write_agent_state=True`` —
     # full valset trajectories are expensive, so default eval paths skip them.
     trajectories_by_val_id: dict[DataId, Any] | None = None
+    num_metric_calls: int | None = None
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -1053,7 +1068,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         candidate: dict[str, str],
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        evaluator: Callable[[Any, dict[str, str]], EvaluationResult],
         *,
         split: str,
     ) -> tuple[list[float], int]:
@@ -1068,7 +1083,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         candidate: dict[str, str],
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        evaluator: Callable[[Any, dict[str, str]], EvaluationResult],
         *,
         split: str,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
@@ -1078,11 +1093,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 candidate, example_ids, fetcher, evaluator, split=split
             )
         batch = fetcher(example_ids)
-        outputs, scores, objective_scores = evaluator(batch, candidate)
+        outputs, scores, objective_scores, metric_calls = _unpack_evaluation(
+            evaluator(batch, candidate), len(example_ids)
+        )
         outputs_by_id = dict(zip(example_ids, outputs, strict=False))
         scores_by_id = dict(zip(example_ids, scores, strict=False))
         objective_by_id = dict(zip(example_ids, objective_scores, strict=False)) if objective_scores else None
-        return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
+        return outputs_by_id, scores_by_id, objective_by_id, metric_calls
 
 
 def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
@@ -1160,6 +1177,10 @@ def initialize_gepa_state(
         )
 
         gepa_state.num_full_ds_evals = 1
-        gepa_state.total_num_evals = len(seed_valset_evaluation.scores_by_val_id)
+        gepa_state.total_num_evals = (
+            len(seed_valset_evaluation.scores_by_val_id)
+            if seed_valset_evaluation.num_metric_calls is None
+            else seed_valset_evaluation.num_metric_calls
+        )
 
     return gepa_state

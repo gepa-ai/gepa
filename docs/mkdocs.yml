@@ -111,6 +111,7 @@ nav:
             - SignalStopper: api/stop_conditions/SignalStopper.md
             - CompositeStopper: api/stop_conditions/CompositeStopper.md
         - Adapters:
+            - MultiRolloutAdapter: api/adapters/MultiRolloutAdapter.md
             - DefaultAdapter: api/adapters/DefaultAdapter.md
             - ConfidenceAdapter: api/adapters/ConfidenceAdapter.md
             - DSPy Adapter: api/adapters/DSPyAdapter.md

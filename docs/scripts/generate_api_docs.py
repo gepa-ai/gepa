@@ -87,6 +87,7 @@ API_MAPPING = {
         ("gepa.utils.stop_condition", "CompositeStopper", "CompositeStopper"),
     ],
     "adapters": [
+        ("gepa.adapters.multi_rollout", "MultiRolloutAdapter", "MultiRolloutAdapter"),
         ("gepa.adapters.default_adapter.default_adapter", "DefaultAdapter", "DefaultAdapter"),
         ("gepa.adapters.dspy_adapter.dspy_adapter", "DspyAdapter", "DSPyAdapter"),
         ("gepa.adapters.dspy_full_program_adapter.full_program_adapter", "DspyAdapter", "DSPyFullProgramAdapter"),
@@ -137,7 +138,7 @@ CATEGORY_INFO = {
     },
     "gepa_engine": {
         "title": "GEPA Engine",
-        "description": "Configuration for the built-in GEPA engine (`engine=\"gepa\"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.",
+        "description": 'Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.',
         "dir": "optimize_anything",
     },
     "core": {
