@@ -89,6 +89,7 @@ Stop conditions control when optimization terminates.
 
 Adapters integrate GEPA with different systems and frameworks.
 
+- [`MultiRolloutAdapter`](adapters/MultiRolloutAdapter.md)
 - [`DefaultAdapter`](adapters/DefaultAdapter.md)
 - [`DSPyAdapter`](adapters/DSPyAdapter.md)
 - [`DSPyFullProgramAdapter`](adapters/DSPyFullProgramAdapter.md)
