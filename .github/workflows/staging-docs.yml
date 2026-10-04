@@ -10,6 +10,7 @@ on:
       - omni-blog
       - jialin-blog
       - workbench
+      - named-failure-modes
 
 jobs:
   build-and-deploy:
