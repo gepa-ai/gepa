@@ -1,8 +1,8 @@
 """GEPA engine: runs the archived GEPA optimizer against the optimize_anything eval server.
 
-In-process — calls ``server.evaluate(candidate, example)`` directly. The eval
-budget is counted by the server but enforced by GEPA core's
-``MaxMetricCallsStopper`` at iteration boundaries (see ``run``).
+In-process — evaluates through the server, which enforces the eval budget by
+reservation: each grouped stage (seed/valset pass, minibatch, merge eval) is
+reserved in bulk and refused before any spend when it does not fit.
 ``max_token_cost`` is enforced via the GEPA engine's ``max_reflection_cost``
 stopper.
 
@@ -14,16 +14,28 @@ budget, ``run_dir``, and its own callbacks/stoppers on top.
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from gepa.oa.budget import BudgetExhausted
+from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
     from gepa.oa.task import Task
+
+
+class _StopOnRefusedReservation:
+    """GEPA stop callback: end the run at the next iteration boundary once the
+    eval server has refused a stage reservation."""
+
+    def __init__(self, budget: BudgetTracker) -> None:
+        self.budget = budget
+
+    def __call__(self, gepa_state: Any) -> bool:
+        return self.budget.refused > 0
 
 
 class GepaEngine:
@@ -66,20 +78,21 @@ class GepaEngine:
         # limits — set them as EngineConfig fields; GEPA core installs the
         # matching stoppers. The eval-call cap must win over any user value.
         gepa_config.engine.max_metric_calls = budget.max_evals
-        # Core's MaxMetricCallsStopper enforces that cap at iteration
-        # boundaries (the launcher's semantics: the iteration that crosses the
-        # cap finishes and its child is recorded). The server-side tracker
-        # therefore only keeps the ledger here; a hard mid-iteration stop
-        # would abort a partially-scored candidate and discard evals the user
-        # already paid for.
-        budget.enforce = False
+        # A refused reservation is the stop signal. With raise_on_exception=True
+        # (default) the BudgetExhausted propagates and run() answers from saved
+        # state; with raise_on_exception=False the adapter converts it into
+        # zero scores instead, so also end the loop at the next boundary.
+        stoppers = gepa_config.stop_callbacks
+        stoppers = [] if stoppers is None else list(stoppers) if isinstance(stoppers, Sequence) else [stoppers]
+        gepa_config.stop_callbacks = [s for s in stoppers if not isinstance(s, _StopOnRefusedReservation)] + [
+            _StopOnRefusedReservation(budget)
+        ]
         if self.run_dir is not None:
             gepa_config.engine.run_dir = self.run_dir
         if gepa_config.engine.run_dir is None:
-            # Always persist GEPA state (gepa_state.bin, saved by core at each
-            # iteration boundary): should a BudgetExhausted still escape, the
-            # val-aggregate/Pareto best is reloaded from it instead of falling
-            # back to the server's per-example argmax.
+            # Always persist GEPA state (gepa_state.bin, saved at each iteration
+            # boundary) so a BudgetExhausted is answered from the val-aggregate/
+            # Pareto best rather than the server's per-example argmax.
             if server.output_dir is not None:
                 gepa_config.engine.run_dir = str(server.output_dir / "gepa_state")
             else:
@@ -101,24 +114,25 @@ class GepaEngine:
         if self.max_token_cost is not None and gepa_config.engine.max_reflection_cost is None:
             gepa_config.engine.max_reflection_cost = self.max_token_cost
 
-        # The optimize_anything eval server (server.evaluate) is our single
-        # budget choke point — gepa.gepa_launcher's evaluator goes straight
-        # through it.
+        # The eval server is the single budget choke point. Grouped stages
+        # (seed/valset passes, minibatches, merge evals) take the batch path so
+        # the whole stage is reserved at once and refused before any spend
+        # when it does not fit; the per-pair evaluator serves singleton
+        # resolutions (refiner steps).
         def evaluator(candidate, example=None, **kwargs):
             return server.evaluate(candidate, example, **kwargs)
+
+        def batch_evaluator(pairs, opt_states=None):
+            return server.evaluate_batch(pairs, opt_states=opt_states)
 
         oa_kwargs: dict[str, Any] = {
             "seed_candidate": task.seed_candidate,
             "evaluator": evaluator,
             "config": gepa_config,
         }
-        if server.batch_fn is not None:
-            # Grouped stages (minibatch, valset, merge evals) flow through the
-            # server's batch path in ONE user call per stage; opt_states pass
-            # through when the user's batch function accepts them.
-            def batch_evaluator(pairs, opt_states=None):
-                return server.evaluate_batch(pairs, opt_states=opt_states)
-
+        if not gepa_config.engine.capture_stdio:
+            # capture_stdio scopes stdout/stderr per evaluation, which only the
+            # per-pair path can do; those runs reserve pair by pair instead.
             oa_kwargs["batch_evaluator"] = batch_evaluator
         if task.has_dataset:
             if task.train_set:
@@ -135,8 +149,6 @@ class GepaEngine:
         try:
             gepa_result = optimize_anything(**oa_kwargs)
         except BudgetExhausted:
-            # Defensive: with enforcement off the server no longer raises, but
-            # a caller-supplied stopper/evaluator still might.
             gepa_result = self._load_result_from_state(
                 run_dir=run_dir,
                 seed=gepa_config.engine.seed,

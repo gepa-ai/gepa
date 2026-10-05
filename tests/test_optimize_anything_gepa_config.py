@@ -74,10 +74,10 @@ def test_legacy_gepa_config_call_returns_gepa_result():
 
 
 def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
-    """Budget smaller than the seed's valset pass: core finishes the seed's
-    pass (the cap is enforced at iteration boundaries, not mid-eval) and its
-    stopper ends the run — legacy callers still get a GEPAResult, never the
-    omni Result."""
+    """Budget smaller than the seed's valset pass: the pass is refused before it
+    starts, so the engine has no saved state to answer from and the legacy
+    path synthesizes a single-candidate result — legacy callers must never
+    see the omni Result."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
@@ -372,16 +372,11 @@ def test_full_config_passthrough_and_reflective_dataset_persistence(tmp_path):
     assert rds, "core should persist reflective_dataset.json when write_agent_state is on"
 
 
-def test_legacy_cap_crossed_mid_valset_keeps_the_iteration(tmp_path):
-    """Issue #448: the iteration that crosses ``max_metric_calls`` must finish
-    and keep its child, as in 0.1.4 (core's ``MaxMetricCallsStopper`` stops at
-    the iteration boundary). Before the fix the server-side tracker raised
-    ``BudgetExhausted`` mid-valset, the in-flight child (already scored on most
-    of the valset) was discarded, and the result reloaded from the previous
-    iteration's state carried only the seed.
+def _run_legacy_counting(tmp_path, max_metric_calls):
+    """Issue #448 repro: counting evaluator, fake reflection LM, valset == dataset.
 
-    Also guards the companion leak: server bookkeeping (``_budget``) must not
-    ride along in per-example side info into the reflection prompt.
+    Stage costs: seed valset pass 4; child minibatch 2; child valset pass 2
+    more (the minibatch pair is served from the adapter cache).
     """
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
@@ -398,11 +393,9 @@ def test_legacy_cap_crossed_mid_valset_keeps_the_iteration(tmp_path):
         return f"improved candidate v{len(prompts)}"
 
     data = [f"ex{i}" for i in range(4)]
-    # Seed valset pass = 4 evals, child minibatch = 2, child valset = 4 → the
-    # child's valset pass crosses a cap of 7.
     config = GEPAConfig(
         engine=EngineConfig(
-            max_metric_calls=7,
+            max_metric_calls=max_metric_calls,
             run_dir=str(tmp_path / "state"),
             cache_evaluation=True,
             raise_on_exception=True,
@@ -412,12 +405,59 @@ def test_legacy_cap_crossed_mid_valset_keeps_the_iteration(tmp_path):
         reflection=ReflectionConfig(reflection_lm=reflection_lm, reflection_minibatch_size=2),
     )
     result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+    return result, calls, prompts
+
+
+def test_legacy_cap_that_funds_the_iteration_keeps_the_child(tmp_path):
+    """Cap 8 covers seed pass + child minibatch + child valset exactly: both
+    candidates are returned and the ledger lands on the cap, not above it."""
+    result, calls, prompts = _run_legacy_counting(tmp_path, max_metric_calls=8)
 
     assert len(result.candidates) == 2
     assert result.val_aggregate_scores == [0.2, 1.0]
     assert result.best_candidate == "improved candidate v1"
-    # Core's counter overshoots by the in-flight iteration; the server ledger
-    # counts every real evaluator call, none discarded.
-    assert result.total_metric_calls == 10
-    assert result.total_evals == len(calls)
+    assert len(calls) == 8
+    assert result.total_evals == 8
     assert prompts and not any("_budget" in p for p in prompts)
+
+
+def test_legacy_cap_is_a_strict_ceiling_and_refuses_an_unaffordable_stage(tmp_path):
+    """Issue #448 repro at cap 7. Before the fix the child's valset pass ran
+    three of its evals and was then aborted: paid work discarded, result
+    reloaded from the previous iteration. Now the stage is reserved in bulk
+    and refused before any of it runs — the ledger never exceeds the cap and
+    the result is answered from the saved seed state."""
+    result, calls, prompts = _run_legacy_counting(tmp_path, max_metric_calls=7)
+
+    assert len(calls) == 6  # seed pass (4) + child minibatch (2); the valset pass never started
+    assert result.total_evals == 6
+    assert result.candidates == [{"current_candidate": "seed"}]
+    assert result.val_aggregate_scores == [0.2]
+    assert prompts and not any("_budget" in p for p in prompts)
+
+
+def test_gepa_slice_leaves_hard_enforcement_on_a_shared_server(tmp_path):
+    """On a server shared across engines (``optimize_adaptive_sequential_with_server``)
+    the next engine relies on ``server.evaluate`` raising past the cap, so a
+    GEPA slice must leave the budget enforced exactly as it found it."""
+    from gepa.oa import BudgetExhausted, BudgetTracker, EvalServer, Task
+
+    task = Task(name="shared", seed_candidate="seed", train_set=[1, 2, 3], val_set=[1, 2, 3])
+    server = EvalServer(task, _evaluator, BudgetTracker(max_evals=3), max_concurrency=1)
+    engine = GepaEngine(
+        OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=3,
+            run_dir=str(tmp_path / "state"),
+            engine_config={"engine": {"seed": 0, "parallel": False}, "reflection": {"reflection_lm": _FakeLM()}},
+        )
+    )
+    try:
+        engine.run(task, server)
+        assert server.budget.used == 3  # the seed's valset pass
+        with pytest.raises(BudgetExhausted):
+            server.evaluate("seed", 1)
+        with pytest.raises(BudgetExhausted):
+            server.evaluate_examples("seed", split="val")
+    finally:
+        server.stop()

@@ -33,13 +33,17 @@ class OptimizeAnythingConfig:
             default output directory. When ``None``, a name is generated on the
             fly from the engine, a short uuid, and a timestamp (e.g.
             ``"gepa-a1b2c3d4-20260623-153045"``).
-        max_evals: Server-side cap on eval calls. ``None`` = unlimited. The
-            eval server enforces it before each new eval, so an external
-            engine stops exactly at the cap. The in-process ``gepa`` engine
-            instead hands the cap to GEPA core's ``MaxMetricCallsStopper`` and
-            stops at the next iteration boundary (launcher parity): the
-            iteration that crosses the cap finishes and its candidate is kept,
-            so a run may overshoot by up to one iteration's worth of evals.
+        max_evals: Server-side cap on eval calls. ``None`` = unlimited. A
+            strict ceiling: every eval, or a whole grouped stage, is reserved
+            atomically before it runs and refused before any spend when it
+            does not fit, so concurrent callers cannot overshoot. The
+            in-process ``gepa`` engine reserves each stage (seed/valset pass,
+            minibatch, merge eval) in bulk, so a run ends before a stage it
+            cannot afford and may leave part of the budget unspent rather
+            than strand a half-scored candidate. GEPA core's own
+            ``MaxMetricCallsStopper`` also receives the cap; it counts cache
+            hits too, so it can stop earlier than the server ledger, never
+            later.
         max_token_cost: Proposer-cost cap — cumulative USD an engine may spend
             on its *own* optimizer LLM tokens (reflection, agent). ``None`` =
             unlimited. This is **not** an eval-budget field: the eval server

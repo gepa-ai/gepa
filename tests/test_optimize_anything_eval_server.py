@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -56,9 +57,9 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             self.assertTrue((output_dir / "summary.json").exists())
             self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
 
-    def test_evaluate_batch_crossing_the_cap_records_every_pair(self) -> None:
-        """A grouped call is gated once up front and recorded in full: the user
-        already paid for every pair, so none is dropped (issue #448)."""
+    def test_evaluate_batch_is_refused_before_running_when_it_does_not_fit(self) -> None:
+        """A grouped stage is reserved in bulk: either the whole batch fits or
+        the user's function is never called and nothing is spent (issue #448)."""
         task = Task(name="task", seed_candidate="seed", train_set=[1, 2, 3, 4])
         seen: list[list[int]] = []
 
@@ -69,16 +70,92 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         budget = BudgetTracker(max_evals=3)
         server = EvalServer(task, lambda candidate, example: (0.0, {}), budget, batch_evaluate=batch_fn)
         try:
-            out = server.evaluate_batch([("seed", ex) for ex in (1, 2, 3, 4)])
+            with self.assertRaises(BudgetExhausted):
+                server.evaluate_batch([("seed", ex) for ex in (1, 2, 3, 4)])
+            self.assertEqual(seen, [])
+            self.assertEqual((budget.used, budget.reserved), (0, 0))
+
+            out = server.evaluate_batch([("seed", ex) for ex in (1, 2, 3)])
+            self.assertEqual([score for score, _info in out], [1.0, 2.0, 3.0])
+            self.assertEqual(seen, [[1, 2, 3]])
+            self.assertEqual((budget.used, budget.reserved), (3, 0))
+            self.assertTrue(budget.exhausted)
+            with self.assertRaises(BudgetExhausted):
+                server.evaluate_batch([("seed", 1)])
         finally:
             server.stop()
 
-        self.assertEqual([score for score, _info in out], [1.0, 2.0, 3.0, 4.0])
-        self.assertEqual(seen, [[1, 2, 3, 4]])
-        self.assertEqual(budget.used, 4)
-        self.assertTrue(budget.exhausted)
-        with self.assertRaises(BudgetExhausted):
-            server.evaluate_batch([("seed", 1)])
+    def test_evaluate_batch_without_batch_fn_runs_pairs_on_the_pool_in_order(self) -> None:
+        """With only a per-pair evaluator the bulk reservation still applies:
+        the stage is reserved once, then fanned out under max_concurrency."""
+        task = Task(name="task", seed_candidate="seed", train_set=[1, 2, 3])
+        budget = BudgetTracker(max_evals=3)
+        server = EvalServer(
+            task, lambda candidate, example: (float(example), {"ex": example}), budget, max_concurrency=2
+        )
+        try:
+            out = server.evaluate_batch([("seed", 3), ("seed", 1), ("seed", 2)])
+            self.assertEqual(out, [(3.0, {"ex": 3}), (1.0, {"ex": 1}), (2.0, {"ex": 2})])
+            self.assertEqual((budget.used, budget.reserved), (3, 0))
+            with self.assertRaises(BudgetExhausted):
+                server.evaluate_batch([("seed", 1)])
+        finally:
+            server.stop()
+
+    def test_evaluate_examples_reserves_the_whole_group(self) -> None:
+        task = Task(name="task", seed_candidate="seed", train_set=[1, 2, 3, 4])
+        calls: list[int] = []
+
+        def evaluator(candidate, example):
+            calls.append(example)
+            return 1.0, {}
+
+        budget = BudgetTracker(max_evals=3)
+        server = EvalServer(task, evaluator, budget, max_concurrency=4)
+        try:
+            with self.assertRaises(BudgetExhausted):
+                server.evaluate_examples("seed", split="train")
+            self.assertEqual(calls, [])
+            self.assertEqual((budget.used, budget.reserved), (0, 0))
+        finally:
+            server.stop()
+
+    def test_concurrent_callers_cannot_overshoot_the_cap(self) -> None:
+        """Racing single evals for the last slot: exactly one runs, the others
+        are refused before the evaluator is invoked."""
+        n = 6
+        calls: list[int] = []
+        calls_lock = threading.Lock()
+
+        def evaluator(candidate, example):
+            with calls_lock:
+                calls.append(example)
+            time.sleep(0.05)
+            return 1.0, {}
+
+        task = Task(name="task", seed_candidate="seed", train_set=list(range(n)))
+        budget = BudgetTracker(max_evals=3)
+        server = EvalServer(task, evaluator, budget, max_concurrency=n)
+        try:
+            server.evaluate("seed", 0)
+            server.evaluate("seed", 0)  # used = 2, one left
+            calls.clear()
+            with ThreadPoolExecutor(max_workers=n) as pool:
+                futures = [pool.submit(server.evaluate, "seed", i) for i in range(n)]
+                outcomes = []
+                for f in futures:
+                    try:
+                        f.result(timeout=5)
+                        outcomes.append("ok")
+                    except BudgetExhausted:
+                        outcomes.append("refused")
+        finally:
+            server.stop()
+
+        self.assertEqual(outcomes.count("ok"), 1)
+        self.assertEqual(outcomes.count("refused"), n - 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((budget.used, budget.reserved), (3, 0))
 
     def test_per_example_info_carries_no_server_bookkeeping(self) -> None:
         """``_budget`` used to be injected into every per-example ``info`` and

@@ -188,7 +188,8 @@ def test_autoresearch_no_eval_watchdog_preserves_reason_string(tmp_path: Path, m
 
 def test_autoresearch_budget_watchdog_preserves_reason_string(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     budget = BudgetTracker(max_evals=1)
-    budget.record(0.0)
+    budget.reserve(1)
+    budget.commit(0.0)
     engine = _engine_with_no_eval_watchdog(60.0)
     _fast_sleep(monkeypatch)
     monkeypatch.setattr("gepa.oa.engines.autoresearch._BUDGET_EXHAUSTION_GRACE_SECONDS", 0.0)
