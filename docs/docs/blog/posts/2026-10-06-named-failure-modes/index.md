@@ -1,6 +1,6 @@
 ---
 date:
-  created: 2026-09-30
+  created: 2026-10-06
 authors:
   - andrei
   - lakshya
@@ -16,7 +16,7 @@ slug: named-failure-modes
 readtime: 10
 title: "AdaMAST-Based Learned Error Diagnosis Improves GEPA's Reflection"
 description: "AdaMAST learns a failure taxonomy from a program's own traces, and an LLM judge that never sees the score diagnoses every execution against it. Feeding those findings to GEPA's reflection model lifts held-out scores by up to 9.7 percentage points under the same online optimization budget."
-social_image: blog/2026-08-18-named-failure-modes/images/hero.png
+social_image: blog/2026-10-06-named-failure-modes/images/hero.png
 citation_authors:
   - "Andrei Cojocaru"
   - "Lakshya A Agrawal"
