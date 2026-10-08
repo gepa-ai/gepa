@@ -3,6 +3,7 @@
 
 import os
 import random
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -41,6 +42,43 @@ from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.strategies.proposal_sampling import SamplingStrategy
 from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
+
+
+def _warn_if_budget_too_low(
+    max_metric_calls: int,
+    valset_size: int,
+    minibatch_size: int,
+    min_proposals: int = 3,
+) -> None:
+    """Warn when ``max_metric_calls`` is too small to support a meaningful search.
+
+    ``max_metric_calls`` is the only knob controlling how many proposals GEPA attempts, and
+    the relationship between the budget and the number of proposals is implicit and
+    data-dependent. An under-budgeted run stops after one or two proposals yet still looks
+    successful from the outside, because GEPA returns an improved candidate as soon as one is
+    accepted. This heuristic uses the classic single-mutation cost model to warn loudly in
+    that case. See https://github.com/gepa-ai/gepa/issues/375.
+    """
+    if valset_size <= 0 or minibatch_size <= 0:
+        # Can't estimate the floor (e.g. a streaming loader with no stable length, or a custom
+        # batch sampler that doesn't expose a minibatch size). Stay silent rather than guess.
+        return
+    baseline_eval_cost = valset_size
+    per_proposal_cost = minibatch_size + valset_size  # minibatch reflection + full validation
+    min_floor = baseline_eval_cost + min_proposals * per_proposal_cost
+    if max_metric_calls >= min_floor:
+        return
+    supported = max(0, (max_metric_calls - baseline_eval_cost) // per_proposal_cost)
+    warnings.warn(
+        f"max_metric_calls={max_metric_calls} is likely too low: with valset size {valset_size} "
+        f"and reflection_minibatch_size {minibatch_size}, baseline validation alone costs "
+        f"~{baseline_eval_cost} metric calls and each proposal costs ~{per_proposal_cost} more, "
+        f"so this budget supports only ~{supported} proposal(s). GEPA returns an improved "
+        f"candidate as soon as one is accepted, so an under-budgeted run can still look "
+        f"successful. Set max_metric_calls to at least {min_floor} to allow ~{min_proposals} "
+        f"proposals (more is better).",
+        stacklevel=3,
+    )
 
 
 def optimize(
@@ -372,6 +410,15 @@ def optimize(
         assert reflection_minibatch_size is None, (
             "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
         )
+
+    # Warn early if the metric-call budget is too small to support a meaningful search (#375).
+    if max_metric_calls is not None:
+        try:
+            valset_size = len(val_loader)
+        except TypeError:
+            valset_size = 0
+        minibatch_size = getattr(batch_sampler, "minibatch_size", 0) or 0
+        _warn_if_budget_too_low(max_metric_calls, valset_size, minibatch_size)
 
     acceptance_criterion_instance: AcceptanceCriterion
     if isinstance(acceptance_criterion, str):
