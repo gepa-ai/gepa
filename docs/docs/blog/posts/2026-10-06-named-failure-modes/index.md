@@ -14,7 +14,7 @@ equal_contribution:
   - "Lakshya A Agrawal"
 slug: named-failure-modes
 readtime: 10
-title: "AdaMAST-Based Learned Error Diagnosis Improves GEPA's Reflection"
+title: "Learned Error Diagnosis Improves GEPA's Reflection"
 description: "AdaMAST learns a failure taxonomy from a program's own traces, and an LLM judge that never sees the score diagnoses every execution against it. Feeding those findings to GEPA's reflection model lifts held-out scores by up to 9.7 percentage points under the same online optimization budget."
 social_image: blog/2026-10-06-named-failure-modes/images/hero.png
 citation_authors:
@@ -28,7 +28,7 @@ citation_authors:
 citation_keywords: "prompt optimization, reflective optimization, failure taxonomy, error analysis, credit assignment, LLM judge, GEPA, AdaMAST, MAST, HotpotQA, IFBench, HoVer"
 ---
 
-# AdaMAST-Based Learned Error Diagnosis Improves GEPA's Reflection
+# Learned Error Diagnosis Improves GEPA's Reflection
 
 <figure markdown="span">
   ![Grouped bar chart of held-out test score on three benchmarks. In each group a dashed grey line marks the unoptimized base program, an orange bar shows standard GEPA, and an indigo bar shows GEPA with AdaMAST error diagnosis, with the three individual seed runs drawn as small circles on each bar. HotpotQA rises from a 0.493 base to 0.656 with GEPA and 0.679 with AdaMAST error diagnosis, a gain of 2.3 points. IFBench rises from a 0.350 base to 0.462 and then 0.548, a gain of 8.6 points. HoVer rises from a 0.477 base to 0.559 and then 0.657, a gain of 9.7 points. On every benchmark the lowest AdaMAST seed sits above the highest baseline seed.](images/hero.svg){ style="width: 100%;" }
