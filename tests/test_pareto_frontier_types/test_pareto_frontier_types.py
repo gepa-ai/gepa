@@ -120,10 +120,10 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
     best_prompt = gepa_result.best_candidate["system_prompt"]
 
     if os.environ.get("RECORD_TESTS", "false").lower() == "true":
-        with open(optimized_prompt_file, "w") as f:
+        with open(optimized_prompt_file, "w", encoding="utf-8") as f:
             f.write(best_prompt)
         assert isinstance(best_prompt, str) and len(best_prompt) > 0
     else:
-        with open(optimized_prompt_file) as f:
+        with open(optimized_prompt_file, encoding="utf-8") as f:
             expected_prompt = f.read()
         assert best_prompt == expected_prompt
