@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import http.server
 import json
 import tempfile
 import threading
 import unittest
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -116,6 +118,80 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
         self.assertEqual(payload["average_score"], 1.0)
         self.assertEqual(server.progress_log, [])
+
+    def test_in_process_gepa_run_never_binds_http_listener(self) -> None:
+        """A pure in-process ``optimize_anything`` run never opens the localhost
+        HTTP listener (#448, item 3a): any bind attempt goes through
+        ``ThreadingHTTPServer``, so patching it to raise turns a regression
+        back into a loud failure while the run itself must still succeed."""
+
+        class _FakeLM:
+            def __call__(self, *args, **kwargs):
+                return "IMPROVED CANDIDATE: a longer and better answer than before"
+
+        def _refuse_to_bind(*args, **kwargs):
+            raise AssertionError("HTTP listener must not be bound for in-process runs")
+
+        from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+        with patch.object(http.server, "ThreadingHTTPServer", _refuse_to_bind):
+            result = optimize_anything(
+                seed_candidate="short",
+                evaluator=lambda candidate, example=None: (float(len(candidate)) / 100.0, {}),
+                objective="maximize length",
+                config=GEPAConfig(
+                    engine=EngineConfig(max_metric_calls=4),
+                    reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+                ),
+            )
+
+        self.assertTrue(result.best_candidate)
+        self.assertGreaterEqual(result.total_evals, 1)
+
+    def test_url_access_binds_listener_lazily_and_endpoint_answers(self) -> None:
+        """Reading ``.url`` starts the listener on demand; the surfaced URL is
+        live, so external engines can rely on it without an explicit start."""
+        task = Task(name="task", seed_candidate="seed", train_set=["a", "b"])
+        server = EvalServer(
+            task,
+            lambda candidate, example: (1.0, {}),
+            BudgetTracker(max_evals=4),
+            max_concurrency=1,
+        )
+        try:
+            self.assertIsNone(server._server)
+            url = server.url
+            self.assertIsNotNone(server._server)
+            self.assertEqual(url, f"http://localhost:{server.port}")
+            with urllib.request.urlopen(f"{url}/status", timeout=5) as resp:
+                payload = json.loads(resp.read().decode())
+        finally:
+            server.stop()
+
+        self.assertIn("budget", payload)
+
+    def test_explicit_start_is_idempotent_and_stop_is_final(self) -> None:
+        """Callers owning the server (ensemble compositions) keep the explicit
+        contract: ``start()`` is idempotent and rebinds nothing; after
+        ``stop()`` the listener cannot silently come back."""
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=2))
+        try:
+            self.assertIsNone(server._server)
+            port = server.start()
+            self.assertEqual(server.start(), port)
+            self.assertEqual(server.port, port)
+        finally:
+            server.stop()
+
+        self.assertIsNone(server._server)
+        with self.assertRaises(RuntimeError):
+            server.port  # noqa: B018
+        with self.assertRaises(RuntimeError):
+            # An explicit start must not silently rebind a listener whose
+            # worker pool ``stop()`` already shut down.
+            server.start()
+        self.assertIsNone(server._server)
 
 
 if __name__ == "__main__":
