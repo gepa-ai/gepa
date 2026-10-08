@@ -256,6 +256,11 @@ On resume:
 - A different `seed_candidate` is full-valset-evaluated and added as a child of the saved seed (like an accepted proposal).
 - The same `seed_candidate` does no extra seed eval.
 
+Checkpoints created before the transient-failure cache fix may contain synthetic zero scores from temporary
+`batch_evaluator` failures. These entries are not automatically detected or removed. To clear them,
+start a fresh run in a new `run_dir`, or delete the affected `gepa_state.bin` to restart optimization
+without its saved progress.
+
 
 ### My smaller model produces malformed outputs frequently — can GEPA fix this?
 

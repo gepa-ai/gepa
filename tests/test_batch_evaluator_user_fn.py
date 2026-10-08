@@ -13,10 +13,12 @@ call for all pairs.
 
 import pytest
 
+import gepa
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import (
     BatchEvaluatorWrapper,
     OptimizeAnythingAdapter,
 )
+from gepa.core.state import TRAINSET_CACHE_SPLIT, GEPAState
 
 # ---------------------------------------------------------------------------
 # BatchEvaluatorWrapper unit tests
@@ -340,11 +342,109 @@ def test_transient_batch_failure_is_never_cached():
 
     first = adapter.batch_evaluate([({"bias": "0"}, [1, 2])])
     assert first[0].scores == [0.0, 0.0]
+    assert first[0].cacheable == [False, False]
     assert all(t.get("_gepa_transient_failure") for t in first[0].trajectories)
 
     state["fail"] = False
     second = adapter.batch_evaluate([({"bias": "0"}, [1, 2])])
     assert second[0].scores == [1.0, 1.0], "failure results were cached and never re-evaluated"
+    assert second[0].cacheable == [True, True]
+
+
+@pytest.mark.parametrize("write_agent_state", [False, True])
+def test_transient_batch_failure_is_not_persisted_in_core_cache(tmp_path, write_agent_state):
+    calls = 0
+
+    def flaky(pairs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("transient outage")
+        return [(1.0, {"recovered": True}) for _ in pairs]
+
+    adapter = OptimizeAnythingAdapter(
+        evaluator=None,
+        parallel=False,
+        cache_mode="memory",
+        batch_evaluator=BatchEvaluatorWrapper(flaky, raise_on_exception=False),
+    )
+    candidate = {"text": "seed"}
+    examples = ["example"]
+
+    gepa.optimize(
+        seed_candidate=candidate,
+        trainset=examples,
+        adapter=adapter,
+        write_agent_state=write_agent_state,
+        reflection_lm=lambda prompt: "unused",
+        max_metric_calls=1,
+        cache_evaluation=True,
+        run_dir=str(tmp_path),
+    )
+
+    state = GEPAState.load(str(tmp_path))
+    assert state.evaluation_cache is not None
+    assert state.evaluation_cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT) is None
+
+    def evaluate(batch, candidate):
+        result = adapter.evaluate(batch, candidate)
+        return result.outputs, result.scores, result.objective_scores
+
+    _, scores, _, actual_evals = state.evaluation_cache.evaluate_with_cache_full(
+        candidate,
+        [0],
+        lambda ids: [examples[i] for i in ids],
+        evaluate,
+        split=TRAINSET_CACHE_SPLIT,
+    )
+
+    assert scores == {0: 1.0}
+    assert actual_evals == 1
+    assert calls == 2
+
+
+def test_legitimate_zero_score_is_persisted_in_core_cache(tmp_path):
+    calls = 0
+
+    def zero_score(pairs):
+        nonlocal calls
+        calls += 1
+        return [(0.0, {"valid": True}) for _ in pairs]
+
+    adapter = OptimizeAnythingAdapter(
+        evaluator=None,
+        parallel=False,
+        cache_mode="memory",
+        batch_evaluator=zero_score,
+    )
+    candidate = {"text": "seed"}
+
+    gepa.optimize(
+        seed_candidate=candidate,
+        trainset=["example"],
+        adapter=adapter,
+        reflection_lm=lambda prompt: "unused",
+        max_metric_calls=1,
+        cache_evaluation=True,
+        run_dir=str(tmp_path),
+    )
+
+    state = GEPAState.load(str(tmp_path))
+    assert state.evaluation_cache is not None
+    cached = state.evaluation_cache.get(candidate, 0, split=TRAINSET_CACHE_SPLIT)
+    assert cached is not None
+    assert cached.score == 0.0
+
+    _, scores, _, actual_evals = state.evaluation_cache.evaluate_with_cache_full(
+        candidate,
+        [0],
+        lambda ids: ["example" for _ in ids],
+        lambda batch, candidate: pytest.fail("legitimate zero score was not cached"),
+        split=TRAINSET_CACHE_SPLIT,
+    )
+    assert scores == {0: 0.0}
+    assert actual_evals == 0
+    assert calls == 1
 
 
 def test_duplicate_pairs_deduplicated_within_grouped_call_when_cached():
