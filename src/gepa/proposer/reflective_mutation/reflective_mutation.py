@@ -11,6 +11,7 @@ from gepa.core.adapter import (
     EvaluationBatch,
     GEPAAdapter,
     ProposalFn,
+    ReflectiveDatasetEnricher,
     RolloutOutput,
     Trajectory,
     invoke_batch_evaluate,
@@ -75,6 +76,7 @@ class ReflectiveMutationProposer:
         callbacks: list[GEPACallback] | None = None,
         sampling_strategy: SamplingStrategy | None = None,
         reflection_strategy: ReflectionLM | None = None,
+        reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -89,6 +91,7 @@ class ReflectiveMutationProposer:
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
         self.sampling_strategy: SamplingStrategy = sampling_strategy or SingleMutationSampling()
+        self.reflective_dataset_enricher = reflective_dataset_enricher
 
         self.reflection_prompt_template = reflection_prompt_template
 
@@ -473,6 +476,13 @@ class ReflectiveMutationProposer:
                 reflective_dataset = self.adapter.make_reflective_dataset(
                     task.parent_candidate, eval_curr, predictor_names
                 )
+                if self.reflective_dataset_enricher is not None:
+                    reflective_dataset = self.reflective_dataset_enricher(
+                        candidate=task.parent_candidate,
+                        eval_batch=eval_curr,
+                        components_to_update=predictor_names,
+                        reflective_dataset=reflective_dataset,
+                    )
                 reflective_dataset_concrete: dict[str, list[dict[str, Any]]] = {
                     k: [dict(item) for item in v] for k, v in reflective_dataset.items()
                 }
