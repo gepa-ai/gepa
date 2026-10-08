@@ -136,6 +136,7 @@ nav:
         - Strategies:
             - BatchSampler: api/strategies/BatchSampler.md
             - EpochShuffledBatchSampler: api/strategies/EpochShuffledBatchSampler.md
+            - DifficultyAwareBatchSampler: api/strategies/DifficultyAwareBatchSampler.md
             - CandidateSelector: api/strategies/CandidateSelector.md
             - ParetoCandidateSelector: api/strategies/ParetoCandidateSelector.md
             - CurrentBestCandidateSelector: api/strategies/CurrentBestCandidateSelector.md
