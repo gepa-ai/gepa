@@ -130,6 +130,10 @@ class EvalServer:
     In-process engines call :meth:`evaluate` directly. External engines POST
     to :attr:`url`. Both go through the same budget counter.
 
+    The HTTP listener binds lazily — on the first :attr:`port`/:attr:`url`
+    access or an explicit :meth:`start` — so runs that only evaluate
+    in-process never open a localhost socket (#448).
+
     Args:
         task: Task definition (name, datasets, objective/background).
         evaluate: Per-pair scoring function. Optional when ``batch_evaluate``
@@ -218,6 +222,8 @@ class EvalServer:
         self._pool = ThreadPoolExecutor(max_workers=max_concurrency)
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._http_lock = threading.Lock()
+        self._http_stopped = False
 
     # ── Direct Python API (used by in-process engines like GEPA) ───────
 
@@ -485,16 +491,55 @@ class EvalServer:
 
     @property
     def port(self) -> int:
-        if self._server is None:
-            raise RuntimeError("Server not started")
-        return self._server.server_address[1]
+        """The bound HTTP port.
+
+        Binds the listener on first access, so external-engine code paths
+        pay for the socket only when they actually need it (#448).
+        """
+        return self._ensure_http_started().server_address[1]
 
     @property
     def url(self) -> str:
         return f"http://localhost:{self.port}"
 
     def start(self, port: int = 0) -> int:
-        """Start the HTTP server. Returns the bound port."""
+        """Start the HTTP server (idempotent). Returns the bound port.
+
+        Engines that manage the server themselves (the ensemble
+        compositions) call this explicitly; everyone else gets an implicit,
+        lazy start from the first :attr:`port`/:attr:`url` read.
+        """
+        with self._http_lock:
+            if self._server is not None:
+                return self._server.server_address[1]
+            self._bind_http(port)
+            assert self._server is not None
+            return self._server.server_address[1]
+
+    def stop(self) -> None:
+        with self._http_lock:
+            self._http_stopped = True
+            if self._server:
+                self._server.shutdown()
+                self._server = None
+        self._pool.shutdown(wait=False)
+
+    def _ensure_http_started(self) -> HTTPServer:
+        """Return the running HTTP server, binding it on first need.
+
+        Raises ``RuntimeError`` after :meth:`stop`: the worker pool is shut
+        down by then, so a fresh listener would have nothing to serve with.
+        """
+        with self._http_lock:
+            if self._server is None:
+                if self._http_stopped:
+                    raise RuntimeError("Server stopped; the HTTP listener cannot be restarted")
+                self._bind_http(0)
+            assert self._server is not None
+            return self._server
+
+    def _bind_http(self, port: int) -> None:
+        """Bind the listener and start its daemon thread. Caller holds ``_http_lock``."""
         server_ref = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -529,13 +574,6 @@ class EvalServer:
         self._server = ThreadingHTTPServer(("localhost", port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        return self.port
-
-    def stop(self) -> None:
-        if self._server:
-            self._server.shutdown()
-            self._server = None
-        self._pool.shutdown(wait=False)
 
     # ── Internal ────────────────────────────────────────────────────────
 
