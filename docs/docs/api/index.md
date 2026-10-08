@@ -34,6 +34,7 @@ Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are 
 - [`get_log_context`](optimize_anything/get_log_context.md)
 - [`set_log_context`](optimize_anything/set_log_context.md)
 - [`make_litellm_lm`](optimize_anything/make_litellm_lm.md)
+- [`make_atlascloud_lm`](optimize_anything/make_atlascloud_lm.md)
 
 ## Core
 
