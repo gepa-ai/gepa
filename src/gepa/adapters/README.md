@@ -9,5 +9,6 @@ Currently, GEPA has the following adapters:
 - [Default Adapter](./default_adapter/): This adapter integrates GEPA into a single-turn LLM environment, where the task is specified as a user message, and an answer string must be present in the assistant response. GEPA optimizes the system prompt.
 - [AnyMaths Adapter](./anymaths_adapter/): This adapter integrates GEPA with litellm and ollama to solve single-turn mathematical problems.
 - [LangChain Adapter](./langchain_adapter/): This adapter integrates GEPA with [LangChain](https://python.langchain.com/) — works with any chat model via `init_chat_model`, plus tool-using agents (`create_agent`), LangGraph graphs, and RAG pipelines.
+- [Opik Adapter](./opik_adapter/): Native adapter for [Comet Opik](https://www.comet.com/docs/opik/) datasets and metrics. Optimize a system prompt against an Opik `Dataset` using any Opik-style metric; the metric's `reason` field becomes the natural-language feedback GEPA's reflection LM reads.
 
 If there are any frameworks you would like GEPA integrated into, please create an issue or PR!
