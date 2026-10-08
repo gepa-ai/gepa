@@ -187,6 +187,11 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         self.assertIsNone(server._server)
         with self.assertRaises(RuntimeError):
             server.port  # noqa: B018
+        with self.assertRaises(RuntimeError):
+            # An explicit start must not silently rebind a listener whose
+            # worker pool ``stop()`` already shut down.
+            server.start()
+        self.assertIsNone(server._server)
 
 
 if __name__ == "__main__":

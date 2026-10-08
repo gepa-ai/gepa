@@ -512,6 +512,10 @@ class EvalServer:
         with self._http_lock:
             if self._server is not None:
                 return self._server.server_address[1]
+            if self._http_stopped:
+                # Same reason as `_ensure_http_started`: the worker pool is shut
+                # down by then, so a fresh listener would have nothing to serve with.
+                raise RuntimeError("Server stopped; the HTTP listener cannot be restarted")
             self._bind_http(port)
             assert self._server is not None
             return self._server.server_address[1]
