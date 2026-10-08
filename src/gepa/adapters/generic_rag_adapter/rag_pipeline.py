@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import warnings
 from typing import Any, Callable
 
 from gepa.adapters.generic_rag_adapter.vector_store_interface import VectorStoreInterface
@@ -123,7 +124,17 @@ class RAGPipeline:
                 alpha = config.get("hybrid_alpha", 0.5)
                 return self.vector_store.hybrid_search(query, k=k, alpha=alpha, filters=filters)
             else:
-                # Fallback to similarity search
+                # The store cannot blend semantic and keyword scores, so "hybrid"
+                # silently degrades to pure vector similarity and ``hybrid_alpha``
+                # has no effect. Surface that instead of letting callers believe
+                # their alpha is being honored (see VectorStoreInterface docs).
+                warnings.warn(
+                    f"retrieval_strategy='hybrid' was requested but "
+                    f"{type(self.vector_store).__name__} does not support hybrid search; "
+                    "falling back to similarity_search and ignoring 'hybrid_alpha'.",
+                    UserWarning,
+                    stacklevel=2,
+                )
                 return self.vector_store.similarity_search(query, k=k, filters=filters)
         elif retrieval_strategy == "vector":
             # Use pre-computed embedding

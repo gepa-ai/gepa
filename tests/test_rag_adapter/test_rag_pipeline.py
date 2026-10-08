@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import warnings
 from typing import Any
 
 import pytest
@@ -252,3 +253,86 @@ class TestRAGPipeline:
         assert isinstance(result, dict)
         assert "original_query" in result
         assert result["original_query"] == query
+
+
+class _SimilarityOnlyStore(VectorStoreInterface):
+    """Store that does not support hybrid search (inherits the default False)."""
+
+    def __init__(self):
+        self.docs = [{"content": "doc", "metadata": {"doc_id": "d1"}, "score": 1.0}]
+
+    def similarity_search(self, query: str, k: int = 5, filters: dict[str, Any] = None) -> list[dict[str, Any]]:
+        return self.docs[:k]
+
+    def vector_search(self, query_vector, k: int = 5, filters=None) -> list[dict[str, Any]]:
+        return self.docs[:k]
+
+    def get_collection_info(self) -> dict[str, Any]:
+        return {"name": "sim", "document_count": len(self.docs), "vector_store_type": "sim"}
+
+
+class _HybridStore(_SimilarityOnlyStore):
+    """Store that genuinely supports hybrid search and records the alpha it saw."""
+
+    def __init__(self):
+        super().__init__()
+        self.seen_alpha = None
+
+    def supports_hybrid_search(self) -> bool:
+        return True
+
+    def hybrid_search(
+        self, query: str, k: int = 5, alpha: float = 0.5, filters: dict[str, Any] = None
+    ) -> list[dict[str, Any]]:
+        self.seen_alpha = alpha
+        return self.docs[:k]
+
+
+class TestHybridRetrievalFallback:
+    """Hybrid retrieval must be honest about capability (fix for silent alpha drop)."""
+
+    def _pipeline(self, store):
+        return RAGPipeline(vector_store=store, llm_client=lambda messages: "ok")
+
+    def test_warns_and_falls_back_when_hybrid_unsupported(self):
+        pipeline = self._pipeline(_SimilarityOnlyStore())
+        config = {"retrieval_strategy": "hybrid", "hybrid_alpha": 0.9, "top_k": 1}
+
+        with pytest.warns(UserWarning, match="does not support hybrid search"):
+            docs = pipeline._retrieve_documents("q", config)
+
+        assert docs == [{"content": "doc", "metadata": {"doc_id": "d1"}, "score": 1.0}]
+
+    def test_no_warning_and_alpha_forwarded_when_supported(self):
+        store = _HybridStore()
+        pipeline = self._pipeline(store)
+        config = {"retrieval_strategy": "hybrid", "hybrid_alpha": 0.9, "top_k": 1}
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning would raise
+            docs = pipeline._retrieve_documents("q", config)
+
+        assert store.seen_alpha == 0.9
+        assert len(docs) == 1
+
+    def test_similarity_strategy_does_not_warn(self):
+        pipeline = self._pipeline(_SimilarityOnlyStore())
+        config = {"retrieval_strategy": "similarity", "top_k": 1}
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            docs = pipeline._retrieve_documents("q", config)
+
+        assert len(docs) == 1
+
+    def test_qdrant_and_milvus_report_no_hybrid_support(self):
+        # These stubs only do vector similarity, so they must not advertise
+        # hybrid support. Bypass __init__ (which needs an optional client dep)
+        # since supports_hybrid_search does not touch instance state.
+        from gepa.adapters.generic_rag_adapter.vector_stores.milvus_store import MilvusVectorStore
+        from gepa.adapters.generic_rag_adapter.vector_stores.qdrant_store import QdrantVectorStore
+
+        qdrant = object.__new__(QdrantVectorStore)
+        milvus = object.__new__(MilvusVectorStore)
+        assert qdrant.supports_hybrid_search() is False
+        assert milvus.supports_hybrid_search() is False
