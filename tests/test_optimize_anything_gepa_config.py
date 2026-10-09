@@ -486,6 +486,12 @@ def test_parallel_proposals_validate_as_many_children_as_the_cap_funds(tmp_path)
     assert result.total_evals == 14
     assert len(result.candidates) == 3  # seed + two validated children
     assert result.val_aggregate_scores == [0.2, 1.0, 1.0]
+    # Selection order is proposal order: v1 and v2 are validated, v3 is not.
+    assert [c["current_candidate"] for c in result.candidates[1:]] == ["improved candidate v1", "improved candidate v2"]
+    per_candidate = {c: sum(1 for cand, _ in calls if cand == c) for c in {cand for cand, _ in calls}}
+    assert per_candidate["improved candidate v1"] == 4  # 2-eval screen + 2-eval validation
+    assert per_candidate["improved candidate v2"] == 4
+    assert per_candidate["improved candidate v3"] == 2  # screen only: its validation never started
     budget_rejections = [r for r in rejections if "budget" in r.lower()]
     assert len(budget_rejections) == 1
 
@@ -605,3 +611,208 @@ def test_resumed_run_with_an_unaffordable_new_seed_answers_from_the_saved_pool(t
         assert second.budget.used == 0
     finally:
         second.stop()
+
+
+def test_run_batch_reconciles_what_core_reserved_with_what_the_adapter_sends():
+    """The grouped call books against core's reservation: a surplus (the adapter
+    cache served some pairs) is released first, a shortfall is topped up, and a
+    shortfall that cannot be topped up releases the reservation and counts as a
+    bulk refusal."""
+    from gepa.oa import BudgetExhausted, BudgetTracker, EvalServer, Task
+    from gepa.oa.engines.gepa import _ServerEvalBudget
+
+    task = Task(name="t", seed_candidate="s")
+    budget = BudgetTracker(max_evals=6)
+    server = EvalServer(task, lambda candidate, example: (float(example), {}), budget, max_concurrency=1)
+    view = _ServerEvalBudget(budget)
+    try:
+        assert view.reserve(4)  # core expected 4 misses, the adapter sends 2
+        view.run_batch(server, [("s", 1), ("s", 2)], None)
+        assert (budget.used, budget.reserved, view.outstanding) == (2, 0, 0)
+
+        assert view.reserve(1)  # core reserved 1, the adapter sends 2: topped up
+        view.run_batch(server, [("s", 3), ("s", 4)], None)
+        assert (budget.used, budget.reserved) == (4, 0)
+
+        assert view.reserve(1)  # 1 left after this; a 3-pair call cannot be topped up
+        with pytest.raises(BudgetExhausted):
+            view.run_batch(server, [("s", 5), ("s", 6), ("s", 7)], None)
+        assert (budget.used, budget.reserved, view.bulk_refusals) == (4, 0, 1)
+
+        view.run_batch(server, [("s", 8), ("s", 9)], None)  # no reservation: plain bulk path
+        assert (budget.used, budget.reserved) == (6, 0)
+    finally:
+        server.stop()
+
+
+def _engine_for_stop_rule(
+    *, remaining, minibatch_size, trainset_size, valset_is_trainset, valset_size, cache, policy=None
+):
+    """A GEPAEngine shell with just the attributes the stop rule reads."""
+    from types import SimpleNamespace
+
+    from gepa.core.data_loader import ensure_loader
+    from gepa.core.engine import GEPAEngine
+    from gepa.strategies.eval_policy import FullEvaluationPolicy
+
+    engine = GEPAEngine.__new__(GEPAEngine)
+    trainset = ensure_loader(list(range(trainset_size)))
+    engine.valset = trainset if valset_is_trainset else ensure_loader(list(range(valset_size)))
+    engine.reflective_proposer = SimpleNamespace(
+        trainset=trainset, batch_sampler=SimpleNamespace(minibatch_size=minibatch_size)
+    )
+    engine.val_evaluation_policy = policy or FullEvaluationPolicy()
+    engine._eval_budget = SimpleNamespace(remaining=remaining)
+    engine._stopped_on_budget = False
+    engine.logger = SimpleNamespace(log=lambda *a, **k: None)
+    state = SimpleNamespace(evaluation_cache=cache)
+    return engine, state
+
+
+@pytest.mark.parametrize(
+    ("remaining", "kwargs", "stops"),
+    [
+        # no cache, valset separate: parent screen + child screen + full validation = 2 + 2 + 5 = 9
+        (
+            9,
+            {"minibatch_size": 2, "trainset_size": 10, "valset_is_trainset": False, "valset_size": 5, "cache": None},
+            False,
+        ),
+        (
+            8,
+            {"minibatch_size": 2, "trainset_size": 10, "valset_is_trainset": False, "valset_size": 5, "cache": None},
+            True,
+        ),
+        # cache, valset is the trainset of 4: child screen 2 + validation of the other 2 = 4
+        (
+            4,
+            {"minibatch_size": 2, "trainset_size": 4, "valset_is_trainset": True, "valset_size": 4, "cache": object()},
+            False,
+        ),
+        (
+            3,
+            {"minibatch_size": 2, "trainset_size": 4, "valset_is_trainset": True, "valset_size": 4, "cache": object()},
+            True,
+        ),
+        # a trainset of 2 padded to a minibatch of 3: the screen can cost at most 2, validation 0
+        (
+            2,
+            {"minibatch_size": 3, "trainset_size": 2, "valset_is_trainset": True, "valset_size": 2, "cache": object()},
+            False,
+        ),
+        (
+            1,
+            {"minibatch_size": 3, "trainset_size": 2, "valset_is_trainset": True, "valset_size": 2, "cache": object()},
+            True,
+        ),
+    ],
+)
+def test_stop_rule_is_a_lower_bound_on_one_proposals_cost(remaining, kwargs, stops):
+    engine, state = _engine_for_stop_rule(remaining=remaining, **kwargs)
+    assert engine._cannot_fund_a_proposal(state) is stops
+
+
+def test_stop_rule_never_consults_a_custom_evaluation_policy():
+    """A subset policy's cost is unknown and asking it for a batch could advance
+    its state, so the rule stays out of the way: no stop, no call."""
+    from gepa.strategies.eval_policy import FullEvaluationPolicy
+
+    class _Counting(FullEvaluationPolicy):
+        calls = 0
+
+        def get_eval_batch(self, valset, state):
+            type(self).calls += 1
+            return super().get_eval_batch(valset, state)
+
+    class _Subset:
+        calls = 0
+
+        def get_eval_batch(self, valset, state):
+            type(self).calls += 1
+            return list(valset.all_ids())[:1]
+
+        def get_best_program(self, state):
+            return 0
+
+        def get_valset_score(self, program_idx, state):
+            return 0.0
+
+    engine, state = _engine_for_stop_rule(
+        remaining=1,
+        minibatch_size=2,
+        trainset_size=4,
+        valset_is_trainset=False,
+        valset_size=10,
+        cache=None,
+        policy=_Subset(),
+    )
+    assert engine._cannot_fund_a_proposal(state) is False
+    assert _Subset.calls == 0
+    engine, state = _engine_for_stop_rule(
+        remaining=1,
+        minibatch_size=2,
+        trainset_size=4,
+        valset_is_trainset=False,
+        valset_size=10,
+        cache=None,
+        policy=_Counting(),
+    )
+    assert engine._cannot_fund_a_proposal(state) is True
+    assert _Counting.calls == 0  # the full policy's size is len(valset); the policy itself is not called
+
+
+def test_padded_minibatch_does_not_stop_an_affordable_run(tmp_path):
+    """Trainset of 2 with minibatch 3: the sampler pads with a repeat the cache
+    serves, so a child costs 2 to screen and 0 to validate. Cap 4 (seed 2 +
+    screen 2) must therefore reach the child; an overestimate would stop after
+    the seed."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    def evaluator(candidate, example):
+        return (1.0 if "improved" in candidate else 0.2), {}
+
+    data = ["ex0", "ex1"]
+    config = GEPAConfig(
+        engine=EngineConfig(
+            max_metric_calls=4, run_dir=str(tmp_path / "state"), cache_evaluation=True, parallel=False, seed=0
+        ),
+        reflection=ReflectionConfig(reflection_lm=lambda prompt: "improved candidate", reflection_minibatch_size=3),
+    )
+    result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+    assert len(result.candidates) == 2
+    assert result.total_evals == 4
+
+
+def test_parallel_off_keeps_the_servers_fan_out_sequential(monkeypatch):
+    """``EngineConfig.parallel=False`` must still mean one evaluation at a time
+    now that grouped stages run on the server's pool."""
+    from gepa.oa import BudgetTracker, EvalServer, Task
+    from gepa.oa.engines import gepa as gepa_engine_module
+
+    captured: dict = {}
+
+    def fake_optimize_anything(**kwargs):
+        captured.update(kwargs)
+        raise gepa_engine_module.BudgetExhausted("stop here")
+
+    monkeypatch.setattr("gepa.gepa_launcher.optimize_anything", fake_optimize_anything)
+    task = Task(name="t", seed_candidate="seed", train_set=[1, 2], val_set=[1, 2])
+    server = EvalServer(task, _evaluator, BudgetTracker(max_evals=4), max_concurrency=4)
+    try:
+        for parallel, raise_on_exception in ((False, True), (True, False)):
+            captured.clear()
+            GepaEngine(
+                OptimizeAnythingConfig(
+                    engine="gepa",
+                    max_evals=4,
+                    engine_config={
+                        "engine": {"parallel": parallel, "raise_on_exception": raise_on_exception},
+                        "reflection": {"reflection_lm": _FakeLM()},
+                    },
+                )
+            ).run(task, server)
+            view = captured["eval_budget"]
+            assert view.sequential is (not parallel)
+            assert view.isolate_errors is (not raise_on_exception)
+    finally:
+        server.stop()

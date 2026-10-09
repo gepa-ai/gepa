@@ -40,9 +40,10 @@ class _ServerEvalBudget:
     screens) still reserve in bulk on the server as before.
     """
 
-    def __init__(self, budget: BudgetTracker, *, isolate_errors: bool = False) -> None:
+    def __init__(self, budget: BudgetTracker, *, isolate_errors: bool = False, sequential: bool = False) -> None:
         self.budget = budget
         self.isolate_errors = isolate_errors
+        self.sequential = sequential
         self.outstanding = 0  # evals core reserved for the next grouped call
         self.bulk_refusals = 0  # server refusals of calls core did not pre-reserve
 
@@ -74,7 +75,9 @@ class _ServerEvalBudget:
         pre, self.outstanding = self.outstanding, 0
         if pre == 0:
             try:
-                return server.evaluate_batch(pairs, opt_states=opt_states, isolate_errors=self.isolate_errors)
+                return server.evaluate_batch(
+                    pairs, opt_states=opt_states, isolate_errors=self.isolate_errors, sequential=self.sequential
+                )
             except BudgetExhausted:
                 self.bulk_refusals += 1
                 raise
@@ -91,7 +94,9 @@ class _ServerEvalBudget:
             # Core reserved more than the adapter sends (its own cache served some
             # pairs): give the difference back before running.
             self.budget.release(pre - len(pairs))
-        return server.evaluate_batch(pairs, opt_states=opt_states, reserved=True, isolate_errors=self.isolate_errors)
+        return server.evaluate_batch(
+            pairs, opt_states=opt_states, reserved=True, isolate_errors=self.isolate_errors, sequential=self.sequential
+        )
 
 
 class _StopOnRefusedReservation:
@@ -155,9 +160,15 @@ class GepaEngine:
         # run() answers from saved state; with raise_on_exception=False the
         # adapter converts it into zero scores instead, so also end the loop at
         # the next boundary.
-        # The per-pair fan-out isolates a failing example when the user asked for
-        # that (raise_on_exception=False), as the per-pair evaluator path does.
-        eval_budget = _ServerEvalBudget(budget, isolate_errors=not gepa_config.engine.raise_on_exception)
+        # The server's own fan-out (no user batch function) honours the engine
+        # config as the per-pair path did: a failing example is isolated when
+        # raise_on_exception is off, and pairs run one at a time when parallel
+        # is off (an evaluator that is not thread-safe).
+        eval_budget = _ServerEvalBudget(
+            budget,
+            isolate_errors=not gepa_config.engine.raise_on_exception,
+            sequential=not gepa_config.engine.parallel,
+        )
         stoppers = gepa_config.stop_callbacks
         stoppers = [] if stoppers is None else list(stoppers) if isinstance(stoppers, Sequence) else [stoppers]
         gepa_config.stop_callbacks = [s for s in stoppers if not isinstance(s, _StopOnRefusedReservation)] + [

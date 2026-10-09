@@ -137,8 +137,8 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         try:
             results = server.evaluate_batch([("s", 1), ("s", 2), ("s", 3)], isolate_errors=True)
             self.assertEqual([score for score, _ in results], [1.0, 0.0, 3.0])
-            self.assertTrue(results[1][1]["_gepa_transient_failure"])
             self.assertIn("boom", results[1][1]["error"])
+            self.assertNotIn("_gepa_transient_failure", results[1][1])  # per-pair parity: a real, cacheable 0.0
             self.assertEqual((budget.used, budget.reserved), (3, 0))
             budget2 = BudgetTracker(max_evals=3)
             strict = EvalServer(task, evaluator, budget2, max_concurrency=2)
@@ -148,6 +148,53 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
                 self.assertEqual((budget2.used, budget2.reserved), (3, 0))
             finally:
                 strict.stop()
+        finally:
+            server.stop()
+
+    def test_sequential_fan_out_runs_one_pair_at_a_time(self) -> None:
+        """``sequential=True`` keeps a non-thread-safe evaluator on one thread
+        even though the server pool allows more."""
+        task = Task(name="t", seed_candidate="s")
+        lock = threading.Lock()
+        active = {"now": 0, "peak": 0}
+
+        def evaluator(candidate, example):
+            with lock:
+                active["now"] += 1
+                active["peak"] = max(active["peak"], active["now"])
+            time.sleep(0.02)
+            with lock:
+                active["now"] -= 1
+            return float(example), {}
+
+        budget = BudgetTracker(max_evals=8)
+        server = EvalServer(task, evaluator, budget, max_concurrency=4)
+        try:
+            server.evaluate_batch([("s", i) for i in range(4)], sequential=True)
+            self.assertEqual(active["peak"], 1)
+            server.evaluate_batch([("s", i) for i in range(4)])
+            self.assertGreater(active["peak"], 1)
+            self.assertEqual((budget.used, budget.reserved), (8, 0))
+        finally:
+            server.stop()
+
+    def test_refused_retry_keeps_the_grouped_calls_error_visible(self) -> None:
+        """``evaluate_examples``: when the grouped call fails and the per-pair
+        retry cannot be reserved, the refusal names the original error and
+        chains it, instead of replacing it with a bare 'budget exhausted'."""
+        task = Task(name="t", seed_candidate="s", val_set=[1, 2])
+
+        def batch_fn(pairs, **kwargs):
+            raise ValueError("bad model output")
+
+        budget = BudgetTracker(max_evals=2)
+        server = EvalServer(task, lambda candidate, example: (1.0, {}), budget, batch_evaluate=batch_fn)
+        try:
+            with self.assertRaises(BudgetExhausted) as ctx:
+                server.evaluate_examples("s", split="val")
+            self.assertIn("bad model output", str(ctx.exception))
+            self.assertIsInstance(ctx.exception.__cause__, ValueError)
+            self.assertEqual((budget.used, budget.reserved), (2, 0))  # the failed grouped call was paid
         finally:
             server.stop()
 

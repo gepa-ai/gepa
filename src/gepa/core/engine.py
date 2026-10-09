@@ -1382,9 +1382,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         remaining = self._eval_budget_remaining()
         if remaining is None or self.valset is None:
             return False
-        minibatch = getattr(self.reflective_proposer.batch_sampler, "minibatch_size", 1)
-        val_size = len(list(self.val_evaluation_policy.get_eval_batch(self.valset, state)))
-        validation = max(0, val_size - minibatch) if self.valset is self.reflective_proposer.trainset else val_size
+        if not isinstance(self.val_evaluation_policy, FullEvaluationPolicy):
+            # Another policy may validate a subset, and asking it for its batch
+            # here could advance its state; its cost is unknown, so never stop.
+            return False
+        trainset = self.reflective_proposer.trainset
+        # A trainset smaller than the minibatch is padded with repeats, which the
+        # cache serves; the distinct examples are what a screen can cost.
+        minibatch = min(getattr(self.reflective_proposer.batch_sampler, "minibatch_size", 1), max(1, len(trainset)))
+        val_size = len(self.valset)
+        validation = max(0, val_size - minibatch) if self.valset is trainset else val_size
         need = minibatch + validation + (minibatch if state.evaluation_cache is None else 0)
         if remaining >= need:
             return False

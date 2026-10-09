@@ -281,6 +281,7 @@ class EvalServer:
         *,
         reserved: bool = False,
         isolate_errors: bool = False,
+        sequential: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
         """Evaluate ``pairs`` as one bulk-reserved stage.
 
@@ -290,10 +291,11 @@ class EvalServer:
         With ``reserved=True`` the caller has already reserved ``len(pairs)``
         evals on :attr:`budget` and the call only commits against them. With
         ``isolate_errors=True`` on the per-pair fan-out, a pair whose
-        evaluator raises yields ``(0.0, {"error": ..., "_gepa_transient_failure":
-        True})`` instead of failing the whole call, the same isolation the
-        per-pair path gives; a user ``batch_evaluate`` function is one call and
-        is not isolated.
+        evaluator raises yields ``(0.0, {"error": ...})`` instead of failing
+        the whole call, the same result the per-pair path gives; a user
+        ``batch_evaluate`` function is one call and is not isolated. With
+        ``sequential=True`` the fan-out runs the pairs one after another on
+        the calling thread, for evaluators that are not thread-safe.
         With a user ``batch_evaluate`` function the pairs go to it in ONE call
         (e.g. a provider batch job); otherwise they run through the per-pair
         evaluator on the server's thread pool, in order. Failed attempts
@@ -305,7 +307,7 @@ class EvalServer:
         """
         if not reserved:
             self.budget.reserve(len(pairs))
-        return self._run_batch_reserved(pairs, opt_states, isolate_errors=isolate_errors)
+        return self._run_batch_reserved(pairs, opt_states, isolate_errors=isolate_errors, sequential=sequential)
 
     def _run_batch_reserved(
         self,
@@ -313,9 +315,10 @@ class EvalServer:
         opt_states: list[Any] | None = None,
         *,
         isolate_errors: bool = False,
+        sequential: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
         if self.batch_fn is None:
-            return self._run_pairs_reserved(pairs, opt_states, isolate_errors=isolate_errors)
+            return self._run_pairs_reserved(pairs, opt_states, isolate_errors=isolate_errors, sequential=sequential)
         self._eval_semaphore.acquire()
         try:
             try:
@@ -339,13 +342,14 @@ class EvalServer:
         opt_states: list[Any] | None = None,
         *,
         isolate_errors: bool = False,
+        sequential: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
-        """Per-pair evaluator over a bulk reservation: concurrency-bounded, order-preserving.
+        """Per-pair evaluator over a bulk reservation: concurrency-bounded (or sequential), order-preserving.
 
         Every pair is committed even if one raises. With ``isolate_errors`` a
-        failing pair becomes a zero result carrying the error; otherwise the
-        first exception is re-raised once all pairs have settled, so the
-        reservation never leaks either way.
+        failing pair becomes a zero result carrying the error, as on the
+        per-pair path; otherwise the first exception is re-raised once all
+        pairs have settled, so the reservation never leaks either way.
         """
 
         def one(i: int, candidate: str, example: Any) -> tuple[float, dict[str, Any]]:
@@ -354,17 +358,27 @@ class EvalServer:
                 kwargs["opt_state"] = opt_states[i]
             return self._run_reserved(candidate, example, **kwargs)
 
-        futures = [self._pool.submit(one, i, candidate, example) for i, (candidate, example) in enumerate(pairs)]
-        out: list[tuple[float, dict[str, Any]]] = []
-        first_error: Exception | None = None
-        for future in futures:
+        def settle(result: Callable[[], tuple[float, dict[str, Any]]]) -> Exception | None:
             try:
-                out.append(future.result())
+                out.append(result())
             except Exception as e:  # settle every pair before re-raising
                 if isolate_errors:
-                    out.append((0.0, {"error": str(e), "_gepa_transient_failure": True}))
-                elif first_error is None:
-                    first_error = e
+                    out.append((0.0, {"error": str(e)}))
+                    return None
+                return e
+            return None
+
+        out: list[tuple[float, dict[str, Any]]] = []
+        first_error: Exception | None = None
+        if sequential:
+            for i, (candidate, example) in enumerate(pairs):
+                err = settle(lambda i=i, c=candidate, ex=example: one(i, c, ex))
+                first_error = first_error or err
+        else:
+            futures = [self._pool.submit(one, i, candidate, example) for i, (candidate, example) in enumerate(pairs)]
+            for future in futures:
+                err = settle(future.result)
+                first_error = first_error or err
         if first_error is not None:
             raise first_error
         return out
@@ -431,15 +445,24 @@ class EvalServer:
         if self.batch_fn is not None:
             # Multi-pair evaluations prefer the grouped path (launcher parity):
             # the user's batch function sees all pairs in one call.
+            grouped_error: Exception | None = None
+            results: list[tuple[float, dict[str, Any]]] = []
             try:
                 results = self._run_batch_reserved([(candidate, ex) for _eid, ex in examples])
-            except Exception:
+            except Exception as e:
                 # A failed grouped call must not zero the whole stage: fall
                 # through to per-pair evaluation so one bad pair costs one 0.0,
                 # matching the per-pair path's isolation. Both attempts consume
                 # budget — each was a real eval call — so the retry needs a
                 # reservation of its own and may itself be refused.
-                self.budget.reserve(len(examples))
+                grouped_error = e
+            if grouped_error is not None:
+                try:
+                    self.budget.reserve(len(examples))
+                except BudgetExhausted as refused:
+                    raise BudgetExhausted(
+                        f"{refused} (no budget left to retry per pair after the grouped call failed: {grouped_error!r})"
+                    ) from grouped_error
             else:
                 grouped_done = True
                 for (eid, _ex), (score, ex_info) in zip(examples, results, strict=True):
