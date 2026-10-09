@@ -9,6 +9,7 @@ from typing import Any, Generic
 
 from gepa.core.adapter import (
     DataInst,
+    EvalBudget,
     GEPAAdapter,
     RolloutOutput,
     Trajectory,
@@ -89,6 +90,11 @@ def _record_proposal_evals(trace_entry: dict, proposal: "CandidateProposal") -> 
         }
 
 
+class EvalBudgetRefusedError(RuntimeError):
+    """The adapter's ``eval_budget`` could not reserve a validation that the loop cannot skip
+    (the seed candidate's, or a resumed seed's)."""
+
+
 class _MemoizedAcceptance:
     """Wraps an AcceptanceCriterion so each proposal is judged EXACTLY once per
     engine batch, no matter how many times the selection strategy and the
@@ -166,6 +172,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Set up stopping mechanism
         self.stop_callback = stop_callback
         self.adapter = adapter
+        # Optional reservation view of the eval budget (``GEPAAdapter.eval_budget``):
+        # when present, every validation is reserved per candidate before it is
+        # sent, and the loop stops when the remainder cannot carry one more
+        # proposal to a commit.
+        self._eval_budget: EvalBudget | None = getattr(adapter, "eval_budget", None)
+        self._stopped_on_budget = False
 
         # Store cache reference for state initialization (actual cache lives in GEPAState)
         self._initial_evaluation_cache = evaluation_cache
@@ -269,7 +281,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self,
         programs: list[dict[str, str]],
         state: GEPAState[RolloutOutput, DataId],
-    ) -> list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]]:
+    ) -> list[tuple[ValsetEvaluation[RolloutOutput, DataId], int] | None]:
         """Evaluate candidates on the valset, read-only, via ``adapter.batch_evaluate``.
 
         Cache-miss examples across all candidates go out in one batched call, so
@@ -277,6 +289,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         ``val_evaluation_policy``. Returns each evaluation with its metric-call
         count (cache misses); the budget is incremented later in
         :meth:`_add_evaluated_program`, not here.
+
+        With an ``eval_budget`` on the adapter, each candidate's cache misses
+        are reserved before anything is sent, in list order (the selection
+        strategy's preference). A candidate whose validation does not fit is
+        returned as ``None`` and nothing was spent on it; the candidates before
+        it are unaffected.
         """
         valset = self.valset
         assert valset is not None
@@ -285,10 +303,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # When write_agent_state is on, bypass the cache so we can capture
         # trajectories (which the cache does not store).
         if self.write_agent_state:
-            traced_results: list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]] = []
+            traced_results: list[tuple[ValsetEvaluation[RolloutOutput, DataId], int] | None] = []
             for program in programs:
                 val_ids = list(self.val_evaluation_policy.get_eval_batch(valset, state))
+                if not self._reserve_evals(len(val_ids)):
+                    traced_results.append(None)
+                    continue
                 eval_result = self.adapter.evaluate(valset.fetch(val_ids), program, capture_traces=True)
+                self._settle_evals()
                 outputs_by_val_idx = dict(zip(val_ids, eval_result.outputs, strict=False))
                 scores_by_val_idx = dict(zip(val_ids, eval_result.scores, strict=False))
                 objective_by_val_idx = (
@@ -326,15 +348,26 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             cached_per.append(cached)
             todo_per.append(uncached)
 
-        # 2) One adapter call over every (program, cache-miss examples) pair.
-        eval_idxs = [i for i, todo in enumerate(todo_per) if todo]
+        # 2) Reserve each program's cache misses in order; a program that does
+        #    not fit is left out before anything is sent.
+        unfunded: set[int] = set()
+        for i, todo in enumerate(todo_per):
+            if todo and not self._reserve_evals(len(todo)):
+                unfunded.add(i)
+
+        # 3) One adapter call over every funded (program, cache-miss examples) pair.
+        eval_idxs = [i for i, todo in enumerate(todo_per) if todo and i not in unfunded]
         items = [(programs[i], valset.fetch(todo_per[i])) for i in eval_idxs]
         fresh = invoke_batch_evaluate(self.adapter, items, capture_traces=False) if items else []
+        self._settle_evals()
         fresh_by_idx = dict(zip(eval_idxs, fresh, strict=True))
 
-        # 3) Merge cached + fresh per program, repopulating the cache.
-        results: list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]] = []
+        # 4) Merge cached + fresh per program, repopulating the cache.
+        results: list[tuple[ValsetEvaluation[RolloutOutput, DataId], int] | None] = []
         for i, program in enumerate(programs):
+            if i in unfunded:
+                results.append(None)
+                continue
             outputs_by: dict[Any, Any] = {}
             scores_by: dict[Any, float] = {}
             objective_by: dict[Any, Any] | None = None
@@ -377,7 +410,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         parent_program_idx: list[int],
         iteration_id: str | None = None,
     ) -> tuple[int, int]:
-        valset_evaluation, num_actual_evals = self._evaluate_programs_on_valset([new_program], state)[0]
+        evaluated = self._evaluate_programs_on_valset([new_program], state)[0]
+        if evaluated is None:
+            raise EvalBudgetRefusedError(
+                "The evaluation budget cannot fund this candidate's validation "
+                f"({self._eval_budget_remaining()} evaluations left)."
+            )
+        valset_evaluation, num_actual_evals = evaluated
         return self._add_evaluated_program(
             new_program, state, parent_program_idx, valset_evaluation, num_actual_evals, iteration_id=iteration_id
         )
@@ -661,9 +700,23 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # 3) Full-valset eval of the selected candidates (one batched, read-only call).
         valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
 
-        # 4) Add each selected candidate to the pool, in order.
+        # 4) Add each selected candidate to the pool, in order. A candidate whose
+        #    validation the budget could not fund is rejected; nothing was
+        #    spent on it beyond its minibatch screen.
         any_accepted = False
-        for k, (proposal, (valset_evaluation, num_actual_evals)) in enumerate(zip(selected, valset_evals, strict=True)):
+        for k, (proposal, evaluated) in enumerate(zip(selected, valset_evals, strict=True)):
+            if evaluated is None:
+                self._report_rejected_proposal(
+                    proposal,
+                    iteration,
+                    state,
+                    reason_override=(
+                        "Evaluation budget cannot fund this candidate's validation "
+                        f"({self._eval_budget_remaining()} evaluations left)"
+                    ),
+                )
+                continue
+            valset_evaluation, num_actual_evals = evaluated
             new_sum = sum(proposal.subsample_scores_after or [])
             self.logger.log(
                 f"Iteration {iteration}: Accepted candidate (subsample score "
@@ -751,10 +804,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             program: dict[str, str],
             val_ids: list[Any],
         ) -> ValsetEvaluation[RolloutOutput, DataId]:
+            if not self._reserve_evals(len(val_ids)):
+                raise EvalBudgetRefusedError(
+                    f"The evaluation budget cannot fund the seed candidate's validation ({len(val_ids)} "
+                    f"evaluations needed, {self._eval_budget_remaining()} left)."
+                )
             # When write_agent_state is on, evaluate with traces so the seed's
             # trajectories land under iterations/seed/trajectories/.
             if self.write_agent_state:
                 eval_result = self.adapter.evaluate(valset.fetch(val_ids), program, capture_traces=True)
+                self._settle_evals()
                 return ValsetEvaluation(
                     outputs_by_val_id=dict(zip(val_ids, eval_result.outputs, strict=False)),
                     scores_by_val_id=dict(zip(val_ids, eval_result.scores, strict=False)),
@@ -775,6 +834,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 [(program, valset.fetch(val_ids))],
                 capture_traces=False,
             )
+            self._settle_evals()
             outputs_dict = dict(zip(val_ids, eval_result.outputs, strict=False))
             scores_dict = dict(zip(val_ids, eval_result.scores, strict=False))
             objective_scores_dict = (
@@ -1030,11 +1090,24 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                             if new_sum >= max(parent_sums):
                                 # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
-                                    new_program=proposal.candidate,
-                                    state=state,
-                                    parent_program_idx=proposal.parent_program_ids,
-                                )
+                                try:
+                                    new_idx, _ = self._run_full_eval_and_add(
+                                        new_program=proposal.candidate,
+                                        state=state,
+                                        parent_program_idx=proposal.parent_program_ids,
+                                    )
+                                except EvalBudgetRefusedError as refused:
+                                    self.logger.log(f"Iteration {state.i + 1}: {refused} Skipping merge.")
+                                    notify_callbacks(
+                                        self.callbacks,
+                                        "on_merge_rejected",
+                                        MergeRejectedEvent(
+                                            iteration=state.i + 1,
+                                            parent_ids=proposal.parent_program_ids,
+                                            reason=str(refused),
+                                        ),
+                                    )
+                                    continue
                                 self.merge_proposer.merges_due -= 1
                                 self.merge_proposer.total_merges_tested += 1
                                 proposal_accepted = True
@@ -1276,7 +1349,59 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             return True
         if self.stop_callback and self.stop_callback(state):
             return True
+        if self._cannot_fund_a_proposal(state):
+            return True
         return False
+
+    # -- eval budget reservation (``GEPAAdapter.eval_budget``) ----------------
+
+    def _reserve_evals(self, n: int) -> bool:
+        """Reserve ``n`` evaluations before sending them; True without a budget hook."""
+        if self._eval_budget is None or n <= 0:
+            return True
+        return self._eval_budget.reserve(n)
+
+    def _settle_evals(self) -> None:
+        """After a grouped validation call: release what was reserved but never sent."""
+        if self._eval_budget is not None:
+            self._eval_budget.settle()
+
+    def _eval_budget_remaining(self) -> int | None:
+        return self._eval_budget.remaining if self._eval_budget is not None else None
+
+    def _cannot_fund_a_proposal(self, state: GEPAState[RolloutOutput, DataId]) -> bool:
+        """Whether the remaining budget is below what one more proposal needs to reach a commit.
+
+        A proposal costs at least its minibatch screen plus a validation: the
+        child is new, so its screen is never cached; its validation is at most
+        ``len(valset)`` and at least that minus the minibatch when the valset
+        is the trainset (the screened examples are cache hits). Without an eval
+        cache the parent's rollout is added. This is a lower bound for any
+        sampling width, so it never stops a run that could still commit.
+        """
+        remaining = self._eval_budget_remaining()
+        if remaining is None or self.valset is None:
+            return False
+        if not isinstance(self.val_evaluation_policy, FullEvaluationPolicy):
+            # Another policy may validate a subset, and asking it for its batch
+            # here could advance its state; its cost is unknown, so never stop.
+            return False
+        trainset = self.reflective_proposer.trainset
+        # A trainset smaller than the minibatch is padded with repeats, which the
+        # cache serves; the distinct examples are what a screen can cost.
+        minibatch = min(getattr(self.reflective_proposer.batch_sampler, "minibatch_size", 1), max(1, len(trainset)))
+        val_size = len(self.valset)
+        validation = max(0, val_size - minibatch) if self.valset is trainset else val_size
+        need = minibatch + validation + (minibatch if state.evaluation_cache is None else 0)
+        if remaining >= need:
+            return False
+        if not self._stopped_on_budget:
+            self._stopped_on_budget = True
+            self.logger.log(
+                f"Stopping: {remaining} evaluations left cannot carry another proposal to a commit "
+                f"(at least {need} needed)."
+            )
+        return True
 
     def _get_remaining_budget(self, state: GEPAState[RolloutOutput, DataId]) -> int | None:
         """Get remaining metric calls budget, or None if unlimited."""

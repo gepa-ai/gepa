@@ -230,36 +230,47 @@ class EvalServer:
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
-    def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
-        """Evaluate a candidate with budget enforcement.
+    def evaluate(
+        self, candidate: str, example: Any | None = None, *, reserved: bool = False, **kwargs: Any
+    ) -> tuple[float, dict[str, Any]]:
+        """Evaluate one pair with budget enforcement.
 
-        Failed attempts consume budget (launcher parity). Extra kwargs (e.g.
+        One eval is reserved before the evaluator runs and committed after it
+        returns, success or failure — failed attempts consume budget (launcher
+        parity). With ``reserved=True`` the caller has already reserved this
+        eval on :attr:`budget` (an engine that reserves at its own dispatch
+        point) and the call only commits against it. Extra kwargs (e.g.
         ``opt_state``) are forwarded to the evaluator only if its signature
         accepts them.
 
+        The returned ``info`` is the evaluator's own side info, untouched:
+        nothing server-side is injected into it, since it flows into the
+        engine's reflective dataset (and so the reflection LM's prompt).
+        Budget status is reported out-of-band — on ``/status``, in the
+        ``evaluate_examples`` envelope, and on the final result.
+
         Raises:
-            BudgetExhausted: When the budget has been used up.
+            BudgetExhausted: When no eval is left. Nothing was spent.
         """
+        if not reserved:
+            self.budget.reserve(1)
+        return self._run_reserved(candidate, example, **kwargs)
+
+    def _run_reserved(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
+        """Run one already-reserved eval under the concurrency limit and commit it."""
         self._eval_semaphore.acquire()
         try:
-            self.budget.check()
-
             try:
                 if example is not None:
                     score, info = self.eval_fn(candidate, example, **kwargs)
                 else:
                     score, info = self.eval_fn(candidate, **kwargs)
             except Exception:
-                # check() passed above, so this record cannot itself raise.
-                self.budget.record(0.0)
+                self.budget.commit(0.0)
                 raise
-
-            self.budget.record(score)
+            self.budget.commit(score)
             self._track(candidate, score, info)
-
-            info = dict(info) if info else {}
-            info["_budget"] = self.budget.status()
-            return score, info
+            return score, dict(info) if info else {}
         finally:
             self._eval_semaphore.release()
 
@@ -267,46 +278,109 @@ class EvalServer:
         self,
         pairs: list[tuple[str, Any]],
         opt_states: list[Any] | None = None,
+        *,
+        reserved: bool = False,
+        isolate_errors: bool = False,
+        sequential: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
-        """Evaluate ``pairs`` in ONE call to the user's ``batch_evaluate`` function.
+        """Evaluate ``pairs`` as one bulk-reserved stage.
 
-        The grouped analogue of :meth:`evaluate` (e.g. to submit a provider
-        batch job): the user function receives all pairs at once; each pair is
-        then recorded against the budget and tracked individually. The budget
-        is checked once up front, so a batch may overshoot the cap by at most
-        ``len(pairs) - 1`` — mirroring the launcher's iteration-boundary stops.
-        Failed attempts consume budget (launcher parity): a failed grouped
-        call records one tick per pair.
+        ``len(pairs)`` evals are reserved atomically up front, so a stage that
+        does not fit in the remaining budget is refused before anything runs:
+        the cap is a strict ceiling and no half-scored stage is ever paid for.
+        With ``reserved=True`` the caller has already reserved ``len(pairs)``
+        evals on :attr:`budget` and the call only commits against them. With
+        ``isolate_errors=True`` on the per-pair fan-out, a pair whose
+        evaluator raises yields ``(0.0, {"error": ...})`` instead of failing
+        the whole call, the same result the per-pair path gives; a user
+        ``batch_evaluate`` function is one call and is not isolated. With
+        ``sequential=True`` the fan-out runs the pairs one after another on
+        the calling thread, for evaluators that are not thread-safe.
+        With a user ``batch_evaluate`` function the pairs go to it in ONE call
+        (e.g. a provider batch job); otherwise they run through the per-pair
+        evaluator on the server's thread pool, in order. Failed attempts
+        consume budget (launcher parity): a failed grouped call commits one
+        zero per pair.
 
         Raises:
-            BudgetExhausted: When the budget is already used up.
-            RuntimeError: When the server was constructed without ``batch_evaluate``.
+            BudgetExhausted: When the stage does not fit. Nothing was spent.
         """
+        if not reserved:
+            self.budget.reserve(len(pairs))
+        return self._run_batch_reserved(pairs, opt_states, isolate_errors=isolate_errors, sequential=sequential)
+
+    def _run_batch_reserved(
+        self,
+        pairs: list[tuple[str, Any]],
+        opt_states: list[Any] | None = None,
+        *,
+        isolate_errors: bool = False,
+        sequential: bool = False,
+    ) -> list[tuple[float, dict[str, Any]]]:
         if self.batch_fn is None:
-            raise RuntimeError("evaluate_batch requires the server to be constructed with batch_evaluate")
+            return self._run_pairs_reserved(pairs, opt_states, isolate_errors=isolate_errors, sequential=sequential)
         self._eval_semaphore.acquire()
         try:
-            self.budget.check()
             try:
-                results = self.batch_fn(pairs, opt_states=opt_states)
+                results = list(self.batch_fn(pairs, opt_states=opt_states))
             except Exception:
-                # Guard each record so crossing the cap while recording
-                # failures never masks the user's original exception.
                 for _ in pairs:
-                    try:
-                        self.budget.record(0.0)
-                    except BudgetExhausted:
-                        break
+                    self.budget.commit(0.0)
                 raise
         finally:
             self._eval_semaphore.release()
         out: list[tuple[float, dict[str, Any]]] = []
         for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
-            self.budget.record(score)
+            self.budget.commit(score)
             self._track(candidate, score, info)
-            info = dict(info)
-            info["_budget"] = self.budget.status()
-            out.append((score, info))
+            out.append((score, dict(info)))
+        return out
+
+    def _run_pairs_reserved(
+        self,
+        pairs: list[tuple[str, Any]],
+        opt_states: list[Any] | None = None,
+        *,
+        isolate_errors: bool = False,
+        sequential: bool = False,
+    ) -> list[tuple[float, dict[str, Any]]]:
+        """Per-pair evaluator over a bulk reservation: concurrency-bounded (or sequential), order-preserving.
+
+        Every pair is committed even if one raises. With ``isolate_errors`` a
+        failing pair becomes a zero result carrying the error, as on the
+        per-pair path; otherwise the first exception is re-raised once all
+        pairs have settled, so the reservation never leaks either way.
+        """
+
+        def one(i: int, candidate: str, example: Any) -> tuple[float, dict[str, Any]]:
+            kwargs: dict[str, Any] = {}
+            if opt_states is not None and opt_states[i] is not None:
+                kwargs["opt_state"] = opt_states[i]
+            return self._run_reserved(candidate, example, **kwargs)
+
+        def settle(result: Callable[[], tuple[float, dict[str, Any]]]) -> Exception | None:
+            try:
+                out.append(result())
+            except Exception as e:  # settle every pair before re-raising
+                if isolate_errors:
+                    out.append((0.0, {"error": str(e)}))
+                    return None
+                return e
+            return None
+
+        out: list[tuple[float, dict[str, Any]]] = []
+        first_error: Exception | None = None
+        if sequential:
+            for i, (candidate, example) in enumerate(pairs):
+                err = settle(lambda i=i, c=candidate, ex=example: one(i, c, ex))
+                first_error = first_error or err
+        else:
+            futures = [self._pool.submit(one, i, candidate, example) for i, (candidate, example) in enumerate(pairs)]
+            for future in futures:
+                err = settle(future.result)
+                first_error = first_error or err
+        if first_error is not None:
+            raise first_error
         return out
 
     def evaluate_examples(
@@ -359,10 +433,9 @@ class EvalServer:
                 "_budget": self.budget.status(),
             }
 
-        if self.budget.remaining is not None and self.budget.remaining < len(examples):
-            raise BudgetExhausted(
-                f"Not enough budget to evaluate all examples: {self.budget.remaining} remaining, {len(examples)} needed"
-            )
+        # The whole group is reserved at once: either every example can be
+        # scored or none is started.
+        self.budget.reserve(len(examples))
 
         scores: dict[str, float] = {}
         infos: dict[str, dict[str, Any]] = {}
@@ -372,16 +445,24 @@ class EvalServer:
         if self.batch_fn is not None:
             # Multi-pair evaluations prefer the grouped path (launcher parity):
             # the user's batch function sees all pairs in one call.
+            grouped_error: Exception | None = None
+            results: list[tuple[float, dict[str, Any]]] = []
             try:
-                results = self.evaluate_batch([(candidate, ex) for _eid, ex in examples])
-            except BudgetExhausted:
-                raise
-            except Exception:
+                results = self._run_batch_reserved([(candidate, ex) for _eid, ex in examples])
+            except Exception as e:
                 # A failed grouped call must not zero the whole stage: fall
                 # through to per-pair evaluation so one bad pair costs one 0.0,
                 # matching the per-pair path's isolation. Both attempts consume
-                # budget — each was a real eval call.
-                pass
+                # budget — each was a real eval call — so the retry needs a
+                # reservation of its own and may itself be refused.
+                grouped_error = e
+            if grouped_error is not None:
+                try:
+                    self.budget.reserve(len(examples))
+                except BudgetExhausted as refused:
+                    raise BudgetExhausted(
+                        f"{refused} (no budget left to retry per pair after the grouped call failed: {grouped_error!r})"
+                    ) from grouped_error
             else:
                 grouped_done = True
                 for (eid, _ex), (score, ex_info) in zip(examples, results, strict=True):
@@ -391,7 +472,7 @@ class EvalServer:
 
             def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
                 try:
-                    score, info = self.evaluate(candidate, ex)
+                    score, info = self._run_reserved(candidate, ex)
                     return (eid, score, info, None)
                 except Exception as e:
                     return (eid, 0.0, None, str(e))
