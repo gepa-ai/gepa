@@ -102,6 +102,71 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
         finally:
             server.stop()
 
+    def test_reserved_calls_commit_against_an_existing_reservation(self) -> None:
+        """An engine that reserves at its own dispatch point runs the call with
+        ``reserved=True``: the server books against that reservation instead of
+        taking a new one, so the ledger counts each eval exactly once."""
+        task = Task(name="t", seed_candidate="s")
+        budget = BudgetTracker(max_evals=3)
+        server = EvalServer(task, lambda candidate, example: (float(example), {}), budget, max_concurrency=2)
+        try:
+            budget.reserve(3)
+            self.assertEqual(server.evaluate("s", 1, reserved=True)[0], 1.0)
+            self.assertEqual((budget.used, budget.reserved), (1, 2))
+            scores = [score for score, _ in server.evaluate_batch([("s", 2), ("s", 3)], reserved=True)]
+            self.assertEqual(scores, [2.0, 3.0])
+            self.assertEqual((budget.used, budget.reserved), (3, 0))
+            with self.assertRaises(BudgetExhausted):
+                server.evaluate("s", 4)
+        finally:
+            server.stop()
+
+    def test_fan_out_isolates_a_failing_pair_when_asked(self) -> None:
+        """Without a user batch function the server fans pairs out itself. With
+        ``isolate_errors`` one failing example becomes a zero result carrying
+        the error and the transient marker; every pair is still committed."""
+        task = Task(name="t", seed_candidate="s")
+
+        def evaluator(candidate, example):
+            if example == 2:
+                raise RuntimeError("boom")
+            return float(example), {}
+
+        budget = BudgetTracker(max_evals=3)
+        server = EvalServer(task, evaluator, budget, max_concurrency=2)
+        try:
+            results = server.evaluate_batch([("s", 1), ("s", 2), ("s", 3)], isolate_errors=True)
+            self.assertEqual([score for score, _ in results], [1.0, 0.0, 3.0])
+            self.assertTrue(results[1][1]["_gepa_transient_failure"])
+            self.assertIn("boom", results[1][1]["error"])
+            self.assertEqual((budget.used, budget.reserved), (3, 0))
+            budget2 = BudgetTracker(max_evals=3)
+            strict = EvalServer(task, evaluator, budget2, max_concurrency=2)
+            try:
+                with self.assertRaises(RuntimeError):
+                    strict.evaluate_batch([("s", 1), ("s", 2), ("s", 3)])
+                self.assertEqual((budget2.used, budget2.reserved), (3, 0))
+            finally:
+                strict.stop()
+        finally:
+            server.stop()
+
+    def test_malformed_batch_reply_never_strands_the_reservation(self) -> None:
+        """A user batch function that returns the wrong number of results is a
+        failed grouped call: every pair is committed as a failed attempt
+        (launcher parity) and nothing stays reserved."""
+        task = Task(name="t", seed_candidate="s")
+        budget = BudgetTracker(max_evals=4)
+        server = EvalServer(
+            task, lambda candidate, example: (0.0, {}), budget, batch_evaluate=lambda pairs, **kw: [(1.0, {})]
+        )
+        try:
+            with self.assertRaises(ValueError):
+                server.evaluate_batch([("s", 1), ("s", 2)])
+            self.assertEqual((budget.used, budget.reserved, budget.remaining), (2, 0, 2))
+        finally:
+            server.stop()
+
     def test_evaluate_examples_reserves_the_whole_group(self) -> None:
         task = Task(name="task", seed_candidate="seed", train_set=[1, 2, 3, 4])
         calls: list[int] = []

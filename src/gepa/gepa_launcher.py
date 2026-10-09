@@ -131,7 +131,7 @@ from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import (
     BatchEvaluatorWrapper,
     OptimizeAnythingAdapter,
 )
-from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
+from gepa.core.adapter import DataInst, EvalBudget, GEPAAdapter, ProposalFn
 from gepa.core.callbacks import GEPACallback, ReflectiveDatasetDumpCallback
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
@@ -1139,6 +1139,7 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     config: GEPAConfig | None = None,
+    eval_budget: "EvalBudget | None" = None,
 ) -> GEPAResult:
     """Optimize any text artifact using LLM-guided search.
 
@@ -1219,6 +1220,14 @@ def optimize_anything(
             ``"Generate prompts that solve competition math problems."``).
         background: Domain knowledge, constraints, or strategies for the
             reflection LLM.
+        eval_budget: Optional reservation view of the eval budget (an
+            :class:`~gepa.core.adapter.EvalBudget`). When set, the engine
+            reserves each candidate's validation before sending it, refusing
+            and rejecting a candidate whose validation does not fit instead of
+            cutting it off part-way, and stops when the remainder cannot carry
+            one more proposal to a commit. ``batch_evaluator`` must then not
+            reserve those evaluations again. Used by the optimize_anything
+            ``gepa`` engine; most callers leave it unset.
         config: Full configuration.  See :class:`GEPAConfig`.
 
     Returns:
@@ -1369,6 +1378,7 @@ def optimize_anything(
         background=background,
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
+        eval_budget=eval_budget,
         batch_evaluator=(
             BatchEvaluatorWrapper(
                 batch_evaluator,

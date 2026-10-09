@@ -1,8 +1,11 @@
 """GEPA engine: runs the archived GEPA optimizer against the optimize_anything eval server.
 
 In-process — evaluates through the server, which enforces the eval budget by
-reservation: each grouped stage (seed/valset pass, minibatch, merge eval) is
-reserved in bulk and refused before any spend when it does not fit.
+reservation. Validations are reserved per candidate, in selection order, so a
+step whose selected children do not all fit validates as many as do and rejects
+the rest before any of their validation runs; minibatch and merge screens are
+reserved in bulk; core stops when the remainder cannot carry one more proposal
+to a commit.
 ``max_token_cost`` is enforced via the GEPA engine's ``max_reflection_cost``
 stopper.
 
@@ -27,15 +30,81 @@ if TYPE_CHECKING:
     from gepa.oa.task import Task
 
 
+class _ServerEvalBudget:
+    """Reservation view of the eval server's budget for GEPA core (``GEPAAdapter.eval_budget``).
+
+    Core reserves each candidate's validation here before sending it. The
+    reservation is held on the server's tracker, and the batch evaluator
+    below runs the next grouped call against it (``reserved=True``) instead of
+    reserving again. Stages core does not pre-reserve (minibatch screens, merge
+    screens) still reserve in bulk on the server as before.
+    """
+
+    def __init__(self, budget: BudgetTracker, *, isolate_errors: bool = False) -> None:
+        self.budget = budget
+        self.isolate_errors = isolate_errors
+        self.outstanding = 0  # evals core reserved for the next grouped call
+        self.bulk_refusals = 0  # server refusals of calls core did not pre-reserve
+
+    def reserve(self, n: int) -> bool:
+        try:
+            self.budget.reserve(n)
+        except BudgetExhausted:
+            return False
+        self.outstanding += n
+        return True
+
+    def release(self, n: int) -> None:
+        self.budget.release(n)
+        self.outstanding = max(0, self.outstanding - n)
+
+    def settle(self) -> None:
+        """Core's grouped call is over: whatever it reserved but never sent goes back
+        (the adapter's cache may have served every pair, so run_batch never ran)."""
+        if self.outstanding:
+            self.budget.release(self.outstanding)
+            self.outstanding = 0
+
+    @property
+    def remaining(self) -> int | None:
+        return self.budget.remaining
+
+    def run_batch(self, server: EvalServer, pairs: list[Any], opt_states: Any) -> Any:
+        """Run one grouped call against core's outstanding reservation, or in bulk."""
+        pre, self.outstanding = self.outstanding, 0
+        if pre == 0:
+            try:
+                return server.evaluate_batch(pairs, opt_states=opt_states, isolate_errors=self.isolate_errors)
+            except BudgetExhausted:
+                self.bulk_refusals += 1
+                raise
+        if pre < len(pairs):
+            # Core reserved less than it sends (an adapter cache turned off between
+            # calls, say): top the reservation up so the strict ceiling still holds.
+            try:
+                self.budget.reserve(len(pairs) - pre)
+            except BudgetExhausted:
+                self.budget.release(pre)
+                self.bulk_refusals += 1
+                raise
+        elif pre > len(pairs):
+            # Core reserved more than the adapter sends (its own cache served some
+            # pairs): give the difference back before running.
+            self.budget.release(pre - len(pairs))
+        return server.evaluate_batch(pairs, opt_states=opt_states, reserved=True, isolate_errors=self.isolate_errors)
+
+
 class _StopOnRefusedReservation:
     """GEPA stop callback: end the run at the next iteration boundary once the
-    eval server has refused a stage reservation."""
+    eval server has refused a stage core did not pre-reserve (a minibatch or
+    merge screen). Per-candidate validation refusals are core's own decision
+    and do not stop the run; its affordability check does."""
 
-    def __init__(self, budget: BudgetTracker) -> None:
-        self.budget = budget
+    def __init__(self, eval_budget: _ServerEvalBudget) -> None:
+        self.eval_budget = eval_budget
 
     def __call__(self, gepa_state: Any) -> bool:
-        return self.budget.refused > 0
+        return self.eval_budget.bulk_refusals > 0
 
 
 class GepaEngine:
@@ -78,14 +147,21 @@ class GepaEngine:
         # limits — set them as EngineConfig fields; GEPA core installs the
         # matching stoppers. The eval-call cap must win over any user value.
         gepa_config.engine.max_metric_calls = budget.max_evals
-        # A refused reservation is the stop signal. With raise_on_exception=True
-        # (default) the BudgetExhausted propagates and run() answers from saved
-        # state; with raise_on_exception=False the adapter converts it into
-        # zero scores instead, so also end the loop at the next boundary.
+        # Core reserves each candidate's validation through this view before
+        # sending it (per-proposal reservation) and stops when the remainder
+        # cannot carry one more proposal to a commit. A refused bulk stage
+        # (minibatch or merge screen) is the backstop stop signal: with
+        # raise_on_exception=True (default) the BudgetExhausted propagates and
+        # run() answers from saved state; with raise_on_exception=False the
+        # adapter converts it into zero scores instead, so also end the loop at
+        # the next boundary.
+        # The per-pair fan-out isolates a failing example when the user asked for
+        # that (raise_on_exception=False), as the per-pair evaluator path does.
+        eval_budget = _ServerEvalBudget(budget, isolate_errors=not gepa_config.engine.raise_on_exception)
         stoppers = gepa_config.stop_callbacks
         stoppers = [] if stoppers is None else list(stoppers) if isinstance(stoppers, Sequence) else [stoppers]
         gepa_config.stop_callbacks = [s for s in stoppers if not isinstance(s, _StopOnRefusedReservation)] + [
-            _StopOnRefusedReservation(budget)
+            _StopOnRefusedReservation(eval_budget)
         ]
         if self.run_dir is not None:
             gepa_config.engine.run_dir = self.run_dir
@@ -123,7 +199,7 @@ class GepaEngine:
             return server.evaluate(candidate, example, **kwargs)
 
         def batch_evaluator(pairs, opt_states=None):
-            return server.evaluate_batch(pairs, opt_states=opt_states)
+            return eval_budget.run_batch(server, pairs, opt_states)
 
         oa_kwargs: dict[str, Any] = {
             "seed_candidate": task.seed_candidate,
@@ -132,8 +208,15 @@ class GepaEngine:
         }
         if not gepa_config.engine.capture_stdio:
             # capture_stdio scopes stdout/stderr per evaluation, which only the
-            # per-pair path can do; those runs reserve pair by pair instead.
+            # per-pair path can do; those runs reserve pair by pair instead and
+            # core does not pre-reserve for them.
             oa_kwargs["batch_evaluator"] = batch_evaluator
+            if gepa_config.refiner is None:
+                # A refiner evaluates per example through the per-pair path (its
+                # retries make a candidate's cost unknowable up front), so core's
+                # per-candidate reservation would never be consumed; those runs
+                # keep per-pair reservation on the server.
+                oa_kwargs["eval_budget"] = eval_budget
         if task.has_dataset:
             if task.train_set:
                 oa_kwargs["dataset"] = task.train_set
@@ -146,8 +229,21 @@ class GepaEngine:
         if background:
             oa_kwargs["background"] = background
 
+        from gepa.core.engine import EvalBudgetRefusedError
+
         try:
             gepa_result = optimize_anything(**oa_kwargs)
+        except EvalBudgetRefusedError as refused:
+            # A validation the loop cannot skip did not fit: the seed's on a
+            # fresh run (nothing useful to report), or a new seed's on a resumed
+            # run (the saved pool still holds a valid best).
+            gepa_result = self._load_result_from_state(
+                run_dir=run_dir,
+                seed=gepa_config.engine.seed,
+                str_candidate_mode=not isinstance(task.seed_candidate, dict),
+            )
+            if gepa_result is None:
+                raise BudgetExhausted(str(refused)) from refused
         except BudgetExhausted:
             gepa_result = self._load_result_from_state(
                 run_dir=run_dir,

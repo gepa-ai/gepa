@@ -218,6 +218,15 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
 
     propose_new_texts: ProposalFn | None = None
 
+    # Optional: an ``eval_budget: EvalBudget`` attribute lets the engine reserve
+    # the evaluations of a candidate's validation before sending them, so an
+    # unaffordable validation is refused (and the candidate rejected) before
+    # any of it runs instead of being cut off part-way. When present, the engine
+    # reserves every validation it sends through ``batch_evaluate``, and the
+    # adapter's evaluation path must not reserve those again.
+    #
+    # eval_budget: EvalBudget | None = None
+
     # Optional: adapters can implement batch_evaluate to evaluate multiple
     # (candidate, batch) pairs in a single call. When not present, GEPA falls
     # back to default_batch_evaluate() which calls evaluate() sequentially.
@@ -227,6 +236,27 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
     #     self, items: list[tuple[Candidate, list[DataInst]]],
     #     *, capture_traces: bool = True,
     # ) -> list[EvaluationBatch[Trajectory, RolloutOutput]]: ...
+
+
+class EvalBudget(Protocol):
+    """Reservation view of an evaluation budget, exposed by an adapter as ``eval_budget``.
+
+    ``reserve(n)`` sets aside ``n`` evaluations or returns ``False`` without
+    spending anything; ``release(n)`` gives back reserved evaluations that will
+    never run; ``remaining`` is what can still be reserved (``None`` = unlimited).
+    ``settle()`` is called after each grouped validation call the engine
+    reserved for and releases whatever was reserved but not sent (an adapter
+    cache may have served every pair, so the call never reached the budget).
+    """
+
+    def reserve(self, n: int) -> bool: ...
+
+    def release(self, n: int) -> None: ...
+
+    def settle(self) -> None: ...
+
+    @property
+    def remaining(self) -> int | None: ...
 
 
 def default_batch_evaluate(

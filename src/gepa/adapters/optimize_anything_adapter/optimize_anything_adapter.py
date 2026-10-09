@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
+from gepa.core.adapter import DataInst, EvalBudget, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
 logger = logging.getLogger(__name__)
@@ -154,8 +154,7 @@ class BatchEvaluatorWrapper:
                     # Mirror the evaluator path's loudness instead of silently
                     # discarding user diagnostics.
                     raise TypeError(
-                        f"batch_evaluator result {idx}: side_info must be a dict or None, "
-                        f"got {type(si_raw).__name__}"
+                        f"batch_evaluator result {idx}: side_info must be a dict or None, got {type(si_raw).__name__}"
                     )
                 # Defensive copy (mirror of EvaluatorWrapper): the user may
                 # retain and mutate their dict; the cache, best-evals history,
@@ -187,10 +186,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
         batch_evaluator: Callable[..., Any] | None = None,
+        eval_budget: "EvalBudget | None" = None,
     ):
         if evaluator is None and batch_evaluator is None:
             raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
         self.evaluator = evaluator
+        # Reservation view of the eval budget (see ``GEPAAdapter.eval_budget``):
+        # the engine reserves validations before sending them, and
+        # ``batch_evaluator`` must then evaluate them without reserving again.
+        self.eval_budget = eval_budget
         if batch_evaluator is not None and not isinstance(batch_evaluator, BatchEvaluatorWrapper):
             batch_evaluator = BatchEvaluatorWrapper(batch_evaluator)
         self._batch_evaluator = batch_evaluator

@@ -421,19 +421,73 @@ def test_legacy_cap_that_funds_the_iteration_keeps_the_child(tmp_path):
     assert prompts and not any("_budget" in p for p in prompts)
 
 
-def test_legacy_cap_is_a_strict_ceiling_and_refuses_an_unaffordable_stage(tmp_path):
+def test_legacy_cap_is_a_strict_ceiling_and_stops_before_a_doomed_iteration(tmp_path):
     """Issue #448 repro at cap 7. Before the fix the child's valset pass ran
     three of its evals and was then aborted: paid work discarded, result
-    reloaded from the previous iteration. Now the stage is reserved in bulk
-    and refused before any of it runs — the ledger never exceeds the cap and
-    the result is answered from the saved seed state."""
+    reloaded from the previous iteration. Now core sees that the 3 evals left
+    after the seed pass cannot carry a proposal to a commit (a 2-eval screen
+    plus a 2-eval validation) and stops before proposing: no reflection call,
+    no stranded screen, the ledger never exceeds the cap."""
     result, calls, prompts = _run_legacy_counting(tmp_path, max_metric_calls=7)
 
-    assert len(calls) == 6  # seed pass (4) + child minibatch (2); the valset pass never started
-    assert result.total_evals == 6
+    assert len(calls) == 4  # the seed pass only
+    assert result.total_evals == 4
     assert result.candidates == [{"current_candidate": "seed"}]
     assert result.val_aggregate_scores == [0.2]
-    assert prompts and not any("_budget" in p for p in prompts)
+    assert prompts == []
+
+
+def test_parallel_proposals_validate_as_many_children_as_the_cap_funds(tmp_path):
+    """Per-proposal reservation: three children are screened in one step and the
+    cap funds two validations. The first two (selection order) are validated and
+    added; the third is rejected before any of its validation runs, with a
+    budget reason on the rejection callback. The ledger lands on the cap."""
+    from gepa.core.callbacks import GEPACallback
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+    from gepa.strategies.proposal_sampling import SameParentSampling
+
+    calls: list[tuple[str, str]] = []
+
+    def evaluator(candidate, example):
+        calls.append((candidate, example))
+        return (1.0 if "improved" in candidate else 0.2), {"note": f"scored {example}"}
+
+    prompts: list[str] = []
+
+    def reflection_lm(prompt):
+        prompts.append(prompt)
+        return f"improved candidate v{len(prompts)}"
+
+    rejections: list[str] = []
+
+    class _Recorder(GEPACallback):
+        def on_candidate_rejected(self, event):
+            rejections.append(event["reason"])
+
+    data = [f"ex{i}" for i in range(4)]
+    # seed pass 4 + three 2-eval screens 6 + two 2-eval validations 4 = 14
+    config = GEPAConfig(
+        engine=EngineConfig(
+            max_metric_calls=14,
+            run_dir=str(tmp_path / "state"),
+            cache_evaluation=True,
+            raise_on_exception=True,
+            parallel=False,
+            seed=0,
+            sampling_strategy=SameParentSampling(3),
+        ),
+        reflection=ReflectionConfig(reflection_lm=reflection_lm, reflection_minibatch_size=2),
+        callbacks=[_Recorder()],
+    )
+    result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+
+    assert len(prompts) == 3
+    assert len(calls) == 14
+    assert result.total_evals == 14
+    assert len(result.candidates) == 3  # seed + two validated children
+    assert result.val_aggregate_scores == [0.2, 1.0, 1.0]
+    budget_rejections = [r for r in rejections if "budget" in r.lower()]
+    assert len(budget_rejections) == 1
 
 
 def test_gepa_slice_leaves_hard_enforcement_on_a_shared_server(tmp_path):
@@ -461,3 +515,93 @@ def test_gepa_slice_leaves_hard_enforcement_on_a_shared_server(tmp_path):
             server.evaluate_examples("seed", split="val")
     finally:
         server.stop()
+
+
+def test_refiner_runs_keep_per_pair_reservation(monkeypatch):
+    """With a refiner the adapter evaluates per example through the per-pair
+    path, so core's per-candidate reservation would never be consumed: the
+    engine must not hand core an eval_budget then."""
+    from gepa.oa import BudgetTracker, EvalServer, Task
+    from gepa.oa.engines import gepa as gepa_engine_module
+
+    captured: dict = {}
+
+    def fake_optimize_anything(**kwargs):
+        captured.update(kwargs)
+        raise gepa_engine_module.BudgetExhausted("stop here")
+
+    monkeypatch.setattr("gepa.gepa_launcher.optimize_anything", fake_optimize_anything)
+    task = Task(name="t", seed_candidate="seed", train_set=[1, 2], val_set=[1, 2])
+    server = EvalServer(task, _evaluator, BudgetTracker(max_evals=4), max_concurrency=1)
+    try:
+        GepaEngine(
+            OptimizeAnythingConfig(
+                engine="gepa",
+                max_evals=4,
+                engine_config={"reflection": {"reflection_lm": _FakeLM()}, "refiner": {"max_refinements": 1}},
+            )
+        ).run(task, server)
+        assert "batch_evaluator" in captured and "eval_budget" not in captured
+        captured.clear()
+        GepaEngine(
+            OptimizeAnythingConfig(
+                engine="gepa", max_evals=4, engine_config={"reflection": {"reflection_lm": _FakeLM()}}
+            )
+        ).run(task, server)
+        assert "eval_budget" in captured
+    finally:
+        server.stop()
+
+
+def test_settle_returns_a_reservation_the_adapter_cache_served():
+    """Core reserves a candidate's validation, the adapter's cache serves every
+    pair, the grouped call never happens: settle() gives the reservation back."""
+    from gepa.oa import BudgetTracker
+    from gepa.oa.engines.gepa import _ServerEvalBudget
+
+    budget = BudgetTracker(max_evals=10)
+    view = _ServerEvalBudget(budget)
+    assert view.reserve(4)
+    assert (budget.reserved, view.outstanding) == (4, 4)
+    view.settle()
+    assert (budget.reserved, view.outstanding, budget.remaining) == (0, 0, 10)
+    view.settle()  # idempotent
+    assert budget.remaining == 10
+
+
+def test_resumed_run_with_an_unaffordable_new_seed_answers_from_the_saved_pool(tmp_path):
+    """Resume a run with a different seed when the budget cannot fund the new
+    seed's validation: the result comes from the saved pool, not an error."""
+    from gepa.oa import BudgetTracker, EvalServer, Task
+
+    task = Task(name="t", seed_candidate="seed", train_set=[1, 2, 3], val_set=[1, 2, 3])
+    state_dir = tmp_path / "state"
+    first = EvalServer(task, _evaluator, BudgetTracker(max_evals=3), max_concurrency=1)
+    try:
+        GepaEngine(
+            OptimizeAnythingConfig(
+                engine="gepa",
+                max_evals=3,
+                run_dir=str(state_dir),
+                engine_config={"engine": {"seed": 0, "parallel": False}, "reflection": {"reflection_lm": _FakeLM()}},
+            )
+        ).run(task, first)
+    finally:
+        first.stop()
+    assert (state_dir / "gepa_state.bin").exists()
+
+    resumed_task = Task(name="t", seed_candidate="a different seed", train_set=[1, 2, 3], val_set=[1, 2, 3])
+    second = EvalServer(resumed_task, _evaluator, BudgetTracker(max_evals=2), max_concurrency=1)
+    try:
+        result = GepaEngine(
+            OptimizeAnythingConfig(
+                engine="gepa",
+                max_evals=2,
+                run_dir=str(state_dir),
+                engine_config={"engine": {"seed": 0, "parallel": False}, "reflection": {"reflection_lm": _FakeLM()}},
+            )
+        ).run(resumed_task, second)
+        assert result.best_candidate == "seed"
+        assert second.budget.used == 0
+    finally:
+        second.stop()

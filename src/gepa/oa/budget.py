@@ -9,7 +9,7 @@ modify the counter.
 The cap is a strict ceiling, enforced with a reservation: callers
 :meth:`BudgetTracker.reserve` the evals they are about to run — one call, or a
 whole stage in bulk — and :meth:`BudgetTracker.commit` each one after it
-finishes. The gate and the allocation are a single step under the lock, so an
+finishes, or :meth:`BudgetTracker.release` the ones that will never run. The gate and the allocation are a single step under the lock, so an
 unaffordable request is refused before anything is spent and concurrent
 callers can never jointly exceed the cap.
 
@@ -77,6 +77,15 @@ class BudgetTracker:
                     f"({self._used} used, {self._reserved} reserved)"
                 )
             self._reserved += n
+
+    def release(self, n: int = 1) -> None:
+        """Give back ``n`` reserved eval calls that will never run. Nothing is booked."""
+        if n < 0:
+            raise ValueError(f"release() needs a non-negative count, got {n}")
+        with self._lock:
+            if n > self._reserved:
+                raise RuntimeError(f"release({n}) exceeds the {self._reserved} evals currently reserved")
+            self._reserved -= n
 
     def commit(self, score: float) -> None:
         """Book one reserved eval call as spent. Failed attempts commit too (as 0.0)."""

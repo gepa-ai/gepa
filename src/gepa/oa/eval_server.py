@@ -230,13 +230,18 @@ class EvalServer:
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
-    def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
+    def evaluate(
+        self, candidate: str, example: Any | None = None, *, reserved: bool = False, **kwargs: Any
+    ) -> tuple[float, dict[str, Any]]:
         """Evaluate one pair with budget enforcement.
 
         One eval is reserved before the evaluator runs and committed after it
         returns, success or failure — failed attempts consume budget (launcher
-        parity). Extra kwargs (e.g. ``opt_state``) are forwarded to the
-        evaluator only if its signature accepts them.
+        parity). With ``reserved=True`` the caller has already reserved this
+        eval on :attr:`budget` (an engine that reserves at its own dispatch
+        point) and the call only commits against it. Extra kwargs (e.g.
+        ``opt_state``) are forwarded to the evaluator only if its signature
+        accepts them.
 
         The returned ``info`` is the evaluator's own side info, untouched:
         nothing server-side is injected into it, since it flows into the
@@ -247,7 +252,8 @@ class EvalServer:
         Raises:
             BudgetExhausted: When no eval is left. Nothing was spent.
         """
-        self.budget.reserve(1)
+        if not reserved:
+            self.budget.reserve(1)
         return self._run_reserved(candidate, example, **kwargs)
 
     def _run_reserved(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
@@ -272,12 +278,22 @@ class EvalServer:
         self,
         pairs: list[tuple[str, Any]],
         opt_states: list[Any] | None = None,
+        *,
+        reserved: bool = False,
+        isolate_errors: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
         """Evaluate ``pairs`` as one bulk-reserved stage.
 
         ``len(pairs)`` evals are reserved atomically up front, so a stage that
         does not fit in the remaining budget is refused before anything runs:
         the cap is a strict ceiling and no half-scored stage is ever paid for.
+        With ``reserved=True`` the caller has already reserved ``len(pairs)``
+        evals on :attr:`budget` and the call only commits against them. With
+        ``isolate_errors=True`` on the per-pair fan-out, a pair whose
+        evaluator raises yields ``(0.0, {"error": ..., "_gepa_transient_failure":
+        True})`` instead of failing the whole call, the same isolation the
+        per-pair path gives; a user ``batch_evaluate`` function is one call and
+        is not isolated.
         With a user ``batch_evaluate`` function the pairs go to it in ONE call
         (e.g. a provider batch job); otherwise they run through the per-pair
         evaluator on the server's thread pool, in order. Failed attempts
@@ -287,20 +303,23 @@ class EvalServer:
         Raises:
             BudgetExhausted: When the stage does not fit. Nothing was spent.
         """
-        self.budget.reserve(len(pairs))
-        return self._run_batch_reserved(pairs, opt_states)
+        if not reserved:
+            self.budget.reserve(len(pairs))
+        return self._run_batch_reserved(pairs, opt_states, isolate_errors=isolate_errors)
 
     def _run_batch_reserved(
         self,
         pairs: list[tuple[str, Any]],
         opt_states: list[Any] | None = None,
+        *,
+        isolate_errors: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
         if self.batch_fn is None:
-            return self._run_pairs_reserved(pairs, opt_states)
+            return self._run_pairs_reserved(pairs, opt_states, isolate_errors=isolate_errors)
         self._eval_semaphore.acquire()
         try:
             try:
-                results = self.batch_fn(pairs, opt_states=opt_states)
+                results = list(self.batch_fn(pairs, opt_states=opt_states))
             except Exception:
                 for _ in pairs:
                     self.budget.commit(0.0)
@@ -318,11 +337,15 @@ class EvalServer:
         self,
         pairs: list[tuple[str, Any]],
         opt_states: list[Any] | None = None,
+        *,
+        isolate_errors: bool = False,
     ) -> list[tuple[float, dict[str, Any]]]:
         """Per-pair evaluator over a bulk reservation: concurrency-bounded, order-preserving.
 
-        Every pair is committed even if one raises; the first exception is
-        re-raised once all pairs have settled, so the reservation never leaks.
+        Every pair is committed even if one raises. With ``isolate_errors`` a
+        failing pair becomes a zero result carrying the error; otherwise the
+        first exception is re-raised once all pairs have settled, so the
+        reservation never leaks either way.
         """
 
         def one(i: int, candidate: str, example: Any) -> tuple[float, dict[str, Any]]:
@@ -333,12 +356,14 @@ class EvalServer:
 
         futures = [self._pool.submit(one, i, candidate, example) for i, (candidate, example) in enumerate(pairs)]
         out: list[tuple[float, dict[str, Any]]] = []
-        first_error: BaseException | None = None
+        first_error: Exception | None = None
         for future in futures:
             try:
                 out.append(future.result())
-            except BaseException as e:  # settle every pair before re-raising
-                if first_error is None:
+            except Exception as e:  # settle every pair before re-raising
+                if isolate_errors:
+                    out.append((0.0, {"error": str(e), "_gepa_transient_failure": True}))
+                elif first_error is None:
                     first_error = e
         if first_error is not None:
             raise first_error

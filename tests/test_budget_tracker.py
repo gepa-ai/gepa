@@ -100,3 +100,15 @@ def test_concurrent_reservations_never_exceed_the_cap():
     assert outcomes.count(False) == n - 1
     assert budget.reserved == 5
     assert budget.refused == n - 1
+
+
+def test_release_gives_back_reserved_evals_without_booking_them():
+    budget = BudgetTracker(max_evals=3)
+    budget.reserve(3)
+    assert budget.exhausted
+    budget.release(2)
+    assert (budget.used, budget.reserved, budget.remaining) == (0, 1, 2)
+    budget.commit(1.0)
+    assert (budget.used, budget.reserved, budget.remaining) == (1, 0, 2)
+    with pytest.raises(RuntimeError, match="exceeds"):
+        budget.release(1)
