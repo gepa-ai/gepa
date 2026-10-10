@@ -1,6 +1,8 @@
 import random
 from types import SimpleNamespace
 
+import pytest
+
 from gepa.proposer.merge import (
     MergeProposer,
     does_triplet_have_desirable_predictors,
@@ -189,6 +191,47 @@ def test_sample_and_attempt_merge_creates_combined_program_and_records_triplet(r
         parent_program_for_candidate=parent_program_for_candidate,
     )
     assert second_attempt is None
+
+
+def test_sample_and_attempt_merge_combines_improvements_from_zero_score_ancestor(rng):
+    program_candidates = [
+        {"planner": "original plan", "solver": "original solution"},
+        {"planner": "better plan", "solver": "original solution"},
+        {"planner": "original plan", "solver": "better solution"},
+    ]
+
+    result = sample_and_attempt_merge_programs_by_common_predictors(
+        agg_scores=[0.0, 0.5, 0.5],
+        rng=rng,
+        merge_candidates=[1, 2],
+        merges_performed=([], []),
+        program_candidates=program_candidates,
+        parent_program_for_candidate=[[], [0], [0]],
+    )
+
+    assert result == ({"planner": "better plan", "solver": "better solution"}, 1, 2, 0)
+
+
+@pytest.mark.parametrize("ancestor_scores", [[0.0, 0.0], [0.0, 0.1]])
+def test_find_common_ancestor_pair_with_zero_score_ancestors(rng, ancestor_scores):
+    result = find_common_ancestor_pair(
+        rng=rng,
+        parent_list=[[], [0], [1], [1]],
+        program_indexes=[2, 3],
+        merges_performed=([], []),
+        agg_scores=[*ancestor_scores, 0.5, 0.5],
+        program_candidates=[
+            {"planner": "original plan", "solver": "original solution"},
+            {"planner": "original plan", "solver": "original solution"},
+            {"planner": "better plan", "solver": "original solution"},
+            {"planner": "original plan", "solver": "better solution"},
+        ],
+    )
+
+    if any(ancestor_scores):
+        assert result == (2, 3, 1)
+    else:
+        assert result in [(2, 3, 0), (2, 3, 1)]
 
 
 def test_sample_and_attempt_merge_respects_val_support_overlap_gate(rng):
