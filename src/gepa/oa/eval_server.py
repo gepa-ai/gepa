@@ -212,6 +212,10 @@ class EvalServer:
                 eid = _resolve_id(item, f"{split_name}_{i}")
                 if eid in self._examples and self._examples[eid] is not item:
                     eid = f"{split_name}_{i}"
+                    suffix = 1
+                    while eid in self._examples and self._examples[eid] is not item:
+                        eid = f"{split_name}_{i}_{suffix}"
+                        suffix += 1
                 self._examples[eid] = item
                 self._split_ids[split_name].append(eid)
 
