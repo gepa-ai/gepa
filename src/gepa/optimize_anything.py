@@ -232,7 +232,7 @@ def _optimize_to_result(
         test_set=test_set,
     )
     engine = _build_engine(config)
-    output_dir = _resolve_output_dir(config.output_dir, task=task, engine_name=engine.name)
+    output_dir = _resolve_output_dir(config.output_dir, task=task, engine_name=engine.name, run_dir=config.run_dir)
     # The eval budget caps eval calls only. The proposer-cost cap
     # (config.max_token_cost) is read and enforced by the engine itself.
     budget = BudgetTracker(max_evals=config.max_evals)
@@ -442,10 +442,15 @@ def _default_run_name(engine: str | Engine) -> str:
     return f"{backend}-{uuid.uuid4().hex[:8]}-{ts}"
 
 
-def _resolve_output_dir(output_dir: str | Path | None, *, task: Task, engine_name: str) -> Path:
-    """Return an explicit output dir or create the standard timestamped one."""
+def _resolve_output_dir(
+    output_dir: str | Path | None, *, task: Task, engine_name: str, run_dir: str | Path | None = None
+) -> Path:
+    """Return an explicit output dir, else ``run_dir/eval_server`` when a run dir is set (so a run that names its
+    workspace creates nothing elsewhere, #448), else the standard timestamped one under the working directory."""
     if output_dir is not None:
         path = Path(output_dir)
+    elif run_dir is not None:
+        path = Path(run_dir) / "eval_server"
     else:
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         path = Path("outputs") / "optimize_anything" / task.name / engine_name / ts

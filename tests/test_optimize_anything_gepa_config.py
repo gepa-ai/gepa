@@ -173,6 +173,48 @@ def test_legacy_max_workers_none_falls_back_to_cpu_count():
     assert converted.max_concurrency == (os.cpu_count() or 32)
 
 
+def test_run_dir_also_holds_the_eval_output_on_the_new_config_path(tmp_path, monkeypatch):
+    """``OptimizeAnythingConfig(run_dir=...)`` with no ``output_dir`` nests the eval server at
+    ``run_dir/eval_server``, as the legacy path does (#448, item 3): nothing is created under the current
+    directory. An explicit ``output_dir`` still wins."""
+    from gepa.optimize_anything import optimize_anything
+
+    run_dir = tmp_path / "run"
+    monkeypatch.chdir(tmp_path)
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=4,
+            run_dir=str(run_dir),
+            engine_config={"reflection": {"reflection_lm": _FakeLM()}},
+        ),
+    )
+    assert not (tmp_path / "outputs").exists()
+    assert (run_dir / "gepa_state.bin").exists()
+    assert (run_dir / "eval_server" / "summary.json").is_file()
+    assert list((run_dir / "eval_server" / "evals").glob("*.json"))
+
+    explicit = tmp_path / "elsewhere"
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=4,
+            run_dir=str(tmp_path / "run2"),
+            output_dir=str(explicit),
+            engine_config={"reflection": {"reflection_lm": _FakeLM()}},
+        ),
+    )
+    assert (explicit / "summary.json").is_file()
+    assert not (tmp_path / "run2" / "eval_server").exists()
+    assert not (tmp_path / "outputs").exists()
+
+
 def test_legacy_gepa_config_accepts_test_set():
     """With the single unified GEPAResult, ``test_set`` works on every path —
     including a legacy ``GEPAConfig`` — because the result now carries a
