@@ -3,8 +3,59 @@ from types import SimpleNamespace
 
 import pytest
 
+import gepa
 from gepa.core.data_loader import ListDataLoader
+from gepa.gepa_launcher import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
+
+
+@pytest.mark.parametrize("minibatch_size", [0, -1, -3])
+def test_epoch_sampler_rejects_nonpositive_minibatch_size(minibatch_size):
+    with pytest.raises(ValueError, match="minibatch_size must be positive"):
+        EpochShuffledBatchSampler(minibatch_size=minibatch_size)
+
+
+@pytest.mark.parametrize("minibatch_size", [0, -1, -3])
+@pytest.mark.parametrize("entrypoint", ["optimize", "optimize_anything"])
+def test_optimize_rejects_nonpositive_minibatch_size_before_evaluation(minibatch_size, entrypoint):
+    def task_lm(_messages):
+        pytest.fail("Invalid minibatch size must be rejected before evaluating the seed")
+
+    with pytest.raises(ValueError, match="minibatch_size must be positive"):
+        if entrypoint == "optimize_anything":
+            optimize_anything(
+                seed_candidate="Answer the question.",
+                evaluator=lambda _candidate, _example: task_lm([]),
+                dataset=["question"],
+                config=GEPAConfig(
+                    engine=EngineConfig(max_metric_calls=1, display_progress_bar=False),
+                    reflection=ReflectionConfig(
+                        reflection_lm=lambda _prompt: "unused",
+                        reflection_minibatch_size=minibatch_size,
+                    ),
+                ),
+            )
+            return
+        gepa.optimize(
+            seed_candidate={"system_prompt": "Answer the question."},
+            trainset=[{"input": "question", "answer": "answer"}],
+            task_lm=task_lm,
+            reflection_lm=lambda _prompt: "unused",
+            reflection_minibatch_size=minibatch_size,
+            max_metric_calls=1,
+            display_progress_bar=False,
+        )
+
+
+@pytest.mark.parametrize("minibatch_size", [1, 2, 7])
+def test_epoch_sampler_accepts_positive_sizes_and_pads_large_batches(minibatch_size):
+    loader = ListDataLoader(["a", "b", "c"])
+    sampler = EpochShuffledBatchSampler(minibatch_size=minibatch_size)
+
+    for i in range(5):
+        batch = sampler.next_minibatch_ids(loader, SimpleNamespace(i=i))
+        assert len(batch) == minibatch_size
+        assert set(batch).issubset(loader.all_ids())
 
 
 def test_epoch_sampler_refreshes_when_loader_expands():
