@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -10,7 +11,50 @@ import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
 from gepa.core.state import ValsetEvaluation
-from gepa.strategies.eval_policy import EvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+
+
+@pytest.mark.parametrize("frontier_type", ["objective", "hybrid", "cartesian"])
+@pytest.mark.parametrize("objective_scores", [None, {}])
+def test_missing_objectives_do_not_admit_a_candidate(tmp_path, frontier_type, objective_scores):
+    seed_evaluation = ValsetEvaluation(
+        outputs_by_val_id={0: "seed output"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id={0: {"accuracy": 0.5}},
+    )
+    state = state_mod.GEPAState(
+        {"prompt": "seed"}, seed_evaluation, track_best_outputs=True, frontier_type=frontier_type
+    )
+    before = deepcopy(state.__dict__)
+    rejected_evaluation = ValsetEvaluation(
+        outputs_by_val_id={0: "invalid output"},
+        scores_by_val_id={0: 1.0},
+        objective_scores_by_val_id=objective_scores,
+    )
+
+    with pytest.raises(ValueError, match="requires objective_scores"):
+        state.update_state_with_new_program(
+            [0], {"prompt": "invalid"}, rejected_evaluation, str(tmp_path), 2, iteration_id="rejected"
+        )
+
+    assert state.__dict__ == before
+    assert FullEvaluationPolicy().get_best_program(state) == 0
+    assert not (tmp_path / "generated_best_outputs_valset").exists()
+
+    # A subsequent valid proposal should receive the next real candidate ID,
+    # and must not compete against the rejected proposal's higher scalar score.
+    valid_evaluation = ValsetEvaluation(
+        outputs_by_val_id={0: "valid output"},
+        scores_by_val_id={0: 0.75},
+        objective_scores_by_val_id={0: {"accuracy": 0.75}},
+    )
+    candidate_idx = state.update_state_with_new_program(
+        [0], {"prompt": "valid"}, valid_evaluation, str(tmp_path), 3, iteration_id="accepted"
+    )
+    assert candidate_idx == 1
+    assert state.is_consistent()
+    assert FullEvaluationPolicy().get_best_program(state) == candidate_idx
+    assert all(front == {candidate_idx} for front in state.get_pareto_front_mapping().values())
 
 
 @pytest.fixture
@@ -239,18 +283,20 @@ def test_agent_state_rejected_proposals(run_dir):
     state.total_num_evals = 10
     state.num_full_ds_evals = 1
 
-    state.full_program_trace.append({
-        "i": 7,
-        "iteration_id": "a1b2c3d4",
-        "selected_program_candidate": 0,
-        "subsample_ids": [0],
-        "subsample_scores": [0.5],
-        "new_subsample_scores": [0.3],
-        "proposal_accepted": False,
-        "proposed_candidate": {"prompt": "rejected attempt"},
-        "eval_before": {"scores": [0.5], "trajectories": ["trace_before"]},
-        "eval_after": {"scores": [0.3], "trajectories": ["trace_after"]},
-    })
+    state.full_program_trace.append(
+        {
+            "i": 7,
+            "iteration_id": "a1b2c3d4",
+            "selected_program_candidate": 0,
+            "subsample_ids": [0],
+            "subsample_scores": [0.5],
+            "new_subsample_scores": [0.3],
+            "proposal_accepted": False,
+            "proposed_candidate": {"prompt": "rejected attempt"},
+            "eval_before": {"scores": [0.5], "trajectories": ["trace_before"]},
+            "eval_after": {"scores": [0.3], "trajectories": ["trace_after"]},
+        }
+    )
 
     state.save(run_dir, write_agent_state=True)
 
@@ -293,9 +339,7 @@ def test_agent_state_e2e_writes_per_iteration_outputs_and_trajectories(run_dir):
             weight = int(candidate["system_prompt"].split("=")[-1])
             outputs = [{"id": item["id"], "weight": weight} for item in batch]
             scores = [min(1.0, (weight + 1) / item["difficulty"]) for item in batch]
-            trajectories = (
-                [{"score": s, "weight": weight} for s in scores] if capture_traces else None
-            )
+            trajectories = [{"score": s, "weight": weight} for s in scores] if capture_traces else None
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
         def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
@@ -332,9 +376,7 @@ def test_agent_state_e2e_writes_per_iteration_outputs_and_trajectories(run_dir):
     # At least one accepted descendant iteration should also have outputs.
     iter_dirs = [d for d in (run_dir_path / "iterations").iterdir() if d.is_dir()]
     assert len(iter_dirs) >= 2
-    accepted_with_outputs = [
-        d for d in iter_dirs if d.name != "seed" and (d / "outputs" / "0.json").exists()
-    ]
+    accepted_with_outputs = [d for d in iter_dirs if d.name != "seed" and (d / "outputs" / "0.json").exists()]
     assert accepted_with_outputs, "at least one accepted proposal should have outputs"
     for iter_dir in accepted_with_outputs:
         assert (iter_dir / "trajectories" / "0.json").exists()
