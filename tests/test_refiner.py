@@ -695,7 +695,7 @@ class TestEvaluatedCandidatesProposeIndexing:
         from unittest.mock import MagicMock
 
         from gepa.core.adapter import EvaluationBatch
-        from gepa.core.state import GEPAState, ValsetEvaluation
+        from gepa.core.state import TRAINSET_CACHE_SPLIT, EvaluationCache, GEPAState, ValsetEvaluation
         from gepa.proposer.reflective_mutation.reflection_lm import ReflectionProposal
         from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
         from gepa.strategies.proposal_sampling import ProposalTask
@@ -759,6 +759,7 @@ class TestEvaluatedCandidatesProposeIndexing:
             {"c": "seed"},
             ValsetEvaluation(outputs_by_val_id={0: "o"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None),
             track_best_outputs=False,
+            evaluation_cache=EvaluationCache(),
         )
         state.total_num_evals = 1
         state.full_program_trace.append({"i": 0})
@@ -770,6 +771,17 @@ class TestEvaluatedCandidatesProposeIndexing:
         # Child 1: single (hence all-equal) winner → use it. Also the N>=2
         # IndexError case if anyone indexes by child ordinal into a len-1 list.
         assert proposals[1].candidate == {"c": "refined_for_2"}
+
+        # Refined scores are cached only under the candidate that produced them: never under the
+        # pre-refinement child, and not at all when no single candidate owns the minibatch.
+        cache = state.evaluation_cache
+        assert cache is not None
+        _, uncached = cache.get_batch({"c": "improved"}, [0, 1, 2], split=TRAINSET_CACHE_SPLIT)
+        assert uncached == [0, 1, 2]
+        for q in (0, 1):
+            assert cache.get({"c": f"refined_for_{q}"}, q, split=TRAINSET_CACHE_SPLIT) is None
+        entry = cache.get({"c": "refined_for_2"}, 2, split=TRAINSET_CACHE_SPLIT)
+        assert entry is not None and entry.score == 0.9
 
 
 class TestRefinerWithDataset:
