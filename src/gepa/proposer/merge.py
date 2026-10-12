@@ -105,10 +105,12 @@ def find_common_ancestor_pair(
         common_ancestors = filter_ancestors(i, j, common_ancestors, merges_performed, agg_scores, program_candidates)
         if common_ancestors:
             # Select a random common ancestor
+            weights = [agg_scores[ancestor] for ancestor in common_ancestors]
+            # If all scores are zero, each ancestor is still a valid merge base.
             common_ancestor = rng.choices(
                 list(common_ancestors),
                 k=1,
-                weights=[agg_scores[ancestor] for ancestor in common_ancestors],
+                weights=weights if any(weights) else None,
             )[0]
             return (i, j, common_ancestor)
 
