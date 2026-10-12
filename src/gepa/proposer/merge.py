@@ -14,7 +14,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import VALSET_CACHE_SPLIT, GEPAState, ObjectiveScores, ProgramIdx
+from gepa.core.state import VALSET_CACHE_SPLIT, EvaluationResult, GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -224,7 +224,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         valset: DataLoader[DataId, DataInst],
         evaluator: Callable[
             [list[DataInst], dict[str, str]],
-            tuple[list[RolloutOutput], list[float], Sequence[ObjectiveScores] | None],
+            EvaluationResult,
         ],
         use_merge: bool,
         max_merge_invocations: int,

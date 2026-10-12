@@ -4,11 +4,11 @@
 import json
 import os
 import traceback
-from collections.abc import Sequence
 from typing import Any, Generic
 
 from gepa.core.adapter import (
     DataInst,
+    EvaluationBatch,
     GEPAAdapter,
     RolloutOutput,
     Trajectory,
@@ -170,11 +170,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Store cache reference for state initialization (actual cache lives in GEPAState)
         self._initial_evaluation_cache = evaluation_cache
 
-        def evaluator(
-            batch: list[DataInst], program: dict[str, str]
-        ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
-            eval_result = adapter.evaluate(batch, program, capture_traces=False)
-            return eval_result.outputs, eval_result.scores, eval_result.objective_scores
+        def evaluator(batch: list[DataInst], program: dict[str, str]) -> EvaluationBatch[Trajectory, RolloutOutput]:
+            return adapter.evaluate(batch, program, capture_traces=False)
 
         self.evaluator = evaluator
 
@@ -309,7 +306,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             objective_scores_by_val_id=objective_by_val_idx,
                             trajectories_by_val_id=trajectories_by_val_idx,
                         ),
-                        len(val_ids),
+                        eval_result.metric_calls,
                     )
                 )
             return traced_results
@@ -346,8 +343,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     objective_by[eid] = entry.objective_scores
 
             uncached = todo_per[i]
+            metric_calls = 0
             if uncached:
                 eb = fresh_by_idx[i]
+                metric_calls = eb.metric_calls
                 obj = list(eb.objective_scores) if eb.objective_scores else None
                 for j, eid in enumerate(uncached):
                     outputs_by[eid] = eb.outputs[j]
@@ -365,7 +364,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         scores_by_val_id=scores_by,
                         objective_scores_by_val_id=objective_by,
                     ),
-                    len(uncached),
+                    metric_calls,
                 )
             )
         return results
@@ -763,6 +762,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         if eval_result.objective_scores is not None
                         else None
                     ),
+                    num_metric_calls=eval_result.metric_calls,
                     trajectories_by_val_id=(
                         dict(zip(val_ids, eval_result.trajectories, strict=False))
                         if eval_result.trajectories is not None
@@ -786,6 +786,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 outputs_by_val_id=outputs_dict,
                 scores_by_val_id=scores_dict,
                 objective_scores_by_val_id=objective_scores_dict,
+                num_metric_calls=eval_result.metric_calls,
             )
 
         # Notify callbacks of optimization start (before seed valset eval)

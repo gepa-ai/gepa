@@ -14,7 +14,7 @@ from gepa.adapters.default_adapter.default_adapter import (
     DefaultAdapter,
     Evaluator,
 )
-from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -448,11 +448,8 @@ def optimize(
         reflection_strategy=reflection_strategy,
     )
 
-    def evaluator_fn(
-        inputs: list[DataInst], prog: dict[str, str]
-    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
-        eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+    def evaluator_fn(inputs: list[DataInst], prog: dict[str, str]) -> EvaluationBatch[Trajectory, RolloutOutput]:
+        return active_adapter.evaluate(inputs, prog, capture_traces=False)
 
     merge_proposer: MergeProposer | None = None
     if use_merge:

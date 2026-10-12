@@ -369,3 +369,32 @@ GEPA provides several ready-to-use adapters for common use cases:
 - See the [API Reference](../api/core/GEPAAdapter.md) for complete `GEPAAdapter` protocol documentation
 - Explore the built-in adapters above for your specific use case
 - Read the [DefaultAdapter](../api/adapters/DefaultAdapter.md) source for a reference implementation
+
+
+## Multiple rollouts per example
+
+For a stochastic generator or grader, wrap your existing adapter to compare per-example mean scores instead of a single sampled score:
+
+```python
+import gepa
+from gepa.adapters.multi_rollout import MultiRolloutAdapter
+
+adapter = MultiRolloutAdapter(
+    your_adapter,
+    num_rollouts=3,
+    reflection_score_threshold=1.0,  # failed-only reflection for a metric with perfect score 1.0
+)
+result = gepa.optimize(
+    seed_candidate=seed_candidate,
+    trainset=trainset,
+    valset=valset,
+    adapter=adapter,
+    max_metric_calls=300,
+)
+```
+
+Every example is evaluated three times, including seed, training, validation, and merge evaluation. Scores and objective scores are arithmetic means. The wrapper sums each underlying batch's `num_metric_calls`, defaulting to one call per example only when that field is absent. The engine carries those counts through validation and cache misses as well as training. Budgets are checked between evaluation batches, so the final batch may exceed the remaining budget; its full cost is still recorded.
+
+Outputs are lists of the original outputs in rollout order. Captured trajectories retain each original output, score, and opaque trace. For reflection, the wrapper reconstructs an original-shaped batch for each repetition, delegates to your adapter, and combines its component records. A threshold filters **individual rollout scores**, rather than the mean: a successful rollout cannot hide the failure feedback from another rollout. Omit the threshold to leave filtering to your adapter. Select a threshold appropriate to your metric; 1.0 is not universal.
+
+The underlying optional batch evaluator, custom proposer, and checkpoint-state methods are preserved. Repetitions run sequentially; the underlying batch evaluator controls concurrency within a repetition. Caching stores the measured group of rollouts, so a cache hit does not resample a stochastic candidate. Use `cache_evaluation=False` when fresh sampling is required, and use the same wrapper configuration when resuming a run.
