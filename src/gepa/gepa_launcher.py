@@ -1073,7 +1073,10 @@ class EvaluatorWrapper:
             if isinstance(result, Exception):
                 if raise_on_exception:
                     raise result
-                fail_side_info: SideInfo = {"error": str(result)}
+                # Synthetic result: the marker keeps it out of the adapter cache and GEPA core's
+                # evaluation cache, so an outage is never replayed as a score (same contract as
+                # the batch_evaluator failure path).
+                fail_side_info: SideInfo = {"error": str(result), "_gepa_transient_failure": True}
                 if log_output:
                     fail_side_info["log"] = log_output
                 if captured_stdout:

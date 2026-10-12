@@ -97,6 +97,54 @@ def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
     assert result.val_aggregate_scores[result.best_idx] == max(result.val_aggregate_scores)
 
 
+def test_server_isolated_failure_is_not_cached_by_core(tmp_path):
+    """With ``raise_on_exception=False`` the per-pair evaluator wrapper turns a raising example into a synthetic
+    zero. That zero must not be persisted in GEPA core's evaluation cache (#448, item 5), or a resumed run would
+    reuse an outage as a score. The seed's valset pass is the first write; the example that raised is the only
+    one missing from the cache afterwards, while its normally scored siblings are cached."""
+    from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, GEPAState
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    seen: dict[str, int] = {}
+
+    def evaluator(candidate, example=None):
+        seen[example] = seen.get(example, 0) + 1
+        if example == "ex0" and seen[example] == 1:
+            raise RuntimeError("transient outage")
+        return 0.5, {"ok": True}
+
+    data = ["ex0", "ex1", "ex2"]
+    run_dir = str(tmp_path / "state")
+    optimize_anything(
+        seed_candidate="seed",
+        evaluator=evaluator,
+        dataset=data,
+        valset=data,
+        config=GEPAConfig(
+            engine=EngineConfig(
+                max_metric_calls=3,
+                run_dir=run_dir,
+                cache_evaluation=True,
+                raise_on_exception=False,
+                parallel=False,
+                seed=0,
+            ),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM(), reflection_minibatch_size=2),
+        ),
+    )
+    state = GEPAState.load(run_dir)
+    cache = state.evaluation_cache
+    assert cache is not None
+    seed = state.program_candidates[0]
+    assert state.prog_candidate_val_subscores[0] == {0: 0.0, 1: 0.5, 2: 0.5}  # the outage scored 0 this round
+    # The seed's valset pass is cached under whichever split namespace the engine chose for this valset.
+    cached = {
+        eid: any(cache.get(seed, eid, split=s) is not None for s in (VALSET_CACHE_SPLIT, TRAINSET_CACHE_SPLIT))
+        for eid in (0, 1, 2)
+    }
+    assert cached == {0: False, 1: True, 2: True}
+
+
 def test_legacy_max_workers_sizes_the_eval_server():
     """``EngineConfig.max_workers`` becomes the eval server's
     ``max_concurrency``; without the mapping every legacy run is silently

@@ -495,6 +495,28 @@ class TestEvaluatorModes:
         _, _, side_info = wrapped({"x": "1"})
         assert side_info == {}
 
+    def test_suppressed_exception_is_marked_transient(self):
+        """With ``raise_on_exception=False`` a raising evaluator becomes a zero whose side_info carries
+        ``_gepa_transient_failure``, the same contract as the batch_evaluator path: the adapter cache and
+        GEPA core's evaluation cache both skip it, so an outage is never replayed as a score."""
+
+        def my_eval(candidate, **kwargs):
+            raise RuntimeError("transient outage")
+
+        wrapped = EvaluatorWrapper(my_eval, single_instance_mode=True, raise_on_exception=False)
+        score, output, side_info = wrapped({"x": "1"})
+        assert score == 0.0
+        assert output is None
+        assert side_info["_gepa_transient_failure"] is True
+        assert "transient outage" in side_info["error"]
+
+    def test_exception_propagates_by_default(self):
+        def my_eval(candidate, **kwargs):
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            EvaluatorWrapper(my_eval, single_instance_mode=True)({"x": "1"})
+
 
 # ---------------------------------------------------------------------------
 # OptimizationState
