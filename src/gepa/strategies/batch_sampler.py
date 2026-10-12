@@ -32,6 +32,8 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
     """
 
     def __init__(self, minibatch_size: int, rng: random.Random | None = None):
+        if minibatch_size <= 0:
+            raise ValueError("minibatch_size must be positive.")
         self.minibatch_size = minibatch_size
         self.shuffled_ids: list[DataId] = []
         self.epoch = -1
