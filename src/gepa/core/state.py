@@ -169,12 +169,16 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         candidate: dict[str, str],
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, ...]],
         *,
         split: str,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
         """
         Evaluate using cache, returning full results.
+
+        ``evaluator`` returns ``(outputs, scores, objective_scores)`` or, with a per-example cacheable mask
+        as a fourth element, ``(outputs, scores, objective_scores, cacheable)``; results the mask marks
+        ``False`` are returned but never stored.
 
         Returns (outputs_by_id, scores_by_id, objective_scores_by_id, num_actual_evals).
         """
@@ -193,14 +197,15 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         # Evaluate uncached examples
         if uncached_ids:
             batch = fetcher(uncached_ids)
-            outputs, scores, obj_scores = evaluator(batch, candidate)
+            outputs, scores, obj_scores, *rest = evaluator(batch, candidate)
+            cacheable = rest[0] if rest else None
             for idx, eid in enumerate(uncached_ids):
                 outputs_by_id[eid] = outputs[idx]
                 scores_by_id[eid] = scores[idx]
                 if obj_scores is not None:
                     objective_by_id = objective_by_id or {}
                     objective_by_id[eid] = obj_scores[idx]
-            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores, split=split)
+            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores, split=split, cacheable=cacheable)
 
         return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
 
@@ -1072,7 +1077,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         candidate: dict[str, str],
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, ...]],
         *,
         split: str,
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:

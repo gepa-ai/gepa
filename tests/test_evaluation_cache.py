@@ -92,6 +92,29 @@ class TestEvaluationCache:
         assert cached_zero is not None
         assert cached_zero.score == 0.0
 
+    def test_evaluate_with_cache_full_honours_a_cacheable_mask(self):
+        """An evaluator may return a fourth element: per-example cacheability. Masked results are returned
+        to the caller but never stored, so the next call evaluates them again."""
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "test"}
+        calls = []
+
+        def evaluator(batch, cand):
+            calls.append(list(batch))
+            return [f"out-{b}" for b in batch], [0.0 for _ in batch], None, [b != "flaky" for b in batch]
+
+        def fetch(ids):
+            return list(ids)
+
+        _, scores, _, n = cache.evaluate_with_cache_full(
+            candidate, ["flaky", "stable"], fetch, evaluator, split=TRAINSET_CACHE_SPLIT
+        )
+        assert scores == {"flaky": 0.0, "stable": 0.0} and n == 2
+        assert cache.get(candidate, "flaky", split=TRAINSET_CACHE_SPLIT) is None
+        assert cache.get(candidate, "stable", split=TRAINSET_CACHE_SPLIT) is not None
+        cache.evaluate_with_cache_full(candidate, ["flaky", "stable"], fetch, evaluator, split=TRAINSET_CACHE_SPLIT)
+        assert calls == [["flaky", "stable"], ["flaky"]]
+
     def test_split_is_required(self):
         """Omitting split must be a TypeError, not a silent trainset lookup."""
         cache: EvaluationCache = EvaluationCache()

@@ -1703,9 +1703,9 @@ def optimize_anything(
     # Define evaluator function for merge proposer
     def merge_evaluator(
         inputs: list[DataInst], prog: Candidate
-    ) -> tuple[list[object], list[float], list[dict[str, float]] | None]:
+    ) -> tuple[list[object], list[float], list[dict[str, float]] | None, list[bool] | None]:
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores, eval_out.cacheable
 
     # --- 12. Build merge proposer from MergeConfig (if provided) ---
     merge_proposer: MergeProposer | None = None
