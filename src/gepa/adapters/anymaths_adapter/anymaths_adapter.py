@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 from typing import Any, TypedDict
 
 import litellm
@@ -26,6 +28,25 @@ class AnyMathsStructuredOutput(BaseModel):
         ..., description="The final answer to the mathematical problem (i.e., no units, no other text)"
     )
     solution_pad: str = Field(..., description="The solution pad containing the step-by-step solution to the problem.")
+
+
+def _answers_match(expected: str, generated: str) -> bool:
+    """Compare complete answers, accepting equivalent finite numeric forms."""
+    expected, generated = expected.strip(), generated.strip()
+    if not expected or not generated:
+        return False
+    for answer in (expected, generated):
+        try:
+            if not Decimal(answer).is_finite():
+                return False
+        except InvalidOperation:
+            pass
+    try:
+        return Fraction(expected) == Fraction(generated)
+    except ZeroDivisionError:
+        return False
+    except ValueError:
+        return expected == generated
 
 
 class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMathsRolloutOutput]):
@@ -63,8 +84,6 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
         candidate: dict[str, str],
         capture_traces: bool = False,
     ) -> EvaluationBatch[AnyMathsTrajectory, AnyMathsRolloutOutput]:
-        import ast
-
         outputs: list[AnyMathsRolloutOutput] = []
         scores: list[float] = []
         trajectories: list[AnyMathsTrajectory] | None = [] if capture_traces else None
@@ -105,16 +124,16 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
         for data, response in zip(batch, responses, strict=False):
             correct_output_format = True
             try:
-                assistant_response = ast.literal_eval(response.choices[0].message.content.strip())
+                assistant_response = AnyMathsStructuredOutput.model_validate_json(response.choices[0].message.content)
             except Exception:
                 assistant_response = "Assistant failed to respond with the correct answer or format."
                 correct_output_format = False
 
             if correct_output_format:
-                structured_assistant_response = f"Assistant's Solution: {assistant_response['solution_pad']}\n"
-                structured_assistant_response += f"Final Answer: {assistant_response['final_answer']}"
+                structured_assistant_response = f"Assistant's Solution: {assistant_response.solution_pad}\n"
+                structured_assistant_response += f"Final Answer: {assistant_response.final_answer}"
                 output = {"full_assistant_response": structured_assistant_response}
-                score = 1.0 if data["answer"] in assistant_response["final_answer"] else self.failure_score
+                score = 1.0 if _answers_match(data["answer"], assistant_response.final_answer) else self.failure_score
             else:
                 output = {"full_assistant_response": assistant_response}
                 score = self.failure_score
@@ -146,20 +165,20 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
             data = traj["data"]
             generated_outputs = traj["full_assistant_response"]
 
-            if score > 0.0:
+            if score == 1.0:
                 feedback = f"The generated response is correct. The final answer is: {data['answer']}."
             else:
                 additional_context_str = "\n".join(f"{k}: {v}" for k, v in data["additional_context"].items())
                 if additional_context_str:
                     feedback = (
                         f"The generated response is incorrect. The correct answer is: {data['answer']}. "
-                        "Ensure that the correct answer is included in the response exactly as it is. "
+                        "Return the complete correct final answer without units or other text. "
                         f"Here is some additional context that might be helpful:\n{additional_context_str}"
                     )
                 else:
                     feedback = (
                         f"The generated response is incorrect. The correct answer is: {data['answer']}. "
-                        "Ensure that the correct answer is included in the response exactly as it is."
+                        "Return the complete correct final answer without units or other text."
                     )
 
             d = {"Inputs": data["input"], "Generated Outputs": generated_outputs, "Feedback": feedback}
