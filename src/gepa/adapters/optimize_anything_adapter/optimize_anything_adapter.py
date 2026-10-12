@@ -53,6 +53,27 @@ Analyze the evaluation history and propose an improved version of the candidate.
 Return ONLY a valid JSON object with the improved parameters (no explanation, no markdown fences).
 """
 
+# Key the per-example scalar score is injected under when the evaluator did not
+# supply a score of its own. Parenthetical wording mirrors the multi-objective
+# ``"Scores (Higher is Better)"`` rename below: GEPA scores are always
+# higher-is-better, and stating it in the prompt keeps the reflection LM from
+# reasoning about the value backwards.
+SCORE_INJECTION_KEY = "Score (Higher is Better)"
+
+
+def _is_scalar_score_key(key: str) -> bool:
+    """Whether ``key`` already carries a per-example scalar score.
+
+    Matches any casing of a bare ``"score"`` (``"Score"``, ``"SCORE"``, …),
+    including one with a parenthetical qualifier such as ``"Score (0-10 rubric)"``,
+    so an evaluator-supplied value is never overwritten.
+
+    Plural ``"scores"`` is deliberately *not* matched: that is the
+    multi-objective metrics dict, which is different information from the
+    blended per-example score GEPA uses for acceptance.
+    """
+    return key.split("(", 1)[0].strip().casefold() == "score"
+
 
 class BatchEvaluatorWrapper:
     """Wraps a user ``batch_evaluator`` while preserving its single-external-call contract.
@@ -885,21 +906,31 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         example) combining shared SideInfo fields with any
         ``<component>_specific_info`` data.  The ``"scores"`` key is renamed
         to ``"Scores (Higher is Better)"`` for clarity in the LLM prompt.
+
+        The per-example scalar score is injected under
+        ``"Score (Higher is Better)"`` unless the evaluator already supplied a
+        score of its own (``"score"``, ``"Score"``, ``"SCORE"``, …), so a
+        user-supplied value is never overwritten — see #288.  The multi-objective
+        ``side_info["scores"]`` dict does not suppress the injection: it is
+        different information from the blended score GEPA accepts on.
         """
         scores, side_infos = eval_batch.scores, eval_batch.trajectories
         assert side_infos is not None
         ret: dict[str, list[dict[str, Any]]] = {}
         for component_name in components_to_update:
             ret[component_name] = []
-            for _score, side_info in zip(scores, side_infos, strict=False):
-                ret[component_name].append({})
+            for score, side_info in zip(scores, side_infos, strict=False):
+                record: dict[str, Any] = {}
                 for k, v in side_info.items():
                     if k == "scores":
-                        ret[component_name][-1]["Scores (Higher is Better)"] = v
+                        record["Scores (Higher is Better)"] = v
                     elif not k.endswith("_specific_info"):
-                        ret[component_name][-1][k] = v
+                        record[k] = v
                     elif k == f"{component_name}_specific_info":
-                        ret[component_name][-1].update(v)
+                        record.update(v)
                     else:
                         continue
+                if not any(_is_scalar_score_key(k) for k in record):
+                    record[SCORE_INJECTION_KEY] = score
+                ret[component_name].append(record)
         return ret
