@@ -163,6 +163,96 @@ def test_legacy_run_dir_also_holds_the_eval_output(tmp_path, monkeypatch):
     assert not (run_dir / "summary.json").exists()
 
 
+def test_server_isolated_failure_is_not_cached_by_core(tmp_path):
+    """With ``raise_on_exception=False`` the per-pair evaluator wrapper turns a raising example into a synthetic
+    zero. That zero must not be persisted in GEPA core's evaluation cache (#448, item 5), or a resumed run would
+    reuse an outage as a score. The seed's valset pass is the first write; the example that raised is the only
+    one missing from the cache afterwards, while its normally scored siblings are cached."""
+    from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, GEPAState
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    seen: dict[str, int] = {}
+
+    def evaluator(candidate, example=None):
+        seen[example] = seen.get(example, 0) + 1
+        if example == "ex0" and seen[example] == 1:
+            raise RuntimeError("transient outage")
+        return 0.5, {"ok": True}
+
+    data = ["ex0", "ex1", "ex2"]
+    run_dir = str(tmp_path / "state")
+    optimize_anything(
+        seed_candidate="seed",
+        evaluator=evaluator,
+        dataset=data,
+        valset=data,
+        config=GEPAConfig(
+            engine=EngineConfig(
+                max_metric_calls=3,
+                run_dir=run_dir,
+                cache_evaluation=True,
+                raise_on_exception=False,
+                parallel=False,
+                seed=0,
+            ),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM(), reflection_minibatch_size=2),
+        ),
+    )
+    state = GEPAState.load(run_dir)
+    cache = state.evaluation_cache
+    assert cache is not None
+    seed = state.program_candidates[0]
+    assert state.prog_candidate_val_subscores[0] == {0: 0.0, 1: 0.5, 2: 0.5}  # the outage scored 0 this round
+    # The seed's valset pass is cached under whichever split namespace the engine chose for this valset.
+    cached = {
+        eid: any(cache.get(seed, eid, split=s) is not None for s in (VALSET_CACHE_SPLIT, TRAINSET_CACHE_SPLIT))
+        for eid in (0, 1, 2)
+    }
+    assert cached == {0: False, 1: True, 2: True}
+
+
+def test_run_dir_also_holds_the_eval_output_on_the_new_config_path(tmp_path, monkeypatch):
+    """``OptimizeAnythingConfig(run_dir=...)`` with no ``output_dir`` nests the eval server at
+    ``run_dir/eval_server``, as the legacy path does (#448, item 3): nothing is created under the current
+    directory. An explicit ``output_dir`` still wins."""
+    from gepa.optimize_anything import optimize_anything
+
+    run_dir = tmp_path / "run"
+    monkeypatch.chdir(tmp_path)
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=4,
+            run_dir=str(run_dir),
+            engine_config={"reflection": {"reflection_lm": _FakeLM()}},
+        ),
+    )
+    assert not (tmp_path / "outputs").exists()
+    assert (run_dir / "gepa_state.bin").exists()
+    assert (run_dir / "eval_server" / "summary.json").is_file()
+    assert list((run_dir / "eval_server" / "evals").glob("*.json"))
+
+    explicit = tmp_path / "elsewhere"
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=4,
+            run_dir=str(tmp_path / "run2"),
+            output_dir=str(explicit),
+            engine_config={"reflection": {"reflection_lm": _FakeLM()}},
+        ),
+    )
+    assert (explicit / "summary.json").is_file()
+    assert not (tmp_path / "run2" / "eval_server").exists()
+    assert not (tmp_path / "outputs").exists()
+
+
 def test_legacy_gepa_config_accepts_test_set():
     """With the single unified GEPAResult, ``test_set`` works on every path —
     including a legacy ``GEPAConfig`` — because the result now carries a
