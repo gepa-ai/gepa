@@ -620,7 +620,16 @@ class EvalServer:
         tmp = summary_path.with_name(f".summary.{threading.get_ident()}.{uuid.uuid4().hex}.tmp")
         try:
             tmp.write_text(json.dumps(snapshot, indent=2, default=str))
-            tmp.replace(summary_path)
+            for attempt in range(5):
+                try:
+                    tmp.replace(summary_path)
+                    break
+                except PermissionError as exc:
+                    # Concurrent Windows replacements can briefly deny access
+                    # even when each writer uses its own closed temporary file.
+                    if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 4:
+                        raise
+                    time.sleep(0.01 * (attempt + 1))
         finally:
             try:
                 tmp.unlink(missing_ok=True)
