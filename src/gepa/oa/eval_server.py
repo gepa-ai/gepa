@@ -347,9 +347,11 @@ class EvalServer:
         """Per-pair evaluator over a bulk reservation: concurrency-bounded (or sequential), order-preserving.
 
         Every pair is committed even if one raises. With ``isolate_errors`` a
-        failing pair becomes a zero result carrying the error, as on the
-        per-pair path; otherwise the first exception is re-raised once all
-        pairs have settled, so the reservation never leaks either way.
+        failing pair becomes a zero result carrying the error and the
+        ``_gepa_transient_failure`` marker, so the adapter keeps it out of every
+        cache (an exception is not a score); otherwise the first exception is
+        re-raised once all pairs have settled, so the reservation never leaks
+        either way.
         """
 
         def one(i: int, candidate: str, example: Any) -> tuple[float, dict[str, Any]]:
@@ -363,7 +365,7 @@ class EvalServer:
                 out.append(result())
             except Exception as e:  # settle every pair before re-raising
                 if isolate_errors:
-                    out.append((0.0, {"error": str(e)}))
+                    out.append((0.0, {"error": str(e), "_gepa_transient_failure": True}))
                     return None
                 return e
             return None

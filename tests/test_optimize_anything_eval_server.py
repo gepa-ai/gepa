@@ -138,7 +138,8 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             results = server.evaluate_batch([("s", 1), ("s", 2), ("s", 3)], isolate_errors=True)
             self.assertEqual([score for score, _ in results], [1.0, 0.0, 3.0])
             self.assertIn("boom", results[1][1]["error"])
-            self.assertNotIn("_gepa_transient_failure", results[1][1])  # per-pair parity: a real, cacheable 0.0
+            # The zero is synthetic: the marker keeps it out of every evaluation cache (#448, item 5).
+            self.assertTrue(results[1][1]["_gepa_transient_failure"])
             self.assertEqual((budget.used, budget.reserved), (3, 0))
             budget2 = BudgetTracker(max_evals=3)
             strict = EvalServer(task, evaluator, budget2, max_concurrency=2)
@@ -352,6 +353,24 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
         self.assertEqual(payload["average_score"], 1.0)
         self.assertEqual(server.progress_log, [])
+
+    def test_isolated_failure_carries_the_transient_marker(self) -> None:
+        """A pair the evaluator raises on becomes a zero result that the adapter recognises as synthetic
+        (``_gepa_transient_failure``), so it never enters an evaluation cache (#448, item 5 on the server path)."""
+        task = Task(name="task", seed_candidate="seed", train_set=[1, 2, 3])
+
+        def flaky(candidate, example):
+            if example == 2:
+                raise RuntimeError("transient outage")
+            return 1.0, {"ok": True}
+
+        server = EvalServer(task, flaky, BudgetTracker(max_evals=3), max_concurrency=2)
+        results = server.evaluate_batch([("s", 1), ("s", 2), ("s", 3)], isolate_errors=True)
+        self.assertEqual([r[0] for r in results], [1.0, 0.0, 1.0])
+        self.assertTrue(results[1][1]["_gepa_transient_failure"])
+        self.assertIn("transient outage", results[1][1]["error"])
+        self.assertNotIn("_gepa_transient_failure", results[0][1])
+        self.assertEqual(server.budget.used, 3)
 
 
 if __name__ == "__main__":
