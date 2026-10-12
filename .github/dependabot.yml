@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # Refresh uv.lock to the newest versions already allowed by pyproject.toml.
+  # lockfile-only does not raise requirement floors or lift intentional ceilings
+  # (for example litellm <1.92). Declared-range edits stay manual / issue-driven.
+  # Version updates are one monthly grouped PR. Security updates stay ungrouped
+  # and are not subject to this schedule, limit, or cooldown.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    versioning-strategy: "lockfile-only"
+    # Direct and transitive lock entries, so resolution stays current inside
+    # the ranges pyproject.toml already declares.
+    allow:
+      - dependency-type: "all"
+    groups:
+      uv-lockfile:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+
+  # Actions version and SHA hygiene stays weekly.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7

@@ -5,9 +5,30 @@
       <header class="md-typeset">
         {{ page.content }}
       </header>
+
+      {% set ns = namespace(team=[], guest=[]) %}
       {% for post in posts %}
-        {% include "partials/post.html" %}
+        {% if post.meta.get("guest") %}
+          {% set _ = ns.guest.append(post) %}
+        {% else %}
+          {% set _ = ns.team.append(post) %}
+        {% endif %}
       {% endfor %}
+
+      {% if ns.team %}
+        {% for post in ns.team %}
+          {% include "partials/post.html" %}
+        {% endfor %}
+      {% endif %}
+
+      {% if ns.guest %}
+        <h2 id="community" class="blog-section-title md-typeset">Community</h2>
+        <p class="md-typeset blog-section-lede">Case studies, adapters, and applied work.</p>
+        {% for post in ns.guest %}
+          {% include "partials/post.html" %}
+        {% endfor %}
+      {% endif %}
+
       {% if pagination %}
         {% block pagination %}
           {% include "partials/pagination.html" %}

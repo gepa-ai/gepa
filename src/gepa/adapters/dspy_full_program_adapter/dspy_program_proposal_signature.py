@@ -5,7 +5,8 @@ from typing import Any, ClassVar
 
 import yaml
 
-from gepa.proposer.reflective_mutation.base import Signature
+from gepa.proposer.reflective_mutation.base import Signature, SignatureAdapter
+from gepa.strategies.instruction_proposal import ProposalAdapter, parse_proposal
 
 
 class DSPyProgramProposalSignature(Signature):
@@ -91,6 +92,8 @@ Output Format:
 - Follow immediately with one code block in triple backticks containing the complete Python code, including assigning a `program` object."""
     input_keys: ClassVar[list[str]] = ["curr_program", "dataset_with_feedback"]
     output_keys: ClassVar[list[str]] = ["new_program"]
+    adapter: ClassVar[SignatureAdapter | None] = ProposalAdapter("new_program")
+    reasoning_tags: ClassVar[tuple[str, ...]] = ("think",)
 
     @classmethod
     def prompt_renderer(cls, input_dict: dict[str, Any]) -> str:
@@ -113,25 +116,6 @@ Output Format:
         prompt = prompt.replace("<dataset_with_feedback>", format_samples(dataset))
         return prompt
 
-    @staticmethod
-    def output_extractor(lm_out: str) -> dict[str, str]:
-        # Extract ``` blocks
-        new_instruction = None
-        if lm_out.count("```") >= 2:
-            start = lm_out.find("```")
-            end = lm_out.rfind("```")
-            if start >= end:
-                new_instruction = lm_out
-            if start == -1 or end == -1:
-                new_instruction = lm_out
-            else:
-                new_instruction = lm_out[start + 3 : end].strip()
-        else:
-            lm_out = lm_out.strip()
-            if lm_out.startswith("```"):
-                lm_out = lm_out[3:]
-            if lm_out.endswith("```"):
-                lm_out = lm_out[:-3]
-            new_instruction = lm_out
-
-        return {"new_program": new_instruction}
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+        return {"new_program": parse_proposal(cls, lm_out).require()}

@@ -572,25 +572,34 @@ with open({results_path!r}, 'wb') as f:
                 )
 
         except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            execution_time = time.time() - start_time
-
-            # Try to kill child processes if requested and psutil available
+            # Enumerate descendants BEFORE killing and reaping the subprocess.
+            # After process.wait() the subprocess is reaped, so its PID no longer
+            # resolves to a live process (and may be recycled by the OS). Looking up
+            # children only after the wait therefore finds nothing to kill and leaks
+            # the grandchildren, or -- worse, on PID reuse -- targets an unrelated
+            # process. Capturing them first keeps kill_child_processes effective.
+            children: list = []
             if kill_child_processes:
                 try:
                     import psutil  # type: ignore[import-not-found]
 
                     try:
-                        parent = psutil.Process(process.pid)
-                        for child in parent.children(recursive=True):
-                            try:
-                                child.kill()
-                            except psutil.NoSuchProcess:
-                                pass
+                        children = psutil.Process(process.pid).children(recursive=True)
                     except psutil.NoSuchProcess:
-                        pass
+                        children = []
                 except ImportError:
+                    children = []
+
+            process.kill()
+            process.wait()
+            execution_time = time.time() - start_time
+
+            # Kill the descendants that outlived the subprocess.
+            for child in children:
+                try:
+                    child.kill()
+                except Exception:
+                    # Process already gone, or we lack permission -- best effort.
                     pass
 
             return CodeExecutionResult(

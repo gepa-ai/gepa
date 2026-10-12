@@ -200,27 +200,24 @@ class TestReflectionLmProtocol:
     def test_propose_new_texts_calls_lm_correctly(self):
         """propose_new_texts should pass the prompt to reflection_lm and use
         the str return value (not a list)."""
-        mock_lm = MagicMock(return_value="<new_program>\nimport dspy\nprogram = dspy.Predict('q -> a')\n</new_program>")
+        proposed_program = "import dspy\nprogram = dspy.Predict('q -> a')"
+        mock_lm = MagicMock(return_value=f"```python\n{proposed_program}\n```")
         adapter = _make_adapter(reflection_lm=mock_lm)
 
         candidate = {"program": "import dspy\nprogram = dspy.Predict('q -> a')"}
         reflective_dataset = {"program": [{"input": "q1", "output": "a1", "score": 0.5}]}
 
-        # The proposal signature will call lm(prompt) and expect a str back.
-        # We mock the signature's run method to verify the LM is called.
-        with patch(
-            "gepa.adapters.dspy_full_program_adapter.dspy_program_proposal_signature.DSPyProgramProposalSignature.run",
-            return_value={"new_program": "import dspy\nprogram = dspy.Predict('q -> a')"},
-        ) as mock_run:
-            result = adapter.propose_new_texts(candidate, reflective_dataset, ["program"])
-            mock_run.assert_called_once_with(
-                lm=mock_lm,
-                input_dict={
-                    "curr_program": candidate["program"],
-                    "dataset_with_feedback": reflective_dataset["program"],
-                },
-            )
-            assert "program" in result
+        result = adapter.propose_new_texts(candidate, reflective_dataset, ["program"])
+
+        mock_lm.assert_called_once()
+        assert result == {"program": proposed_program}
+
+    def test_propose_new_texts_skips_truncated_program_output(self):
+        adapter = _make_adapter(reflection_lm=MagicMock(return_value="<think>generation stopped"))
+        candidate = {"program": "import dspy\nprogram = dspy.Predict('q -> a')"}
+        reflective_dataset = {"program": [{"input": "q1", "output": "a1", "score": 0.5}]}
+
+        assert adapter.propose_new_texts(candidate, reflective_dataset, ["program"]) == {}
 
 
 # ---------------------------------------------------------------------------

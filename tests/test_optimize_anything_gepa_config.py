@@ -97,6 +97,72 @@ def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
     assert result.val_aggregate_scores[result.best_idx] == max(result.val_aggregate_scores)
 
 
+def test_legacy_max_workers_sizes_the_eval_server():
+    """``EngineConfig.max_workers`` becomes the eval server's
+    ``max_concurrency``; without the mapping every legacy run is silently
+    gated at the server default regardless of the requested width."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=512)))
+    assert converted.max_concurrency == 512
+
+
+def test_legacy_parallel_false_maps_to_sequential_eval_server():
+    """``parallel=False`` meant sequential evaluation in the launcher."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(parallel=False, max_workers=512)))
+    assert converted.max_concurrency == 1
+
+
+def test_legacy_max_workers_none_falls_back_to_cpu_count():
+    """``max_workers=None`` mirrors the field's own default factory."""
+    import os
+
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=None)))
+    assert converted.max_concurrency == (os.cpu_count() or 32)
+
+
+def test_legacy_run_dir_unset_leaves_output_dir_none():
+    """No ``run_dir`` leaves ``output_dir`` unset, so the eval server keeps its
+    default ``outputs/`` tree."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+
+    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig()))
+    assert converted.output_dir is None
+
+
+def test_legacy_run_dir_also_holds_the_eval_output(tmp_path, monkeypatch):
+    """A legacy ``run_dir`` nests the eval server at ``run_dir/eval_server``:
+    ``gepa_state.bin`` stays at the run root, and the eval server's records
+    (``evals/`` plus ``summary.json``) land one level down. Nothing is created
+    under the current directory (#448)."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    run_dir = tmp_path / "run"
+    monkeypatch.chdir(tmp_path)
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4, run_dir=str(run_dir)),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+        ),
+    )
+
+    eval_dir = run_dir / "eval_server"
+    assert not (tmp_path / "outputs").exists()
+    assert (run_dir / "gepa_state.bin").exists()
+    assert not (eval_dir / "gepa_state.bin").exists()
+    assert list((eval_dir / "evals").glob("*.json"))
+    assert (eval_dir / "summary.json").is_file()
+    assert not (run_dir / "evals").exists()
+    assert not (run_dir / "summary.json").exists()
+
+
 def test_server_isolated_failure_is_not_cached_by_core(tmp_path):
     """With ``raise_on_exception=False`` the per-pair evaluator wrapper turns a raising example into a synthetic
     zero. That zero must not be persisted in GEPA core's evaluation cache (#448, item 5), or a resumed run would
@@ -143,34 +209,6 @@ def test_server_isolated_failure_is_not_cached_by_core(tmp_path):
         for eid in (0, 1, 2)
     }
     assert cached == {0: False, 1: True, 2: True}
-
-
-def test_legacy_max_workers_sizes_the_eval_server():
-    """``EngineConfig.max_workers`` becomes the eval server's
-    ``max_concurrency``; without the mapping every legacy run is silently
-    gated at the server default regardless of the requested width."""
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
-
-    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=512)))
-    assert converted.max_concurrency == 512
-
-
-def test_legacy_parallel_false_maps_to_sequential_eval_server():
-    """``parallel=False`` meant sequential evaluation in the launcher."""
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
-
-    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(parallel=False, max_workers=512)))
-    assert converted.max_concurrency == 1
-
-
-def test_legacy_max_workers_none_falls_back_to_cpu_count():
-    """``max_workers=None`` mirrors the field's own default factory."""
-    import os
-
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
-
-    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=None)))
-    assert converted.max_concurrency == (os.cpu_count() or 32)
 
 
 def test_run_dir_also_holds_the_eval_output_on_the_new_config_path(tmp_path, monkeypatch):

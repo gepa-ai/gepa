@@ -27,6 +27,25 @@ from typing import Any, cast
 logger = logging.getLogger(__name__)
 
 
+class LMOutput(str):
+    """A string completion that retains optional provider termination metadata.
+
+    It remains a ``str`` for complete backwards compatibility with existing LM
+    callables and user code. ``strip`` preserves the metadata because signature
+    execution normalizes whitespace before parsing.
+    """
+
+    finish_reason: str | None
+
+    def __new__(cls, value: str, *, finish_reason: str | None = None):
+        instance = super().__new__(cls, value)
+        instance.finish_reason = finish_reason
+        return instance
+
+    def strip(self, chars: str | None = None) -> LMOutput:
+        return type(self)(super().strip(chars), finish_reason=self.finish_reason)
+
+
 class LM:
     """A lightweight language model wrapper over LiteLLM.
 
@@ -128,7 +147,8 @@ class LM:
             self._total_tokens_in += tokens_in
             self._total_tokens_out += tokens_out
 
-        return completion.choices[0].message.content  # type: ignore[union-attr]
+        choice = completion.choices[0]  # type: ignore[union-attr]
+        return LMOutput(choice.message.content or "", finish_reason=getattr(choice, "finish_reason", None))
 
     def batch_complete(
         self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10, **kwargs: Any
@@ -163,7 +183,10 @@ class LM:
         results: list[str] = []
         for resp in responses:
             self._check_truncation(resp.choices)
-            results.append(resp.choices[0].message.content.strip())
+            choice = resp.choices[0]
+            results.append(
+                LMOutput(choice.message.content or "", finish_reason=getattr(choice, "finish_reason", None)).strip()
+            )
             try:
                 batch_cost += litellm.completion_cost(completion_response=resp) or 0.0  # type: ignore[attr-defined]
             except Exception:
