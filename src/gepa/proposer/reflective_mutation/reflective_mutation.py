@@ -375,6 +375,11 @@ class ReflectiveMutationProposer:
         )
         state.increment_evals(total_parent_evals)
 
+        observe_evaluation = getattr(self.batch_sampler, "observe_evaluation", None)
+        if callable(observe_evaluation):
+            for key, evaluation in key_to_eval.items():
+                observe_evaluation(list(key[1]), evaluation.scores)
+
         # Update evaluation cache for parents
         if state.evaluation_cache is not None:
             for task, key in zip(tasks, task_to_key, strict=True):
