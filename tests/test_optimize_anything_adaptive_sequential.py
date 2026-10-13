@@ -170,7 +170,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         self.assertEqual(result.metadata["baseline_test_score"], 1.0)
         self.assertEqual(result.metadata["test_score"], 1.0)
         self.assertEqual(
-            result.metadata["budget"], {"exhausted": True, "max_evals": 3, "used": 3, "remaining_evals": 0}
+            result.metadata["budget"], {"exhausted": True, "max_evals": 3, "used": 3, "reserved": 0, "remaining_evals": 0}
         )
 
     def test_convenience_wrapper_warns_when_fully_unbounded(self) -> None:
