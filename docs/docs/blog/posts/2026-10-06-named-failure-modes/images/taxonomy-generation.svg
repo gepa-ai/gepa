@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 340" width="1040" height="340" font-family="Arial" role="img">
+  <style>
+    .band  { fill: #f5f6f8; }
+    .card  { fill: #ffffff; stroke: #c9ccd4; stroke-width: 1.5; }
+    .input { fill: #eef0fe; stroke: #4F46E5; stroke-width: 1.5; }
+    .ln    { stroke: #8b909b; stroke-width: 2; fill: none; }
+    .loop  { stroke: #8b909b; stroke-width: 2; fill: none; stroke-dasharray: 6 4; }
+    .arrow { fill: #8b909b; }
+    .phase { fill: #6b7280; font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+    .step  { fill: #4F46E5; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; }
+    .ttl   { fill: #1f2430; font-size: 15px; font-weight: 650; }
+    .sub   { fill: #5b6270; font-size: 12px; }
+    .lbl   { fill: #5b6270; font-size: 11.5px; font-style: italic; }
+    .note  { fill: #5b6270; font-size: 12.5px; font-weight: 550; }
+    @media (prefers-color-scheme: dark) {
+      .band { fill: #191c27; }
+      .card { fill: #1c2030; stroke: #3a4055; }
+      .input { fill: #23244a; stroke: #8b8bf0; }
+      .ln, .loop { stroke: #7d8494; }
+      .arrow { fill: #7d8494; }
+      .phase, .sub, .lbl, .note { fill: #a8aebb; }
+      .step { fill: #8b8bf0; }
+      .ttl { fill: #eef0f4; }
+    }
+  </style>
+  <rect class="band" x="16" y="16" width="1008" height="308" rx="10"/>
+  <text class="phase" x="40" y="43">BEFORE OPTIMIZATION, ONCE PER PROGRAM</text>
+  <text class="note" x="1000" y="43" text-anchor="end">No human labeling at any stage</text>
+
+  <!-- base program traces -->
+  <rect class="card" x="40" y="86" width="196" height="132" rx="10"/>
+  <text class="step" x="60" y="114">BASE PROGRAM</text>
+  <text class="ttl" x="60" y="142">Run over a task set</text>
+  <text class="sub" x="60" y="168">Every step's input,</text>
+  <text class="sub" x="60" y="188">prompt, and output</text>
+
+  <!-- draft -->
+  <rect class="input" x="288" y="86" width="204" height="132" rx="10"/>
+  <text class="step" x="308" y="114">ADAMAST DRAFTS</text>
+  <text class="ttl" x="308" y="142">Failure modes</text>
+  <text class="sub" x="308" y="168">From domain, structure,</text>
+  <text class="sub" x="308" y="188">and component roles</text>
+
+  <!-- agreement rounds -->
+  <rect class="input" x="544" y="86" width="216" height="132" rx="10"/>
+  <text class="step" x="564" y="114">AGREEMENT ROUNDS</text>
+  <text class="ttl" x="564" y="142">Validate and refine</text>
+  <text class="sub" x="564" y="168">LLM annotators assign</text>
+  <text class="sub" x="564" y="188">modes; κ and coverage</text>
+
+  <!-- frozen taxonomy -->
+  <rect class="card" x="812" y="86" width="188" height="132" rx="10"/>
+  <text class="step" x="832" y="114">FROZEN TAXONOMY</text>
+  <text class="ttl" x="832" y="142">Reusable vocabulary</text>
+  <text class="sub" x="832" y="168">22–28 modes in this study</text>
+  <text class="sub" x="832" y="188">Reused across seeds/runs</text>
+
+  <!-- forward arrows -->
+  <line class="ln" x1="238" y1="152" x2="275" y2="152"/>
+  <path class="arrow" d="M275,147 L285,152 L275,157 Z"/>
+  <text class="lbl" x="256" y="140" text-anchor="middle">traces</text>
+
+  <line class="ln" x1="494" y1="152" x2="531" y2="152"/>
+  <path class="arrow" d="M531,147 L541,152 L531,157 Z"/>
+  <text class="lbl" x="512" y="140" text-anchor="middle">draft</text>
+
+  <line class="ln" x1="762" y1="152" x2="799" y2="152"/>
+  <path class="arrow" d="M799,147 L809,152 L799,157 Z"/>
+  <text class="lbl" x="780" y="140" text-anchor="middle">freeze</text>
+
+  <!-- refinement loop -->
+  <path class="loop" d="M716,220 V252 H588 V220"/>
+  <path class="arrow" d="M583,230 L588,220 L593,230 Z"/>
+  <text class="lbl" x="652" y="270" text-anchor="middle">Next round: refine definitions while agreement is below target (at most five)</text>
+
+  <rect class="card" x="40" y="288" width="960" height="25" rx="7"/>
+  <text class="note" x="520" y="305" text-anchor="middle">The frozen taxonomy is the vocabulary the judge uses for every candidate during optimization.</text>
+</svg>
