@@ -599,6 +599,60 @@ class TestMakeLitellmLm:
 
 
 # ---------------------------------------------------------------------------
+# make_atlascloud_lm
+# ---------------------------------------------------------------------------
+
+
+class TestMakeAtlascloudLm:
+    """Tests for the Atlas Cloud OpenAI-compatible LM helper."""
+
+    def test_defaults_read_atlascloud_environment(self, monkeypatch):
+        from gepa.lm import LM
+
+        monkeypatch.setenv("ATLASCLOUD_API_KEY", "atlas-env-key")
+        monkeypatch.delenv("ATLASCLOUD_API_BASE", raising=False)
+
+        lm = oa.make_atlascloud_lm()
+
+        assert isinstance(lm, LM)
+        assert lm.model == "qwen/qwen3.5-flash"
+        assert lm.completion_kwargs["api_key"] == "atlas-env-key"
+        assert lm.completion_kwargs["api_base"] == "https://api.atlascloud.ai/v1"
+        assert lm.completion_kwargs["custom_llm_provider"] == "openai"
+
+    def test_explicit_kwargs_override_environment(self, monkeypatch):
+        monkeypatch.setenv("ATLASCLOUD_API_KEY", "atlas-env-key")
+        monkeypatch.setenv("ATLASCLOUD_API_BASE", "https://env.example/v1")
+
+        lm = oa.make_atlascloud_lm(
+            "deepseek-ai/deepseek-v4-pro",
+            api_key="atlas-explicit-key",
+            api_base="https://proxy.example/v1",
+            temperature=0.2,
+            max_tokens=4096,
+        )
+
+        assert lm.model == "deepseek-ai/deepseek-v4-pro"
+        assert lm.completion_kwargs == {
+            "api_key": "atlas-explicit-key",
+            "api_base": "https://proxy.example/v1",
+            "custom_llm_provider": "openai",
+            "temperature": 0.2,
+            "max_tokens": 4096,
+        }
+
+    def test_base_url_alias_configures_api_base(self, monkeypatch):
+        monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+        monkeypatch.delenv("ATLASCLOUD_API_BASE", raising=False)
+
+        lm = oa.make_atlascloud_lm(base_url="https://atlas-proxy.example/v1")
+
+        assert "api_key" not in lm.completion_kwargs
+        assert lm.completion_kwargs["api_base"] == "https://atlas-proxy.example/v1"
+        assert lm.completion_kwargs["custom_llm_provider"] == "openai"
+
+
+# ---------------------------------------------------------------------------
 # ThreadLocalStreamCapture
 # ---------------------------------------------------------------------------
 
