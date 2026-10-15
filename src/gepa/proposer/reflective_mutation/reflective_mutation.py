@@ -685,11 +685,18 @@ class ReflectiveMutationProposer:
 
         # Stage 5: Build proposals and filter
         proposals: list[CandidateProposal] = []
-        for (_, (task, new_candidate, eval_curr, _lm_metadata)), child_eval in zip(
-            valid_children, child_evals, strict=True
+        for idx, ((_, (task, new_candidate, eval_curr, _lm_metadata)), child_eval) in enumerate(
+            zip(valid_children, child_evals, strict=True)
         ):
+            # Prefer the candidate the adapter actually evaluated (e.g. a
+            # refiner-produced replacement) over the pre-evaluation
+            # `new_candidate`, so the stored candidate and its recorded
+            # score refer to the same artifact.
+            evaluated_candidate = (
+                child_eval.evaluated_candidates[idx] if child_eval.evaluated_candidates is not None else None
+            )
             proposal = CandidateProposal(
-                candidate=new_candidate,
+                candidate=evaluated_candidate if evaluated_candidate is not None else new_candidate,
                 parent_program_ids=[task.parent_idx],
                 subsample_indices=task.minibatch_ids,
                 subsample_scores_before=eval_curr.scores,
