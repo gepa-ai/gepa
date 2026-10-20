@@ -742,7 +742,7 @@ class TestLiveDspyTraceSelection:
             [
                 {"next_thought": "add", "next_tool_name": "calculator", "next_tool_args": {"x": "2+2"}},
                 {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"reasoning": "2+2=4", "answer": "4"},
+                {"reasoning": "2+2=4", "plan": "2+2=4", "answer": "4"},
             ],
         )
 
@@ -767,7 +767,7 @@ class TestLiveDspyTraceSelection:
                 {"next_thought": "add", "next_tool_name": "calculator", "next_tool_args": {"x": "2+2"}},
                 {"next_thought": "check", "next_tool_name": "calculator", "next_tool_args": {"x": "4"}},
                 {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"reasoning": "2+2=4", "answer": "4"},
+                {"reasoning": "2+2=4", "plan": "2+2=4", "answer": "4"},
             ],
         )
 
@@ -902,3 +902,50 @@ class TestLiveDspyTraceSelection:
         assert raw_trace[2][1]["history"].messages[: lengths[1]] == raw_trace[1][1]["history"].messages
         assert [entry["Called Module"] for entry in program_trace] == ["talk", "talk", "talk"]
         assert [entry["Generated Outputs"]["answer"] for entry in program_trace] == ["hello", "still", "final"]
+
+
+CRASH_CANDIDATE = """
+import dspy
+
+class CrashOnSomeProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.answer = dspy.Predict("question -> answer")
+
+    def forward(self, question):
+        if question == "crash":
+            raise RuntimeError("tool crashed")
+        return self.answer(question=question)
+
+program = CrashOnSomeProgram()
+"""
+
+
+class TestEvaluateKeepsBatchAlignment:
+    """bootstrap_trace_data drops examples whose program raised; evaluate() must still
+    return batch-aligned outputs, scores, and trajectories (see #513)."""
+
+    def test_crashed_example_keeps_its_position(self):
+        lm = DummyLM([{"answer": "4"}] * 4)
+        dspy.configure(lm=lm)
+        adapter = DspyAdapter(
+            task_lm=lm,
+            metric_fn=lambda example, pred, trace=None: 1.0,
+            reflection_lm=MagicMock(spec=LanguageModel),
+            failure_score=0.0,
+            num_threads=1,
+        )
+        batch = [Example(question=q).with_inputs("question") for q in ("crash", "ok")]
+
+        result = adapter.evaluate(batch, {"program": CRASH_CANDIDATE}, capture_traces=True)
+
+        assert result.scores == [0.0, 1.0]
+        assert result.outputs[0] is None
+        assert result.outputs[1]["answer"] == "4"
+        assert [t["example"].question for t in result.trajectories] == ["crash", "ok"]
+        assert result.trajectories[0]["trace"] == []
+
+        reflective = adapter.make_reflective_dataset(
+            candidate={"program": CRASH_CANDIDATE}, eval_batch=result, components_to_update=["program"]
+        )
+        assert [item["Program Inputs"]["question"] for item in reflective["program"]] == ["ok"]

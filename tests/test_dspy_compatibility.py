@@ -16,6 +16,7 @@ import pytest
 
 dspy = pytest.importorskip("dspy", reason="DSPy compatibility tests run in their dedicated CI job")
 
+from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 from dspy.utils.dummies import DummyLM
 
@@ -295,3 +296,19 @@ def test_per_example_metric_failure_preserves_evaluation_alignment():
     assert len(result.outputs) == len(batch)
     assert result.scores == [1.0, -1.0]
     assert result.trajectories is None
+
+
+def test_chain_of_thought_parse_failure_reaches_reflection_as_failed_prediction():
+    """GEPA turns malformed LM outputs into reflective feedback, so DSPy's trace capture must
+    keep a failed ChainOfThought parse as a FailedPrediction instead of dropping the example."""
+    student = dspy.ChainOfThought("question -> answer")
+    adapter = DspyAdapter(student, feedback_metric, {}, failure_score=0.0, num_threads=1)
+    candidate = {name: predictor.signature.instructions for name, predictor in student.named_predictors()}
+
+    # Only `answer`: the reasoning (or plan) field is missing, so the response cannot be parsed.
+    with dspy.context(lm=DummyLM([{"answer": "4"}] * 4)):
+        result = adapter.evaluate([single_example()], candidate, capture_traces=True)
+
+    assert result.scores == [0.0]
+    assert result.trajectories, "the failed parse should be captured, not dropped"
+    assert isinstance(result.trajectories[0]["prediction"], FailedPrediction)
