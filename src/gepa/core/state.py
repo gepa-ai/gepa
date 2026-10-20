@@ -969,6 +969,15 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         num_metric_calls_by_discovery_of_new_program: int,
         iteration_id: str | None = None,
     ) -> ProgramIdx:
+        # Reject incomplete evaluations before changing candidates, frontiers,
+        # or best-output artifacts. The engine may continue after this error.
+        if self.frontier_type in ("objective", "hybrid", "cartesian"):
+            if not valset_evaluation.objective_scores_by_val_id:
+                raise ValueError(
+                    f"frontier_type='{self.frontier_type}' requires objective_scores to be provided by the evaluator, "
+                    f"but none were found in the evaluation result."
+                )
+
         # ``iteration_id`` is the on-disk iteration id for the proposal that
         # produced this candidate — the random anchor stamped on its trace
         # entry at slot creation. Falls back to the current slot's id when the
@@ -1004,13 +1013,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             )
 
         self._update_objective_pareto_front(objective_scores, new_program_idx)
-
-        if self.frontier_type in ("objective", "hybrid", "cartesian"):
-            if not valset_evaluation.objective_scores_by_val_id:
-                raise ValueError(
-                    f"frontier_type='{self.frontier_type}' requires objective_scores to be provided by the evaluator, "
-                    f"but none were found in the evaluation result."
-                )
 
         if self.frontier_type == "cartesian":
             assert valset_evaluation.objective_scores_by_val_id is not None  # Validated above

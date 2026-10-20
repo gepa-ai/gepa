@@ -10,6 +10,7 @@ docs_dir: "docs/"
 
 hooks:
     - hooks/scholarly_pdf.py
+    - hooks/blog_sections.py
 
 watch:
     - docs/blog/posts
@@ -214,7 +215,7 @@ plugins:
         archive_name: Archive
         categories: false
         pagination: true
-        pagination_per_page: 10
+        pagination_per_page: 50
         draft_if_future_date: true
     - rss:
         match_path: "blog/posts/.*"
