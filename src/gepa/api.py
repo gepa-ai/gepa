@@ -378,7 +378,9 @@ def optimize(
         module_selector_instance = module_selector
 
     if batch_sampler == "epoch_shuffled":
-        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
+        batch_sampler = EpochShuffledBatchSampler(
+            minibatch_size=3 if reflection_minibatch_size is None else reflection_minibatch_size, rng=rng
+        )
     else:
         assert reflection_minibatch_size is None, (
             "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"

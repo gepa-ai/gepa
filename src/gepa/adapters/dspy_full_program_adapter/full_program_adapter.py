@@ -160,18 +160,27 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
             )
-            scores = []
-            outputs = []
+            # bootstrap_trace_data drops examples whose program raised, but GEPA indexes results by
+            # batch position, so keep outputs, scores, and trajectories batch-sized. A dropped example
+            # scores failure_score and gets an empty trace, which make_reflective_dataset skips.
+            trajectories: list[dict[str, Any]] = [
+                {"example": example, "prediction": Prediction(), "trace": [], "example_ind": i, "score": None}
+                for i, example in enumerate(batch)
+            ]
+            outputs: list[Any] = [None] * len(batch)
             for t in trajs:
-                outputs.append(t["prediction"])
-                if hasattr(t["prediction"], "__class__") and t.get("score") is None:
+                trajectories[t["example_ind"]] = t
+                outputs[t["example_ind"]] = t["prediction"]
+            scores = []
+            for t in trajectories:
+                score = t.get("score")
+                if score is None:
                     scores.append(self.failure_score)
                 else:
-                    score = t["score"]
                     if hasattr(score, "score"):
                         score = score["score"]
                     scores.append(score)
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
         else:
             evaluator = Evaluate(
                 devset=batch,

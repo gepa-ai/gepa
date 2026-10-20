@@ -1,0 +1,83 @@
+# Reusable: run the DSPy consumer-contract tests against the given DSPy
+# versions. DSPy pins an exact gepa release, so each leg installs DSPy first
+# and then reinstalls this checkout over it, asserting the checkout is what
+# gets imported.
+#
+# Callers:
+#   - run_tests.yml: pinned DSPy on every PR and push. Only a GEPA change can
+#     break a pinned leg, so a failure there points at the change under test.
+#   - dspy_compatibility.yml: pinned, latest, and DSPy main after every push to
+#     main and daily; opens an urgent tracking issue on failure.
+#   - build_and_release.yml: DSPy latest, blocking a tag release.
+#
+# Read-only on purpose: a called workflow cannot ask for more permissions than
+# its caller has, and PR CI and the release gate only grant `contents: read`.
+name: DSPy Contract Tests
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      dspy-versions:
+        description: 'JSON list of DSPy versions: exact versions (e.g. "3.3.1"), "latest", or "main".'
+        type: string
+        required: true
+
+jobs:
+  contract:
+    name: DSPy ${{ matrix.dspy-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dspy-version: ${{ fromJSON(inputs.dspy-versions) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create virtual environment
+        run: uv venv .venv --python 3.11
+      - name: Install GEPA test environment
+        run: uv sync -p .venv --locked --extra dev
+      - name: Install DSPy and restore the GEPA checkout
+        shell: bash
+        env:
+          DSPY_VERSION: ${{ matrix.dspy-version }}
+        run: |
+          case "$DSPY_VERSION" in
+            latest) spec="dspy" ;;
+            main) spec="dspy @ git+https://github.com/stanfordnlp/dspy.git@main" ;;
+            *) spec="dspy==$DSPY_VERSION" ;;
+          esac
+          uv pip install -p .venv "$spec"
+          # DSPy pins an exact gepa release. Restore this checkout after resolving
+          # DSPy's dependencies so future GEPA versions test runtime compatibility.
+          uv pip install -p .venv --no-deps -e .
+          uv pip list -p .venv | grep -iE '^(dspy|gepa) ' || true
+      - name: Assert GEPA is loaded from this checkout
+        run: |
+          uv run --no-sync -p .venv python - <<'PY'
+          from pathlib import Path
+          import gepa
+
+          root = Path.cwd().resolve()
+          module = Path(gepa.__file__).resolve()
+          assert root in module.parents, f"Loaded {module}, expected a module under {root}"
+          PY
+      - name: Run DSPy consumer-contract tests
+        # --no-sync preserves this intentionally overridden compatibility
+        # environment instead of syncing it back to the lockfile.
+        run: |
+          uv run --no-sync -p .venv python -m pytest -vv \
+            tests/test_dspy_compatibility.py \
+            tests/test_dspy_full_program_adapter.py
