@@ -14,7 +14,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
+from gepa.core.state import VALSET_CACHE_SPLIT, GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -105,10 +105,12 @@ def find_common_ancestor_pair(
         common_ancestors = filter_ancestors(i, j, common_ancestors, merges_performed, agg_scores, program_candidates)
         if common_ancestors:
             # Select a random common ancestor
+            weights = [agg_scores[ancestor] for ancestor in common_ancestors]
+            # If all scores are zero, each ancestor is still a valid merge base.
             common_ancestor = rng.choices(
                 list(common_ancestors),
                 k=1,
-                weights=[agg_scores[ancestor] for ancestor in common_ancestors],
+                weights=weights if any(weights) else None,
             )[0]
             return (i, j, common_ancestor)
 
@@ -201,6 +203,9 @@ def sample_and_attempt_merge_programs_by_common_predictors(
             continue
 
         merges_performed[1].append((id1, id2, new_prog_desc))
+        if any(new_program == candidate for candidate in program_candidates):
+            # The merge reproduces an existing candidate (e.g. one of its parents), so we skip it
+            continue
 
         return new_program, id1, id2, ancestor
 
@@ -234,6 +239,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
     ):
         self.logger = logger
         self.valset = valset
+        self.valset_cache_split = VALSET_CACHE_SPLIT
         self.evaluator = evaluator
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
@@ -363,7 +369,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         )
 
         outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
-            new_program, subsample_ids, self.valset.fetch, self.evaluator
+            new_program, subsample_ids, self.valset.fetch, self.evaluator, split=self.valset_cache_split
         )
         new_sub_scores = [scores_by_id[eid] for eid in subsample_ids]
         outputs = [outputs_by_id[eid] for eid in subsample_ids]

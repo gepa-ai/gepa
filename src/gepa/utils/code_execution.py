@@ -301,15 +301,15 @@ def _execute_in_process(
 
     # Set up timeout using signal (Unix only)
     old_handler = None
-    has_signal = hasattr(signal, "SIGALRM")
+    alarm_signal = getattr(signal, "SIGALRM", None)
 
-    if timeout > 0 and has_signal:
-        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+    if timeout > 0 and alarm_signal is not None:
+        old_handler = signal.signal(alarm_signal, _alarm_handler)
         # Use setitimer for sub-second precision if available
         try:
-            signal.setitimer(signal.ITIMER_REAL, timeout)
+            signal.setitimer(signal.ITIMER_REAL, timeout)  # pyright: ignore[reportAttributeAccessIssue]
         except AttributeError:
-            signal.alarm(int(timeout))
+            signal.alarm(int(timeout))  # pyright: ignore[reportAttributeAccessIssue]
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
@@ -333,13 +333,13 @@ def _execute_in_process(
         success = False
     finally:
         # Disable timeout
-        if timeout > 0 and has_signal:
+        if timeout > 0 and alarm_signal is not None:
             try:
-                signal.setitimer(signal.ITIMER_REAL, 0)
+                signal.setitimer(signal.ITIMER_REAL, 0)  # pyright: ignore[reportAttributeAccessIssue]
             except AttributeError:
-                signal.alarm(0)
+                signal.alarm(0)  # pyright: ignore[reportAttributeAccessIssue]
             if old_handler is not None:
-                signal.signal(signal.SIGALRM, old_handler)
+                signal.signal(alarm_signal, old_handler)
 
         # Double-check: if we've exceeded timeout but no exception was raised, kill children
         elapsed = time.time() - start_time
@@ -572,25 +572,34 @@ with open({results_path!r}, 'wb') as f:
                 )
 
         except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            execution_time = time.time() - start_time
-
-            # Try to kill child processes if requested and psutil available
+            # Enumerate descendants BEFORE killing and reaping the subprocess.
+            # After process.wait() the subprocess is reaped, so its PID no longer
+            # resolves to a live process (and may be recycled by the OS). Looking up
+            # children only after the wait therefore finds nothing to kill and leaks
+            # the grandchildren, or -- worse, on PID reuse -- targets an unrelated
+            # process. Capturing them first keeps kill_child_processes effective.
+            children: list = []
             if kill_child_processes:
                 try:
                     import psutil  # type: ignore[import-not-found]
 
                     try:
-                        parent = psutil.Process(process.pid)
-                        for child in parent.children(recursive=True):
-                            try:
-                                child.kill()
-                            except psutil.NoSuchProcess:
-                                pass
+                        children = psutil.Process(process.pid).children(recursive=True)
                     except psutil.NoSuchProcess:
-                        pass
+                        children = []
                 except ImportError:
+                    children = []
+
+            process.kill()
+            process.wait()
+            execution_time = time.time() - start_time
+
+            # Kill the descendants that outlived the subprocess.
+            for child in children:
+                try:
+                    child.kill()
+                except Exception:
+                    # Process already gone, or we lack permission -- best effort.
                     pass
 
             return CodeExecutionResult(

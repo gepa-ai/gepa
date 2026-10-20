@@ -120,6 +120,55 @@ def test_reflect_many_scatters_results_per_job():
     assert len(fake.batch_calls[0]) == 3
 
 
+def test_reflect_many_skips_only_malformed_components_and_records_diagnostics():
+    class MixedBatchLM:
+        def __call__(self, prompt):
+            raise AssertionError("expected the batched path")
+
+        def batch_complete(self, messages_list):
+            assert len(messages_list) == 2
+            return ["<think>The generation stopped mid-reasoning", "Reasoning\n```\nvalid update\n```\nDone"]
+
+    logger = CollectingLogger()
+    lm = StatelessReflectionLM(MixedBatchLM(), logger=logger)
+    proposal, _ = lm.reflect(
+        {"a": "old_a", "b": "old_b"},
+        _reflective_dataset(["a", "b"]),
+        ["a", "b"],
+    )
+
+    assert proposal.new_texts == {"b": "valid update"}
+    assert proposal.metadata["rejected_outputs"]["a"]["raw_output"].startswith("<think>")
+    assert any("incomplete reflection output" in message for message in logger.messages)
+
+
+def test_provider_length_finish_reason_rejects_plausible_unfenced_partial_output():
+    """Exercise real LM response normalization, not a parser-only fake."""
+    from unittest.mock import MagicMock, patch
+
+    from gepa.lm import LM
+
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = "This looks like a valid unfenced instruction but was cut off"
+    response.choices[0].finish_reason = "length"
+    response.usage = None
+
+    with (
+        patch("litellm.completion", return_value=response),
+        patch("litellm.completion_cost", return_value=0.0),
+    ):
+        reflection = StatelessReflectionLM(LM("test/model"))
+        proposal, _ = reflection.reflect(
+            {"a": "old"},
+            _reflective_dataset(["a"]),
+            ["a"],
+        )
+
+    assert proposal.new_texts == {}
+    assert proposal.metadata["rejected_outputs"]["a"]["reason"].endswith("finish_reason='length')")
+
+
 def test_reflect_many_sequential_fallback_without_batch_complete():
     """A plain callable LM (no batch_complete) still works, one call per prompt."""
     fake = RecordingLM(reply="Y")
@@ -214,6 +263,47 @@ def test_reflect_only_strategy_used_per_task_in_batch_path():
     assert [r[0] for r in results] == [{"c": "new_c"}, {"c": "new_c"}]
 
 
+def test_reflection_strategy_receives_public_prompt_template():
+    """Strategies that opt in to template binding must see the public API
+    value, instead of silently falling back to their own generic default."""
+
+    class _TemplateBindingLM(_ReflectOnlyLM):
+        def __init__(self):
+            super().__init__()
+            self.template = None
+
+        def bind_reflection_prompt_template(self, template):
+            self.template = template
+
+    template = "PUBLIC TEMPLATE <curr_param> :: <side_info>"
+    strategy = _TemplateBindingLM()
+    _make_proposer(reflection_strategy=strategy, reflection_prompt_template=template)
+
+    assert strategy.template == template
+
+
+def test_single_job_batch_path_uses_reflect_not_reflect_many():
+    """A one-job iteration has no PxN parallelism to exploit. Calling
+    reflect_many([job]) can change a batch-capable strategy's LM transport."""
+
+    class _BatchCapableLM(_ReflectOnlyLM):
+        def __init__(self):
+            super().__init__()
+            self.reflect_many_calls = 0
+
+        def reflect_many(self, jobs):
+            self.reflect_many_calls += 1
+            raise AssertionError("single-job path must not call reflect_many")
+
+    strategy = _BatchCapableLM()
+    proposer = _make_proposer(reflection_strategy=strategy)
+    result = proposer._propose_texts_batch([({"c": "old"}, {"c": [{"feedback": "f"}]}, ["c"])])
+
+    assert result[0][0] == {"c": "new_c"}
+    assert strategy.calls == [["c"]]
+    assert strategy.reflect_many_calls == 0
+
+
 # ---------------------------------------------------------------------------
 # H1: empty reflection output must not produce a phantom child
 # ---------------------------------------------------------------------------
@@ -262,9 +352,7 @@ def _make_propose_harness(reflection_strategy):
 def _make_state():
     from gepa.core.state import GEPAState, ValsetEvaluation
 
-    base_eval = ValsetEvaluation(
-        outputs_by_val_id={0: "o"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None
-    )
+    base_eval = ValsetEvaluation(outputs_by_val_id={0: "o"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None)
     state = GEPAState({"c": "seed"}, base_eval, track_best_outputs=False)
     # Set by the engine's seed initialization in real runs (state.py:704).
     state.total_num_evals = 1
@@ -288,6 +376,31 @@ def test_nonempty_new_texts_still_produces_a_proposal():
     assert len(proposals) == 1
     assert proposals[0].candidate["c"] == "improved"
     assert adapter.batch_evaluate.call_count == 2  # parent stage + child stage
+
+
+def test_reflective_dataset_enricher_runs_after_adapter_and_before_reflection():
+    seen = {}
+
+    def enrich(*, candidate, eval_batch, components_to_update, reflective_dataset):
+        seen["candidate"] = candidate
+        seen["trajectories"] = eval_batch.trajectories
+        seen["components"] = components_to_update
+        return {"c": [{**reflective_dataset["c"][0], "failure_modes": [{"name": "Dropped_Context"}]}]}
+
+    class RecordingStrategy:
+        def reflect(self, candidate, reflective_dataset, components_to_update):
+            seen["reflection_dataset"] = reflective_dataset
+            return ReflectionProposal(new_texts={"c": "improved"}), self
+
+    proposer, _adapter = _make_propose_harness(RecordingStrategy())
+    proposer.reflective_dataset_enricher = enrich
+    proposals = proposer.propose(_make_state())
+
+    assert len(proposals) == 1
+    assert seen["candidate"] == {"c": "seed"}
+    assert seen["trajectories"] == [{"step": 1}]
+    assert seen["components"] == ["c"]
+    assert seen["reflection_dataset"]["c"][0]["failure_modes"] == [{"name": "Dropped_Context"}]
 
 
 # ---------------------------------------------------------------------------
@@ -383,15 +496,27 @@ def test_trace_records_every_task_not_just_the_first():
     class TwoTaskSampling:
         def sample_tasks(self, state, candidate_selector, batch_sampler, trainset):
             return [
-                ProposalTask(parent_idx=0, parent_candidate=dict(state.program_candidates[0]), minibatch_ids=[0], minibatch=[{"q": 0}]),
-                ProposalTask(parent_idx=0, parent_candidate=dict(state.program_candidates[0]), minibatch_ids=[1], minibatch=[{"q": 1}]),
+                ProposalTask(
+                    parent_idx=0,
+                    parent_candidate=dict(state.program_candidates[0]),
+                    minibatch_ids=[0],
+                    minibatch=[{"q": 0}],
+                ),
+                ProposalTask(
+                    parent_idx=0,
+                    parent_candidate=dict(state.program_candidates[0]),
+                    minibatch_ids=[1],
+                    minibatch=[{"q": 1}],
+                ),
             ]
 
     adapter = MagicMock()
     adapter.propose_new_texts = None
     adapter.batch_evaluate = MagicMock(
-        side_effect=lambda items: [
-            EvaluationBatch(outputs=["o"], scores=[0.4], trajectories=[{"step": 1}], objective_scores=None, num_metric_calls=1)
+        side_effect=lambda items, **kwargs: [
+            EvaluationBatch(
+                outputs=["o"], scores=[0.4], trajectories=[{"step": 1}], objective_scores=None, num_metric_calls=1
+            )
             for _ in items
         ]
     )
@@ -409,6 +534,7 @@ def test_trace_records_every_task_not_just_the_first():
     )
     state = _make_state()
     proposals = proposer.propose(state)
+    assert all(call.kwargs == {"capture_traces": True} for call in adapter.batch_evaluate.call_args_list)
     assert len(proposals) == 2
 
     entry = state.full_program_trace[-1]
@@ -461,8 +587,12 @@ def test_reflect_many_wrong_length_raises():
     import pytest
 
     proposer = _make_proposer(reflection_strategy=_WrongLengthLM())
-    with pytest.raises(ValueError, match="reflect_many returned 0 results for 1 jobs"):
-        proposer._propose_texts_batch([({"c": "x"}, {"c": [{"f": 1}]}, ["c"])])
+    jobs = [
+        ({"c": "x"}, {"c": [{"f": 1}]}, ["c"]),
+        ({"c": "y"}, {"c": [{"f": 2}]}, ["c"]),
+    ]
+    with pytest.raises(ValueError, match="reflect_many returned 0 results for 2 jobs"):
+        proposer._propose_texts_batch(jobs)
 
 
 def test_reflection_metadata_reserved_prefixes_are_remapped():
@@ -542,3 +672,16 @@ def test_max_reflection_cost_with_costless_strategy_raises():
             max_reflection_cost=5.0,
             max_metric_calls=10,
         )
+
+
+def test_malformed_reflection_produces_no_child_or_metric_calls():
+    class TruncatedLM:
+        def __call__(self, prompt):
+            return "<think>The reflection ran out of tokens"
+
+    proposer, adapter = _make_propose_harness(StatelessReflectionLM(TruncatedLM()))
+
+    assert proposer.propose(_make_state()) == []
+    # Only the parent minibatch is evaluated; the malformed proposal never
+    # becomes a child candidate.
+    assert adapter.batch_evaluate.call_count == 1

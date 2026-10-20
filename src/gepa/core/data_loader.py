@@ -48,7 +48,12 @@ class MutableDataLoader(DataLoader[DataId, DataInst], Protocol):
 
 
 class ListDataLoader(MutableDataLoader[int, DataInst]):
-    """In-memory reference implementation backed by a list."""
+    """In-memory reference implementation backed by a list.
+
+    ``all_ids()`` returns ``0 .. len(items)-1``. Those ids are this loader's positions, not
+    global example identities: a second ``ListDataLoader`` (for example a valset) also numbers
+    from zero. The evaluation cache namespaces by split so those two id spaces cannot collide.
+    """
 
     def __init__(self, items: Sequence[DataInst]):
         self.items = list(items)

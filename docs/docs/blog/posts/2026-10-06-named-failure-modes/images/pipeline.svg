@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 382" width="1040" height="382" font-family="Arial" role="img">
+  <style>
+    .band  { fill: #f5f6f8; }
+    .card  { fill: #ffffff; stroke: #c9ccd4; stroke-width: 1.5; }
+    .input { fill: #eef0fe; stroke: #4F46E5; stroke-width: 1.5; }
+    .ln    { stroke: #8b909b; stroke-width: 2; fill: none; }
+    .arrow { fill: #8b909b; }
+    .phase { fill: #6b7280; font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+    .step  { fill: #4F46E5; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; }
+    .ttl   { fill: #1f2430; font-size: 15px; font-weight: 650; }
+    .sub   { fill: #5b6270; font-size: 12px; }
+    .key   { fill: #1f2430; font-size: 12px; font-weight: 700; }
+    .note  { fill: #5b6270; font-size: 12.5px; font-weight: 550; }
+    @media (prefers-color-scheme: dark) {
+      .band { fill: #191c27; }
+      .card { fill: #1c2030; stroke: #3a4055; }
+      .input { fill: #23244a; stroke: #8b8bf0; }
+      .ln { stroke: #7d8494; }
+      .arrow { fill: #7d8494; }
+      .phase, .sub, .note { fill: #a8aebb; }
+      .step { fill: #8b8bf0; }
+      .ttl, .key { fill: #eef0f4; }
+    }
+  </style>
+  <rect class="band" x="16" y="16" width="1008" height="350" rx="10"/>
+  <text class="phase" x="40" y="43">ONE REFLECTION STEP</text>
+  <text class="note" x="1000" y="43" text-anchor="end">AdaMAST taxonomy, learned automatically and frozen</text>
+
+  <!-- current minibatch -->
+  <rect class="card" x="40" y="135" width="200" height="130" rx="10"/>
+  <text class="step" x="60" y="163">CURRENT MINIBATCH</text>
+  <text class="ttl" x="60" y="190">Run the candidate</text>
+  <text class="sub" x="60" y="216"><tspan class="key">Output:</tspan> component traces</text>
+  <text class="sub" x="60" y="236">and the task output</text>
+
+  <!-- llm judge -->
+  <rect class="input" x="350" y="80" width="340" height="110" rx="10"/>
+  <text class="step" x="372" y="108">LLM JUDGE</text>
+  <text class="ttl" x="372" y="134">Failure findings</text>
+  <text class="sub" x="372" y="157"><tspan class="key">Output:</tspan> the failure mode, the step,</text>
+  <text class="sub" x="372" y="177">and the evidence for each problem found</text>
+
+  <!-- evaluator -->
+  <rect class="input" x="350" y="210" width="340" height="110" rx="10"/>
+  <text class="step" x="372" y="238">EVALUATOR</text>
+  <text class="ttl" x="372" y="264">Task feedback</text>
+  <text class="sub" x="372" y="287"><tspan class="key">Output:</tspan> feedback on the task output,</text>
+  <text class="sub" x="372" y="307">and the task score</text>
+
+  <!-- reflection -->
+  <rect class="card" x="800" y="135" width="200" height="130" rx="10"/>
+  <text class="step" x="820" y="163">REFLECTION</text>
+  <text class="ttl" x="820" y="190">Propose revised text</text>
+  <text class="sub" x="820" y="216"><tspan class="key">Input:</tspan> failure findings</text>
+  <text class="sub" x="820" y="236">and task feedback</text>
+
+  <!-- minibatch to the two analyses -->
+  <path class="ln" d="M240,170 H295 V135 H338"/>
+  <path class="arrow" d="M338,130 L350,135 L338,140 Z"/>
+  <path class="ln" d="M240,230 H295 V265 H338"/>
+  <path class="arrow" d="M338,260 L350,265 L338,270 Z"/>
+
+  <!-- the two analyses to reflection -->
+  <path class="ln" d="M690,135 H745 V170 H788"/>
+  <path class="arrow" d="M788,165 L800,170 L788,175 Z"/>
+  <path class="ln" d="M690,265 H745 V230 H788"/>
+  <path class="arrow" d="M788,225 L800,230 L788,235 Z"/>
+
+  <rect class="card" x="40" y="336" width="960" height="25" rx="7"/>
+  <text class="note" x="520" y="353" text-anchor="middle">Candidate acceptance is unchanged: GEPA compares task scores on the same minibatch.</text>
+</svg>

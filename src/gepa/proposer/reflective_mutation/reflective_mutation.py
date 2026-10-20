@@ -11,9 +11,10 @@ from gepa.core.adapter import (
     EvaluationBatch,
     GEPAAdapter,
     ProposalFn,
+    ReflectiveDatasetEnricher,
     RolloutOutput,
     Trajectory,
-    default_batch_evaluate,
+    invoke_batch_evaluate,
 )
 from gepa.core.callbacks import (
     CandidateSelectedEvent,
@@ -28,7 +29,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import GEPAState, _candidate_hash
+from gepa.core.state import TRAINSET_CACHE_SPLIT, GEPAState, _candidate_hash
 from gepa.proposer.base import CandidateProposal, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
@@ -75,6 +76,7 @@ class ReflectiveMutationProposer:
         callbacks: list[GEPACallback] | None = None,
         sampling_strategy: SamplingStrategy | None = None,
         reflection_strategy: ReflectionLM | None = None,
+        reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -89,6 +91,7 @@ class ReflectiveMutationProposer:
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
         self.sampling_strategy: SamplingStrategy = sampling_strategy or SingleMutationSampling()
+        self.reflective_dataset_enricher = reflective_dataset_enricher
 
         self.reflection_prompt_template = reflection_prompt_template
 
@@ -114,6 +117,10 @@ class ReflectiveMutationProposer:
         # implementation, e.g. session-based or ComBEE-style aggregating
         # reflectors (#329 Phase 2/3) — takes precedence over the stateless
         # default built from the raw reflection_lm callable.
+        if reflection_strategy is not None:
+            _bind_template = getattr(reflection_strategy, "bind_reflection_prompt_template", None)
+            if callable(_bind_template):
+                _bind_template(reflection_prompt_template)
         self._reflection_lm: ReflectionLM | None = reflection_strategy or (
             StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
             if reflection_lm is not None
@@ -212,6 +219,13 @@ class ReflectiveMutationProposer:
                 for (cand, refds, comps), md in zip(jobs, mds, strict=True)
             ]
 
+        # SingleMutationSampling is #307's original execution path. Going
+        # through reflect_many([job]) lets a batch-capable LM change its call
+        # transport (and potentially its result) despite there being no PxN
+        # parallelism to exploit.
+        if len(jobs) == 1:
+            return [self.propose_new_texts(*jobs[0], metadata=mds[0])]
+
         reflect_many = getattr(self._reflection_lm, "reflect_many", None)
         if reflect_many is not None:
             results = list(reflect_many(jobs))
@@ -266,10 +280,7 @@ class ReflectiveMutationProposer:
 
     def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
         """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
-        batch_fn = getattr(self.adapter, "batch_evaluate", None)
-        if batch_fn is not None:
-            return batch_fn(items)
-        return default_batch_evaluate(self.adapter, items)
+        return invoke_batch_evaluate(self.adapter, items, capture_traces=True)
 
     # ------------------------------------------------------------------
     # Main proposal method
@@ -378,6 +389,7 @@ class ReflectiveMutationProposer:
                     eval_curr.outputs,
                     eval_curr.scores,
                     objective_scores_list,
+                    split=TRAINSET_CACHE_SPLIT,
                 )
 
         # Trace: legacy first-task keys (pre-#329 tooling compatibility) plus
@@ -464,6 +476,13 @@ class ReflectiveMutationProposer:
                 reflective_dataset = self.adapter.make_reflective_dataset(
                     task.parent_candidate, eval_curr, predictor_names
                 )
+                if self.reflective_dataset_enricher is not None:
+                    reflective_dataset = self.reflective_dataset_enricher(
+                        candidate=task.parent_candidate,
+                        eval_batch=eval_curr,
+                        components_to_update=predictor_names,
+                        reflective_dataset=reflective_dataset,
+                    )
                 reflective_dataset_concrete: dict[str, list[dict[str, Any]]] = {
                     k: [dict(item) for item in v] for k, v in reflective_dataset.items()
                 }
@@ -539,17 +558,6 @@ class ReflectiveMutationProposer:
                 children.append(None)
                 continue
 
-            notify_callbacks(
-                self.callbacks,
-                "on_proposal_end",
-                ProposalEndEvent(
-                    iteration=i,
-                    new_instructions=new_texts,
-                    prompts=prompts,
-                    raw_lm_outputs=raw_outputs,
-                ),
-            )
-
             _lm_metadata: dict[str, Any] = {}
             # Stable per-proposal identifier (iteration-taskindex): downstream
             # consumers (run manifests, #346's per-proposal state anchors) can
@@ -571,6 +579,18 @@ class ReflectiveMutationProposer:
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
+
+            notify_callbacks(
+                self.callbacks,
+                "on_proposal_end",
+                ProposalEndEvent(
+                    iteration=i,
+                    new_instructions=new_texts,
+                    prompts=prompts,
+                    raw_lm_outputs=raw_outputs,
+                    metadata=dict(_lm_metadata),
+                ),
+            )
 
             new_candidate = task.parent_candidate.copy()
             for name, text in new_texts.items():
@@ -636,7 +656,12 @@ class ReflectiveMutationProposer:
             for (_, (task, new_candidate, _, _)), child_eval in zip(valid_children, child_evals, strict=True):
                 new_obj_scores = list(child_eval.objective_scores) if child_eval.objective_scores else None
                 state.evaluation_cache.put_batch(
-                    new_candidate, task.minibatch_ids, child_eval.outputs, child_eval.scores, new_obj_scores
+                    new_candidate,
+                    task.minibatch_ids,
+                    child_eval.outputs,
+                    child_eval.scores,
+                    new_obj_scores,
+                    split=TRAINSET_CACHE_SPLIT,
                 )
 
         # Trace: per-task before/after scores (children is index-aligned with tasks)

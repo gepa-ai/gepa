@@ -3,6 +3,7 @@ date:
   created: 2026-03-17
 authors:
   - rodolfo
+guest: true
 slug: confidence-adapter-benchmark
 readtime: 15
 title: "Confidence-Aware Prompt Optimization for LLM Classification"

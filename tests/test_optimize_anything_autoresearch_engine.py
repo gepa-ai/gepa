@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,7 +13,7 @@ import pytest
 
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
-from gepa.oa.engines.autoresearch import AutoResearchEngine
+from gepa.oa.engines.autoresearch import AutoResearchEngine, _RunningClaudeProcess, _terminate_claude_process
 from gepa.oa.task import Task
 
 
@@ -195,6 +196,34 @@ def test_autoresearch_budget_watchdog_preserves_reason_string(tmp_path: Path, mo
         completed = _run_once(engine, tmp_path, budget)
 
     assert "BUDGET_EXHAUSTED" in completed.stderr
+
+
+def test_autoresearch_kills_unresponsive_process_without_sigkill_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _UnresponsiveFakePopen(_FakePopen):
+        def __init__(self) -> None:
+            super().__init__(-9, "")
+            self.terminate_calls = 0
+            self.kill_calls = 0
+
+        def terminate(self) -> None:
+            self.terminate_calls += 1
+
+        def wait(self, timeout: float | None = None) -> int:
+            if self.kill_calls == 0:
+                raise subprocess.TimeoutExpired("claude", timeout)
+            return self.returncode
+
+        def kill(self) -> None:
+            self.kill_calls += 1
+
+    fake = _UnresponsiveFakePopen()
+    monkeypatch.setattr("gepa.oa.engines.autoresearch.os.name", "nt")
+    monkeypatch.delattr("gepa.oa.engines.autoresearch.signal.SIGKILL", raising=False)
+
+    _terminate_claude_process(_RunningClaudeProcess(fake, StringIO(), StringIO()))
+
+    assert fake.terminate_calls == 1
+    assert fake.kill_calls == 1
 
 
 def test_autoresearch_uses_direct_process_fallback_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -386,3 +415,52 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
         result = engine.run(task, server)
 
     assert result.best_candidate == "candidate"
+
+
+def test_autoresearch_scripts_point_at_a_lazily_bound_live_server(tmp_path: Path) -> None:
+    """The autoresearch engine never calls ``server.start()``: the first
+    ``.url`` read during sandbox materialization binds the listener lazily,
+    and the URL baked into ``eval.sh`` is live (real EvalServer, #448)."""
+    import re
+    import urllib.request
+
+    from gepa.oa.eval_server import EvalServer
+
+    task = Task(name="smoke", seed_candidate="seed", train_set=["a", "b"])
+    server = EvalServer(
+        task,
+        lambda candidate, example: (1.0, {}),
+        BudgetTracker(max_evals=4),
+        max_concurrency=1,
+    )
+    bound_at_popen: list[bool] = []
+    script_urls: list[str] = []
+
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
+        del cmd
+        work_dir = Path(str(kwargs["cwd"]))
+        match = re.search(r"http://localhost:\d+", (work_dir / "eval.sh").read_text())
+        assert match is not None
+        bound_at_popen.append(server._server is not None)
+        script_urls.append(match.group(0))
+        with urllib.request.urlopen(f"{match.group(0)}/status", timeout=5) as resp:
+            json.loads(resp.read().decode())
+        Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(
+            engine="autoresearch", sandbox=False, run_dir=str(tmp_path), engine_config={"ralph": False}
+        )
+    )
+
+    try:
+        with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+            result = engine.run(task, server)
+        assert script_urls == [server.url]
+    finally:
+        server.stop()
+
+    assert result.best_candidate == "candidate"
+    assert bound_at_popen == [True]
+    assert script_urls[0].startswith("http://localhost:")

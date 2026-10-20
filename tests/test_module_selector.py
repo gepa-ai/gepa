@@ -23,6 +23,7 @@ def common_mocks():
         prog_candidate_objective_scores=[{}],
         program_at_pareto_front_objectives={},
         objective_pareto_front={},
+        best_outputs_valset=None,
     )
 
     mock_adapter = Mock()

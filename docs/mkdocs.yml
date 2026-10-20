@@ -10,6 +10,7 @@ docs_dir: "docs/"
 
 hooks:
     - hooks/scholarly_pdf.py
+    - hooks/blog_sections.py
 
 watch:
     - docs/blog/posts
@@ -30,6 +31,7 @@ nav:
         - Acceptance Criterion: guides/acceptance-criterion.md
         - Batch Sampling: guides/batch-sampling.md
         - Parallel Proposals: guides/parallel-proposals.md
+        - ComBEE (Scalable Reflection): guides/combee.md
         - Using Callbacks: guides/callbacks.md
         - Cost & Token Tracking: guides/cost-tracking.md
         - Experiment Tracking: guides/experiment-tracking.md
@@ -214,7 +216,7 @@ plugins:
         archive_name: Archive
         categories: false
         pagination: true
-        pagination_per_page: 10
+        pagination_per_page: 50
         draft_if_future_date: true
     - rss:
         match_path: "blog/posts/.*"

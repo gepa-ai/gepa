@@ -382,12 +382,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 # batch_evaluator is the preferred transport for any multi-pair
                 # evaluation (valset evals, merge evals, seed evals) — one
                 # external call for the whole batch, cache-aware.
-                return self._batch_evaluate_via_user_fn([(candidate, batch)])[0]
+                return self._batch_evaluate_via_user_fn([(candidate, batch)], capture_traces=capture_traces)[0]
             if self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
                 raw_results = [self._call_evaluator(candidate, example) for example in batch]
-            return self._assemble_no_refiner_batch(candidate, batch, raw_results)
+            return self._assemble_no_refiner_batch(candidate, batch, raw_results, capture_traces=capture_traces)
 
         # Refiner path: evaluate with refinement. eval_output is a list of
         # (score, output, side_info) where output = (score, best_candidate, side_info).
@@ -411,7 +411,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         return EvaluationBatch(
             outputs=outputs,
             scores=scores,
-            trajectories=side_infos,
+            trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
             num_metric_calls=num_metric_calls,
         )
@@ -419,6 +419,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def batch_evaluate(
         self,
         items: list[tuple["Candidate", list]],
+        *,
+        capture_traces: bool = True,
     ) -> list[EvaluationBatch]:
         """Evaluate multiple (candidate, batch) pairs.
 
@@ -427,21 +429,23 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         into a single call to the user's batch function.
 
         Falls back to sequential ``evaluate()`` calls for the refiner path or a
-        single item. Always captures traces. With ``refiner_config`` set,
+        single item. With ``refiner_config`` set,
         evaluation is per-example by construction (each example runs its own
         evaluate->refine->re-evaluate loop), so grouped calls degrade to
         singleton batches through ``_resolve_pair`` — refinement is never
         silently skipped.
         """
         if self._batch_evaluator is not None and self.refiner_config is None:
-            return self._batch_evaluate_via_user_fn(items)
+            return self._batch_evaluate_via_user_fn(items, capture_traces=capture_traces)
         if self.parallel and self.refiner_config is None and len(items) > 1:
-            return self._batch_evaluate_parallel_fallback(items)
-        return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
+            return self._batch_evaluate_parallel_fallback(items, capture_traces=capture_traces)
+        return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
 
     def _batch_evaluate_via_user_fn(
         self,
         items: list[tuple["Candidate", list]],
+        *,
+        capture_traces: bool = True,
     ) -> list[EvaluationBatch]:
         """Flatten all (candidate, example) pairs, call batch_evaluator once, repackage.
 
@@ -522,7 +526,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             raw_by_item.setdefault(item_idx, []).append((score, None, side_info))
 
         return [
-            self._assemble_no_refiner_batch(items[item_idx][0], items[item_idx][1], raw_by_item.get(item_idx, []))
+            self._assemble_no_refiner_batch(
+                items[item_idx][0],
+                items[item_idx][1],
+                raw_by_item.get(item_idx, []),
+                capture_traces=capture_traces,
+            )
             for item_idx in range(len(items))
         ]
 
@@ -650,6 +659,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _batch_evaluate_parallel_fallback(
         self,
         items: list[tuple["Candidate", list]],
+        *,
+        capture_traces: bool = True,
     ) -> list[EvaluationBatch]:
         """Fan all ``(candidate, example)`` pairs out across one thread pool, regroup per item.
 
@@ -671,7 +682,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             raw_per_item[pair_to_item_idx[pair_idx]].append(raw)
 
         return [
-            self._assemble_no_refiner_batch(candidate, batch, raw_per_item[item_idx])
+            self._assemble_no_refiner_batch(candidate, batch, raw_per_item[item_idx], capture_traces=capture_traces)
             for item_idx, (candidate, batch) in enumerate(items)
         ]
 
@@ -691,6 +702,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         candidate: "Candidate",
         batch: list[DataInst],
         raw_results: list[tuple[float, Any, "SideInfo"]],
+        *,
+        capture_traces: bool = True,
     ) -> EvaluationBatch:
         """Package raw ``(score, _, side_info)`` evaluator results into an EvaluationBatch.
 
@@ -718,7 +731,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         return EvaluationBatch(
             outputs=outputs,
             scores=scores,
-            trajectories=side_infos,
+            trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
             num_metric_calls=len(batch),
         )

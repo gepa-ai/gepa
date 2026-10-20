@@ -8,21 +8,19 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   fix:
     name: Check Ruff Fix
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -51,12 +49,12 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -72,19 +70,29 @@ jobs:
         run: uv run -p .venv pyright
 
   test:
-    name: Run Tests
-    runs-on: ubuntu-latest
+    name: Run Tests (${{ matrix.python-version }}${{ matrix.os == 'windows-latest' && ', Windows' || '' }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # One Windows leg on the newest Python catches path, encoding, and
+        # file-locking bugs that never show up on Linux.
+        include:
+          - os: windows-latest
+            python-version: "3.14"
+    defaults:
+      run:
+        # Git Bash on Windows, so every step runs the same script on both OSes.
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -93,7 +101,8 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          if [ "$RUNNER_OS" = "Windows" ]; then bin_dir=Scripts; else bin_dir=bin; fi
+          echo "${{ github.workspace }}/.venv/$bin_dir" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
           uv sync -p .venv --locked --extra dev
@@ -101,11 +110,19 @@ jobs:
       - name: Run lint with tests
         run: uv run -p .venv ruff check
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv tests/
+        run: uv run -p .venv pytest -vv -m "not llm_live and not extra" tests/
       # - name: Install optional dependencies
       #   run: uv sync -p .venv --locked --extra dev --extra test_extras
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
+
+  dspy_compatibility:
+    name: DSPy Compatibility (pinned)
+    # Pinned DSPy only, so a failure here can only come from the GEPA change
+    # under test. DSPy latest and main run post-merge in dspy_compatibility.yml.
+    uses: ./.github/workflows/dspy_contract.yml
+    with:
+      dspy-versions: '["3.3.1"]'
 
   # llm_call_test:
   #   name: Run Tests with Real LM
@@ -116,12 +133,12 @@ jobs:
   #       ports:
   #         - 11434:11434
   #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-python@v5
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
   #       with:
   #         python-version: 3.11
   #     - name: Install uv with caching
-  #       uses: astral-sh/setup-uv@v5
+  #       uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
   #       with:
   #         enable-cache: true
   #         cache-dependency-glob: |
@@ -153,12 +170,12 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |

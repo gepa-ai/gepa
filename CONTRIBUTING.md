@@ -28,10 +28,10 @@ uv sync --extra dev --python 3.11
 
 Then you are all set!
 
-To verify that your environment is set up successfully, run some unit tests:
+To verify that your environment is set up successfully, run the default test suite (the one CI runs):
 
 ```shell
-uv run pytest tests/
+uv run pytest -m "not llm_live and not extra"
 ```
 
 Note: You need to use the `uv run` prefix for every Python command, as uv creates a Python virtual
@@ -52,11 +52,28 @@ conda activate gepa-dev
 pip install -e ".[dev]"
 ```
 
-Then verify the installation by running some unit tests:
+Then verify the installation by running the default test suite:
 
 ```shell
-pytest tests/
+pytest -m "not llm_live and not extra"
 ```
+
+## Running Tests
+
+CI runs the default suite. It skips tests marked `llm_live` (they call a real language model) and `extra` (they need optional dependencies):
+
+```shell
+uv run pytest -m "not llm_live and not extra"
+```
+
+Run those locally when you are working on them:
+
+```shell
+uv run pytest -m llm_live
+uv run pytest -m extra
+```
+
+With conda, use the same `-m` flags and call `pytest` directly.
 
 ## Code Linting with Ruff
 We follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) and use `ruff` for both linting and formatting. To ensure consistent code quality, we use pre-commit hooks that automatically check and fix common issues.
