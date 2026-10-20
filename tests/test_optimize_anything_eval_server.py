@@ -129,6 +129,30 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             finally:
                 server.stop()
 
+    def test_summary_write_failure_warns_without_failing_the_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            server = EvalServer(
+                Task(name="task", seed_candidate="seed"),
+                lambda candidate: (1.0, {}),
+                BudgetTracker(max_evals=1),
+                output_dir=output_dir,
+            )
+            try:
+                with (
+                    patch.object(Path, "replace", side_effect=PermissionError("access denied")),
+                    self.assertWarnsRegex(RuntimeWarning, "Could not update summary.json"),
+                ):
+                    score, _ = server.evaluate("candidate")
+                self.assertEqual(score, 1.0)
+                self.assertEqual(server.best_score, 1.0)
+                self.assertEqual(server.budget.used, 1)
+                # The per-eval record is still written after the summary write fails.
+                self.assertTrue((output_dir / "evals" / "0.json").exists())
+                self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
+            finally:
+                server.stop()
+
     def test_http_evaluate_examples_logs_aggregate_progress(self) -> None:
         import urllib.request
 
