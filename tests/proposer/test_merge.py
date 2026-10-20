@@ -153,10 +153,11 @@ def test_find_common_ancestor_pair_returns_none_when_already_merged(rng):
 
 def test_sample_and_attempt_merge_creates_combined_program_and_records_triplet(rng):
     rng.seed(0)
+    # Each parent changed a different predictor, so the merge combines both changes.
     program_candidates = [
-        {"pred": "A"},
-        {"pred": "A"},
-        {"pred": "B"},
+        {"a": "A0", "b": "B0"},
+        {"a": "A1", "b": "B0"},
+        {"a": "A0", "b": "B1"},
     ]
     agg_scores = [0.1, 0.6, 0.7]
     merges_performed = ([], [])
@@ -178,8 +179,12 @@ def test_sample_and_attempt_merge_creates_combined_program_and_records_triplet(r
     assert result is not None
     new_program, id1, id2, ancestor = result
     assert (id1, id2, ancestor) == (1, 2, 0)
-    assert new_program == {"pred": "B"}
-    assert merges_performed[1] == [(1, 2, (2,))]
+    assert new_program == {"a": "A1", "b": "B1"}
+    # Predictor iteration order is not fixed (set of names), so compare the sources order-insensitively.
+    assert len(merges_performed[1]) == 1
+    recorded_id1, recorded_id2, desc = merges_performed[1][0]
+    assert (recorded_id1, recorded_id2) == (1, 2)
+    assert sorted(desc) == [1, 2]
 
     # Attempting the same merge again should return None because the triplet was recorded
     second_attempt = sample_and_attempt_merge_programs_by_common_predictors(
@@ -438,3 +443,63 @@ def test_merge_proposer_allows_pairs_meeting_overlap_floor(monkeypatch):
     assert proposer.merges_performed[1] == [(1, 2, ("desc",))]
     assert state.total_num_evals == 2
     assert state.full_program_trace[-1]["merged"] is True
+
+
+def test_sample_and_attempt_merge_skips_merge_identical_to_a_parent(rng):
+    rng.seed(0)
+    # 0 = seed; 1 = mutate a from 0; 2 = mutate a again from 0; 3 = mutate b from 1.
+    # Merging 2 and 3 would take a from 3 (higher score) and b from 3 (2 kept the ancestor's),
+    # i.e. reproduce candidate 3 exactly.
+    program_candidates = [
+        {"a": "a0", "b": "b0"},
+        {"a": "a1", "b": "b0"},
+        {"a": "a2", "b": "b0"},
+        {"a": "a1", "b": "b1"},
+    ]
+    agg_scores = [0.5, 0.6, 0.6, 0.7]
+    parent_program_for_candidate = [[None], [0], [0], [1]]
+    merges_performed = ([], [])
+
+    result = sample_and_attempt_merge_programs_by_common_predictors(
+        agg_scores=agg_scores,
+        rng=rng,
+        merge_candidates=[2, 3],
+        merges_performed=merges_performed,
+        program_candidates=program_candidates,
+        parent_program_for_candidate=parent_program_for_candidate,
+    )
+
+    assert result is None
+    # The skipped combination is remembered so it is not redrawn.
+    assert merges_performed[1] == [(2, 3, (3, 3))]
+
+
+def test_sample_and_attempt_merge_skips_merge_identical_to_a_non_parent_candidate(rng):
+    rng.seed(0)
+    # 0 = seed; 1 = mutate a from 0; 2 = mutate b from 0; 3 = mutate b from 1.
+    # Merging 1 and 2 combines a from 1 and b from 2, which is exactly candidate 3 (not a parent).
+    program_candidates = [
+        {"a": "a0", "b": "b0"},
+        {"a": "a1", "b": "b0"},
+        {"a": "a0", "b": "b1"},
+        {"a": "a1", "b": "b1"},
+    ]
+    agg_scores = [0.5, 0.6, 0.6, 0.7]
+    parent_program_for_candidate = [[None], [0], [0], [1]]
+    merges_performed = ([], [])
+
+    result = sample_and_attempt_merge_programs_by_common_predictors(
+        agg_scores=agg_scores,
+        rng=rng,
+        merge_candidates=[1, 2],
+        merges_performed=merges_performed,
+        program_candidates=program_candidates,
+        parent_program_for_candidate=parent_program_for_candidate,
+    )
+
+    assert result is None
+    # The skipped combination is remembered so it is not redrawn.
+    assert len(merges_performed[1]) == 1
+    recorded_id1, recorded_id2, desc = merges_performed[1][0]
+    assert (recorded_id1, recorded_id2) == (1, 2)
+    assert sorted(desc) == [1, 2]

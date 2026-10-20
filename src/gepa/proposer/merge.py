@@ -203,6 +203,9 @@ def sample_and_attempt_merge_programs_by_common_predictors(
             continue
 
         merges_performed[1].append((id1, id2, new_prog_desc))
+        if any(new_program == candidate for candidate in program_candidates):
+            # The merge reproduces an existing candidate (e.g. one of its parents), so we skip it
+            continue
 
         return new_program, id1, id2, ancestor
 
