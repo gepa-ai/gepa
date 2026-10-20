@@ -429,3 +429,34 @@ def test_sample_and_attempt_merge_skips_merge_identical_to_a_parent(rng):
     assert result is None
     # The skipped combination is remembered so it is not redrawn.
     assert merges_performed[1] == [(2, 3, (3, 3))]
+
+
+def test_sample_and_attempt_merge_skips_merge_identical_to_a_non_parent_candidate(rng):
+    rng.seed(0)
+    # 0 = seed; 1 = mutate a from 0; 2 = mutate b from 0; 3 = mutate b from 1.
+    # Merging 1 and 2 combines a from 1 and b from 2, which is exactly candidate 3 (not a parent).
+    program_candidates = [
+        {"a": "a0", "b": "b0"},
+        {"a": "a1", "b": "b0"},
+        {"a": "a0", "b": "b1"},
+        {"a": "a1", "b": "b1"},
+    ]
+    agg_scores = [0.5, 0.6, 0.6, 0.7]
+    parent_program_for_candidate = [[None], [0], [0], [1]]
+    merges_performed = ([], [])
+
+    result = sample_and_attempt_merge_programs_by_common_predictors(
+        agg_scores=agg_scores,
+        rng=rng,
+        merge_candidates=[1, 2],
+        merges_performed=merges_performed,
+        program_candidates=program_candidates,
+        parent_program_for_candidate=parent_program_for_candidate,
+    )
+
+    assert result is None
+    # The skipped combination is remembered so it is not redrawn.
+    assert len(merges_performed[1]) == 1
+    recorded_id1, recorded_id2, desc = merges_performed[1][0]
+    assert (recorded_id1, recorded_id2) == (1, 2)
+    assert sorted(desc) == [1, 2]
