@@ -145,7 +145,7 @@ We recommend using a **leading frontier model** for `reflection_lm`:
 - **Minimum recommended tier**: post‑GPT‑5 or Gemini‑2.5‑Pro class models
 - **Also works**: Models as small as Qwen3‑4B have been shown to work, but use the most capable model available for the reflection LM
 
-When passing a **string** as `reflection_lm`, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) by default, so use LiteLLM model IDs (e.g., `"openai/gpt-5.2"`, `"anthropic/claude-opus-4-5-20250514"`, `"bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"`). You can also pass a **callable** instead to use any custom model provider — see the [Bedrock FAQ entry](#why-am-i-getting-errors-with-amazon-bedrock-models) for an example.
+When passing a **string** as `reflection_lm`, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) by default, so use LiteLLM model IDs (e.g., `"openai/gpt-6.1-sol"`, `"anthropic/claude-opus-4-5-20250514"`, `"bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"`). You can also pass a **callable** instead to use any custom model provider — see the [Bedrock FAQ entry](#why-am-i-getting-errors-with-amazon-bedrock-models) for an example.
 
 !!! tip "Recommendation"
     Use a large `reflection_lm` for proposing improved prompts, but use the same LM for `task_lm` that you'll deploy in production.

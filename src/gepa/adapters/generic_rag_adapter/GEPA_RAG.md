@@ -87,8 +87,8 @@ result = gepa.optimize(
     valset=validation_data,
     adapter=adapter,
     max_metric_calls=10,  # Small number for local testing
-    reflection_llm_model="ollama/llama3.1:8b"  # Memory-friendly reflection model
-    # reflection_llm_model="gpt-4"  # For cloud-based optimization
+    reflection_lm="ollama/llama3.1:8b",  # Memory-friendly reflection model
+    # reflection_lm="openai/gpt-6.1-sol"  # For cloud-based optimization
 )
 
 print("Optimized RAG prompts:", result.best_candidate)
@@ -320,7 +320,7 @@ result = gepa.optimize(
     valset=validation_data,
     adapter=adapter,
     max_metric_calls=50,  # Higher for production optimization
-    reflection_llm_model="gpt-4o"
+    reflection_lm="openai/gpt-6.1-sol",
 )
 ```
 

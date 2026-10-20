@@ -49,7 +49,7 @@ def main():
             cache_evaluation=True,
         ),
         reflection=ReflectionConfig(
-            reflection_lm="openai/gpt-5.1",
+            reflection_lm="openai/gpt-6.1-sol",
         ),
     )
 

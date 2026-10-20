@@ -113,7 +113,7 @@ result = gepa.optimize(
     trainset=dataset[:20],
     valset=dataset[20:],
     adapter=adapter,
-    reflection_lm="openai/gpt-5",  # OpenAI for reflection, replace with yout model choice 
+    reflection_lm="openai/gpt-6.1-sol",  # OpenAI for reflection, replace with yout model choice 
     max_metric_calls=150,
 )
 ```
@@ -153,7 +153,7 @@ result = gepa.optimize(
     trainset=dataset[:20],
     valset=dataset[20:],
     adapter=adapter,
-    reflection_lm="openai/gpt-4o",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=150,
 )
 ```

@@ -8,7 +8,7 @@ Usage::
 
     from gepa.lm import LM
 
-    lm = LM("openai/gpt-4.1", temperature=0.7, max_tokens=4096)
+    lm = LM("openai/gpt-6.1-sol", max_tokens=32000)
     response: str = lm("Solve this problem...")
 
     # Also works with chat messages
@@ -60,7 +60,7 @@ class LM:
     protocol, so it can be used anywhere GEPA expects a ``LanguageModel``.
 
     Args:
-        model: LiteLLM model identifier, e.g. ``"openai/gpt-4.1"`` or ``"anthropic/claude-sonnet-4-6"``.
+        model: LiteLLM model identifier, e.g. ``"openai/gpt-6.1-sol"`` or ``"anthropic/claude-sonnet-4-6"``.
         temperature: Sampling temperature.
         max_tokens: Maximum tokens to generate.
         num_retries: Number of retries on transient failures (default 3).

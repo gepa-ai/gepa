@@ -16,7 +16,7 @@ GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://m
         trainset=trainset,
         valset=valset,
         adapter=adapter,
-        reflection_lm="openai/gpt-5",
+        reflection_lm="openai/gpt-6.1-sol",
         max_metric_calls=200,
         use_wandb=True,
         wandb_init_kwargs={"project": "my-gepa-run", "name": "experiment-1"},
@@ -33,7 +33,7 @@ GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://m
         trainset=trainset,
         valset=valset,
         adapter=adapter,
-        reflection_lm="openai/gpt-5",
+        reflection_lm="openai/gpt-6.1-sol",
         max_metric_calls=200,
         use_mlflow=True,
         mlflow_tracking_uri="./mlruns",         # local directory
@@ -182,9 +182,9 @@ gepa.optimize(
     wandb_init_kwargs={
         "project": "prompt-optimization",
         "name": f"run-{my_experiment_id}",
-        "tags": ["aime", "gpt-5"],
+        "tags": ["aime", "gpt-6.1-sol"],
         "notes": "Testing new seed prompt",
-        "config": {"dataset": "aime_2025", "model": "gpt-5"},
+        "config": {"dataset": "aime_2025", "model": "gpt-6.1-sol"},
     },
 )
 ```
@@ -296,7 +296,7 @@ silently fail.
     import gepa
 
     with mlflow.start_run():           # caller owns this run
-        mlflow.log_param("model", "gpt-5")
+        mlflow.log_param("model", "gpt-6.1-sol")
 
         result = gepa.optimize(
             ...,

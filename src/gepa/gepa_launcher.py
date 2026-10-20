@@ -917,7 +917,7 @@ class GEPAConfig:
 
         config = GEPAConfig(
             engine=EngineConfig(max_metric_calls=200),
-            reflection=ReflectionConfig(reflection_lm="openai/gpt-5.1"),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-6.1-sol"),
             refiner=RefinerConfig(max_refinements=2),
         )
     """
@@ -987,7 +987,7 @@ def make_litellm_lm(model_name: str, **kwargs: Any) -> LanguageModel:
     warnings, and ``drop_params=True`` for cross-model compatibility.
 
     Args:
-        model_name: LiteLLM model identifier (e.g. ``"openai/gpt-5"``).
+        model_name: LiteLLM model identifier (e.g. ``"openai/gpt-6.1-sol"``).
         **kwargs: Extra keyword arguments forwarded to ``litellm.completion``
             (e.g. ``reasoning_effort="high"``, ``temperature=0.7``).
     """
