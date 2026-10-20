@@ -112,8 +112,8 @@ print("Best prompt:", result.best_candidate["system_prompt"])
 result = gepa.optimize(
     seed_candidate={"system_prompt": "Answer concisely."},
     trainset=trainset,
-    task_lm=local_lm,                # served locally
-    reflection_lm="openai/gpt-4.1",  # hosted (needs OPENAI_API_KEY)
+    task_lm=local_lm,                    # served locally
+    reflection_lm="openai/gpt-6.1-sol",  # hosted (needs OPENAI_API_KEY)
     max_metric_calls=20,
 )
 ```

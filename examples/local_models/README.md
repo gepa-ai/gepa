@@ -32,7 +32,7 @@ Flags:
 - `--model` (required): the model name as the server lists it at `/v1/models`
 - `--api-base` (required): the server's OpenAI-compatible base URL, **including `/v1`**
 - `--api-key`: defaults to `EMPTY`, which local servers accept
-- `--reflection-model`: a hosted reflection model for a mixed setup, e.g. `openai/gpt-4.1` (default: the same local model)
+- `--reflection-model`: a hosted reflection model for a mixed setup, e.g. `openai/gpt-6.1-sol` (default: the same local model)
 - `--max-metric-calls`: the optimization budget (default `20`)
 
 The script optimizes a short system prompt on a toy QA task and prints the best prompt and its score. To adapt it, swap in your own `TRAINSET` and seed prompt.

@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument(
         "--reflection-model",
         default=None,
-        help="Hosted reflection model for a mixed setup (e.g. 'openai/gpt-4.1'). Defaults to the local model.",
+        help="Hosted reflection model for a mixed setup (e.g. 'openai/gpt-6.1-sol'). Defaults to the local model.",
     )
     parser.add_argument("--max-metric-calls", type=int, default=20, help="Optimization budget.")
     args = parser.parse_args()
