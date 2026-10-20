@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.lm import LM
 
 # (engine, model name as the server reports it, OpenAI-compatible base URL), as in the guide.
@@ -45,3 +46,27 @@ def test_call_reaches_local_endpoint(mock_completion, engine, model_name, api_ba
     assert kwargs["api_base"] == api_base
     assert kwargs["api_key"] == "EMPTY"
     assert kwargs["messages"] == [{"role": "user", "content": "hello"}]
+
+
+@pytest.mark.parametrize(("engine", "model_name", "api_base"), ENGINES, ids=ENGINE_IDS)
+@patch("litellm.batch_completion")
+def test_default_adapter_batches_requests_to_local_endpoint(mock_batch, engine, model_name, api_base):
+    """An LM passed as ``task_lm`` evaluates the whole batch in one parallel litellm call."""
+    mock_batch.return_value = [_response("4"), _response("Paris")]
+    lm = LM(f"openai/{model_name}", api_base=api_base, api_key="EMPTY")
+    adapter = DefaultAdapter(model=lm, max_litellm_workers=4)
+
+    batch = [
+        {"input": "What is 2+2?", "additional_context": {}, "answer": "4"},
+        {"input": "Capital of France?", "additional_context": {}, "answer": "Paris"},
+    ]
+    result = adapter.evaluate(batch, {"system_prompt": "Answer concisely."})
+
+    assert result.scores == [1.0, 1.0]
+    mock_batch.assert_called_once()
+    kwargs = mock_batch.call_args.kwargs
+    assert kwargs["model"] == f"openai/{model_name}"
+    assert kwargs["api_base"] == api_base
+    assert kwargs["api_key"] == "EMPTY"
+    assert kwargs["max_workers"] == 4
+    assert len(kwargs["messages"]) == 2
