@@ -37,7 +37,7 @@ pip install litellm qdrant-client               # For Qdrant
 
 # Setup local Ollama models for examples
 ollama pull qwen3:8b          # Default for ChromaDB/Weaviate/Qdrant
-ollama pull llama3.1:8b       # Default for LanceDB/Milvus
+ollama pull qwen3.5:9b        # Larger alternative (256K context)
 ollama pull nomic-embed-text:latest  # Embedding model
 ```
 
@@ -87,7 +87,7 @@ result = gepa.optimize(
     valset=validation_data,
     adapter=adapter,
     max_metric_calls=10,  # Small number for local testing
-    reflection_lm="ollama/llama3.1:8b",  # Memory-friendly reflection model
+    reflection_lm="ollama/qwen3.5:9b",  # Memory-friendly reflection model
     # reflection_lm="openai/gpt-6.1-sol"  # For cloud-based optimization
 )
 
@@ -282,7 +282,7 @@ adapter = GenericRAGAdapter(
 # Higher quality local models
 adapter = GenericRAGAdapter(
     vector_store=vector_store,
-    llm_model="ollama/llama3.1:8b",  # ~5GB RAM - Better quality
+    llm_model="ollama/qwen3.5:9b",  # ~7GB RAM - Better quality
     rag_config=config
 )
 
@@ -293,7 +293,7 @@ result = gepa.optimize(
     valset=validation_data,
     adapter=adapter,
     max_metric_calls=5,  # Small for local testing
-    reflection_llm_model="ollama/llama3.1:8b"
+    reflection_lm="ollama/qwen3.5:9b",
 )
 ```
 
@@ -309,7 +309,7 @@ adapter = GenericRAGAdapter(
 # Anthropic models
 adapter = GenericRAGAdapter(
     vector_store=vector_store,
-    llm_model="claude-3-5-sonnet-20241022",  # Requires ANTHROPIC_API_KEY
+    llm_model="claude-sonnet-5-5",  # Requires ANTHROPIC_API_KEY
     rag_config=config
 )
 

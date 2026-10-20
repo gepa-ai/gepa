@@ -60,7 +60,7 @@ class LM:
     protocol, so it can be used anywhere GEPA expects a ``LanguageModel``.
 
     Args:
-        model: LiteLLM model identifier, e.g. ``"openai/gpt-6.1-sol"`` or ``"anthropic/claude-sonnet-4-6"``.
+        model: LiteLLM model identifier, e.g. ``"openai/gpt-6.1-sol"`` or ``"anthropic/claude-sonnet-5-5"``.
         temperature: Sampling temperature.
         max_tokens: Maximum tokens to generate.
         num_retries: Number of retries on transient failures (default 3).
