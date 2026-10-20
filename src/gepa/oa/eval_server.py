@@ -36,6 +36,7 @@ import json
 import threading
 import time
 import uuid
+import warnings
 from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -561,7 +562,14 @@ class EvalServer:
 
         if self.output_dir is not None:
             with self._io_lock:
-                self._write_summary(snapshot)
+                # summary.json is a best-effort snapshot: failing to refresh it
+                # must not fail an evaluation that has already been paid for.
+                try:
+                    self._write_summary(snapshot)
+                except OSError as exc:
+                    warnings.warn(
+                        f"Could not update summary.json in {self.output_dir}: {exc}", RuntimeWarning, stacklevel=2
+                    )
                 self._write_eval_record(idx, entry, candidate, info)
 
     def _snapshot(self) -> dict[str, Any]:
