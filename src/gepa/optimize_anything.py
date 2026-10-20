@@ -339,10 +339,12 @@ def _legacy_result_from(result: Result, seed_candidate: Any) -> GEPAResult:
 
 
 def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Result:
-    """Run ``engine`` and attach shared eval-server metadata to its result."""
-    if owns_server:
-        server.start()
+    """Run ``engine`` and attach shared eval-server metadata to its result.
 
+    The HTTP listener is not started here: engines bind it lazily on their
+    first ``server.url`` access, so pure in-process runs never open a
+    localhost socket (#448).
+    """
     task = server.task
 
     # Held-out test is scored outside the budget, directly against the seed

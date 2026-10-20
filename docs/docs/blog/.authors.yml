@@ -1,9 +1,19 @@
 authors:
+  andrei:
+    name: Andrei Cojocaru
+    description: UC Berkeley
+    avatar: https://github.com/AndreiBerkeley.png
+    url: https://github.com/AndreiBerkeley
   lakshya:
     name: Lakshya A Agrawal
     description: PhD Student, UC Berkeley Sky Lab
     avatar: https://github.com/LakshyAAAgrawal.png
     url: https://x.com/LakshyAAAgrawal
+  mert:
+    name: Mert Cemri
+    description: UC Berkeley
+    avatar: https://github.com/mert-cemri.png
+    url: https://github.com/mert-cemri
   shangyin:
     name: Shangyin Tan
     description: PhD Student, UC Berkeley Sky Lab
