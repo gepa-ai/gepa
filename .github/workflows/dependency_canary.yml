@@ -23,40 +23,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  dspy-main:
-    name: DSPy Main Compatibility
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-      - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Create virtual environment
-        run: uv venv .venv --python 3.11
-      - name: Install GEPA, DSPy main, and restore the GEPA checkout
-        run: |
-          uv pip install -p .venv '.[dev]'
-          uv pip install -p .venv 'dspy @ git+https://github.com/stanfordnlp/dspy.git@main'
-          uv pip install -p .venv --no-deps -e .
-      - name: Assert GEPA is loaded from this checkout
-        run: |
-          uv run --no-sync -p .venv python - <<'PY'
-          from pathlib import Path
-          import gepa
-
-          root = Path.cwd().resolve()
-          module = Path(gepa.__file__).resolve()
-          assert root in module.parents, f"Loaded {module}, expected a module under {root}"
-          PY
-      - name: Run DSPy consumer-contract tests
-        run: |
-          uv run --no-sync -p .venv python -m pytest -vv \
-            tests/test_dspy_compatibility.py \
-            tests/test_dspy_full_program_adapter.py
-
   fresh-resolve:
     name: Fresh Resolve & Test
     runs-on: ${{ matrix.os }}

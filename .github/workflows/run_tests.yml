@@ -106,56 +106,12 @@ jobs:
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
   dspy_compatibility:
-    name: DSPy Compatibility (${{ matrix.dspy-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        dspy-version: ["3.3.1", "latest"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-      - name: Install uv with caching
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            **/pyproject.toml
-            **/uv.lock
-      - name: Create virtual environment
-        run: uv venv .venv --python 3.11
-      - name: Install GEPA test environment
-        run: uv sync -p .venv --locked --extra dev
-      - name: Install DSPy and restore the GEPA checkout
-        shell: bash
-        run: |
-          if [[ "${{ matrix.dspy-version }}" == "latest" ]]; then
-            uv pip install -p .venv dspy
-          else
-            uv pip install -p .venv "dspy==${{ matrix.dspy-version }}"
-          fi
-          # DSPy 3.3.1 pins gepa==0.1.4. Restore this checkout after resolving
-          # DSPy's dependencies so future GEPA versions test runtime compatibility.
-          uv pip install -p .venv --no-deps -e .
-      - name: Assert GEPA is loaded from this checkout
-        run: |
-          uv run --no-sync -p .venv python - <<'PY'
-          from pathlib import Path
-          import gepa
-
-          root = Path.cwd().resolve()
-          module = Path(gepa.__file__).resolve()
-          assert root in module.parents, f"Loaded {module}, expected a module under {root}"
-          PY
-      - name: Run DSPy consumer-contract tests
-        # --no-sync preserves this intentionally overridden compatibility
-        # environment instead of syncing it back to the lockfile.
-        run: |
-          uv run --no-sync -p .venv python -m pytest -vv \
-            tests/test_dspy_compatibility.py \
-            tests/test_dspy_full_program_adapter.py
+    name: DSPy Compatibility (pinned)
+    # Pinned DSPy only, so a failure here can only come from the GEPA change
+    # under test. DSPy latest and main run post-merge in dspy_compatibility.yml.
+    uses: ./.github/workflows/dspy_contract.yml
+    with:
+      dspy-versions: '["3.3.1"]'
 
   # llm_call_test:
   #   name: Run Tests with Real LM

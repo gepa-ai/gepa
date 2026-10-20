@@ -31,8 +31,17 @@ jobs:
       contents: read
     uses: ./.github/workflows/run_tests.yml
 
+  verify-dspy:
+    name: Run DSPy contract tests against the latest DSPy release
+    if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/dspy_contract.yml
+    with:
+      dspy-versions: '["latest"]'
+
   build-and-publish-test-pypi:
-    needs: [extract-tag, verify-ci]
+    needs: [extract-tag, verify-ci, verify-dspy]
     if: github.repository_owner == 'gepa-ai' && startsWith(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
