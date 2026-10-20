@@ -26,6 +26,8 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
       should be provided and align one-to-one with `outputs` and `scores`.
     - objective_scores: optional per-example maps of objective name -> score. Leave None when
       the evaluator does not expose multi-objective metrics.
+    - cacheable: optional per-example flags indicating whether an evaluation result may be
+      stored in GEPA's evaluation cache. Leave None when all results are cacheable.
     """
 
     outputs: list[RolloutOutput]
@@ -33,6 +35,7 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     trajectories: list[Trajectory] | None = None
     objective_scores: list[dict[str, float]] | None = None
     num_metric_calls: int | None = None
+    cacheable: list[bool] | None = None
 
 
 class BatchEvaluateFn(Protocol):
@@ -167,6 +170,8 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
           - trajectories:
               - if capture_traces=True: list[Trajectory] with length == len(batch).
               - if capture_traces=False: None.
+          - cacheable: optional list of per-example flags with length == len(batch).
+              False prevents a synthetic or otherwise temporary result from entering GEPA's cache.
 
         Scoring semantics
         - The engine uses sum(scores) on minibatches to decide whether to accept a
@@ -177,6 +182,7 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
         Correctness constraints
         - len(outputs) == len(scores) == len(batch)
         - If capture_traces=True: trajectories must be provided and len(trajectories) == len(batch)
+        - If cacheable is provided: len(cacheable) == len(batch)
         - Do not mutate `batch` or `candidate` in-place. Construct a fresh program
           instance or deep-copy as needed.
         """

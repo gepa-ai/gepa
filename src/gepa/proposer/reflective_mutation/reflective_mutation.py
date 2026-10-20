@@ -387,6 +387,7 @@ class ReflectiveMutationProposer:
                     eval_curr.scores,
                     objective_scores_list,
                     split=TRAINSET_CACHE_SPLIT,
+                    cacheable=eval_curr.cacheable,
                 )
 
         # Trace: legacy first-task keys (pre-#329 tooling compatibility) plus
@@ -652,6 +653,7 @@ class ReflectiveMutationProposer:
                     child_eval.scores,
                     new_obj_scores,
                     split=TRAINSET_CACHE_SPLIT,
+                    cacheable=child_eval.cacheable,
                 )
 
         # Trace: per-task before/after scores (children is index-aligned with tasks)

@@ -450,9 +450,9 @@ def optimize(
 
     def evaluator_fn(
         inputs: list[DataInst], prog: dict[str, str]
-    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
+    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None, list[bool] | None]:
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores, eval_out.cacheable
 
     merge_proposer: MergeProposer | None = None
     if use_merge:

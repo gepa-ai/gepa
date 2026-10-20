@@ -44,9 +44,12 @@ class OptimizeAnythingConfig:
             ``max_token_cost`` must be set so a run is bounded.
         max_concurrency: Eval server thread-pool size.
         output_dir: Where the eval server persists per-eval JSON,
-            ``progress_log.jsonl``, and ``summary.json``. When ``None``, the
-            api constructs a timestamped default (``outputs/optimize_anything/<task>/
-            <engine>/<timestamp>/``) so a run always has somewhere to land.
+            ``progress_log.jsonl``, and ``summary.json``. When ``None`` and
+            ``run_dir`` is set, it is ``<run_dir>/eval_server``, so a run that
+            names its workspace creates nothing elsewhere; when both are
+            ``None``, the api constructs a timestamped default
+            (``outputs/optimize_anything/<task>/<engine>/<timestamp>/``) so a
+            run always has somewhere to land.
         run_dir: Engine workspace directory. Distinct from ``output_dir``:
             this is where the engine writes its own artifacts (gepa run dir,
             autoresearch work dir, etc.). When ``None``, subprocess engines

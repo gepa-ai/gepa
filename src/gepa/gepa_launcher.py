@@ -1074,7 +1074,10 @@ class EvaluatorWrapper:
             if isinstance(result, Exception):
                 if raise_on_exception:
                     raise result
-                fail_side_info: SideInfo = {"error": str(result)}
+                # Synthetic result: the marker keeps it out of the adapter cache and GEPA core's
+                # evaluation cache, so an outage is never replayed as a score (same contract as
+                # the batch_evaluator failure path).
+                fail_side_info: SideInfo = {"error": str(result), "_gepa_transient_failure": True}
                 if log_output:
                     fail_side_info["log"] = log_output
                 if captured_stdout:
@@ -1704,9 +1707,9 @@ def optimize_anything(
     # Define evaluator function for merge proposer
     def merge_evaluator(
         inputs: list[DataInst], prog: Candidate
-    ) -> tuple[list[object], list[float], list[dict[str, float]] | None]:
+    ) -> tuple[list[object], list[float], list[dict[str, float]] | None, list[bool] | None]:
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores, eval_out.cacheable
 
     # --- 12. Build merge proposer from MergeConfig (if provided) ---
     merge_proposer: MergeProposer | None = None
