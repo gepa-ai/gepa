@@ -10,26 +10,85 @@ this directory's README), then point the script at it::
         --model Qwen/Qwen3-8B \
         --api-base http://localhost:8000/v1
 
+The same local model works with both GEPA entry points; pick one with ``--api``:
+
+- ``optimize`` (default): ``gepa.optimize`` with the built-in DefaultAdapter, which
+  calls the task model for you.
+- ``optimize_anything``: ``gepa.optimize_anything.optimize_anything`` with your own
+  evaluator, which calls the model and returns a score plus feedback.
+
 GEPA only talks to the server over HTTP, so nothing engine-specific is installed here.
 """
 
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 import gepa
+from gepa.adapters.default_adapter.default_adapter import EvaluationResult
+from gepa.core.result import GEPAResult
 from gepa.lm import LM
+from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+from gepa.proposer.reflective_mutation.base import LanguageModel
 
-# A tiny toy task for the built-in DefaultAdapter. Each example is a dict with
-# `input`, `additional_context`, and `answer` (substring-matched).
+# A toy QA task with a house style the seed prompt never mentions: reply with only the
+# answer, lowercase, no punctuation. Chatty replies ("The capital of France is Paris.")
+# score 0, so GEPA has to infer the format from the feedback.
 TRAINSET = [
     {"input": "What is 2 + 2?", "additional_context": {}, "answer": "4"},
-    {"input": "What is the capital of France?", "additional_context": {}, "answer": "Paris"},
+    {"input": "What is the capital of France?", "additional_context": {}, "answer": "paris"},
     {"input": "What color do you get by mixing blue and yellow?", "additional_context": {}, "answer": "green"},
+    {"input": "Which planet is known as the Red Planet?", "additional_context": {}, "answer": "mars"},
     {"input": "How many days are in a week?", "additional_context": {}, "answer": "7"},
 ]
 
 SEED_PROMPT = {"system_prompt": "You are a helpful assistant. Answer the question."}
+
+
+def score(output: str, answer: str) -> tuple[float, str]:
+    """Exact match, with feedback that tells the reflection model what was expected."""
+    if output.strip() == answer:
+        return 1.0, "Correct."
+    return 0.0, f"Expected exactly {answer!r}, got {output.strip()!r}."
+
+
+def run_gepa_optimize(local_lm: LM, reflection_lm: LanguageModel | str, max_metric_calls: int) -> GEPAResult:
+    """gepa.optimize: the DefaultAdapter sends each question to ``task_lm`` and scores the answer."""
+    return gepa.optimize(
+        seed_candidate=SEED_PROMPT,
+        trainset=TRAINSET,
+        task_lm=local_lm,
+        evaluator=lambda data, response: EvaluationResult(*score(response, data["answer"])),
+        reflection_lm=reflection_lm,
+        max_metric_calls=max_metric_calls,
+    )
+
+
+def run_optimize_anything(local_lm: LM, reflection_lm: LanguageModel | str, max_metric_calls: int) -> GEPAResult:
+    """optimize_anything: you own the evaluator, so you call the local model yourself."""
+
+    def evaluate(candidate: dict[str, str], example: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+        output = local_lm(
+            [
+                {"role": "system", "content": candidate["system_prompt"]},
+                {"role": "user", "content": example["input"]},
+            ]
+        )
+        value, feedback = score(output, example["answer"])
+        # Everything in the info dict is shown to the reflection model as feedback.
+        return value, {"Input": example["input"], "Output": output, "Feedback": feedback}
+
+    return optimize_anything(
+        seed_candidate=SEED_PROMPT,
+        evaluator=evaluate,
+        dataset=TRAINSET,
+        objective="Write a system prompt that makes the assistant answer each question correctly and concisely.",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=max_metric_calls),
+            reflection=ReflectionConfig(reflection_lm=reflection_lm),
+        ),
+    )
 
 
 def main() -> None:
@@ -44,6 +103,12 @@ def main() -> None:
         default=None,
         help="Hosted reflection model for a mixed setup (e.g. 'openai/gpt-6.1-sol'). Defaults to the local model.",
     )
+    parser.add_argument(
+        "--api",
+        choices=["optimize", "optimize_anything"],
+        default="optimize",
+        help="GEPA entry point to run (default: optimize).",
+    )
     parser.add_argument("--max-metric-calls", type=int, default=20, help="Optimization budget.")
     args = parser.parse_args()
 
@@ -51,21 +116,17 @@ def main() -> None:
     local_lm = LM(f"openai/{args.model}", api_base=args.api_base, api_key=args.api_key)
     reflection_lm = args.reflection_model or local_lm
 
+    print(f"Entry point:      {args.api}")
     print(f"Task model:       {local_lm!r}")
     print(f"Reflection model: {reflection_lm!r}")
 
-    result = gepa.optimize(
-        seed_candidate=SEED_PROMPT,
-        trainset=TRAINSET,
-        task_lm=local_lm,
-        reflection_lm=reflection_lm,
-        max_metric_calls=args.max_metric_calls,
-    )
+    run = run_gepa_optimize if args.api == "optimize" else run_optimize_anything
+    result = run(local_lm, reflection_lm, args.max_metric_calls)
 
     print("\n=== Result ===")
     best = result.best_candidate
+    print(f"Score: {result.val_aggregate_scores[0]:.2f} (seed) -> {result.val_aggregate_scores[result.best_idx]:.2f}")
     print("Best prompt:", best["system_prompt"] if isinstance(best, dict) else best)
-    print("Best score: ", result.val_aggregate_scores[result.best_idx])
 
 
 if __name__ == "__main__":

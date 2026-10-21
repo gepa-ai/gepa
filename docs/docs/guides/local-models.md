@@ -118,7 +118,36 @@ result = gepa.optimize(
 )
 ```
 
-The same `LM` object also works with `optimize_anything` and with any adapter that takes a model callable. A runnable end-to-end example is in [`examples/local_models/`](https://github.com/gepa-ai/gepa/tree/main/examples/local_models).
+With `optimize_anything`, your evaluator calls the local model itself, and the same `LM` can serve as the reflection model:
+
+```python
+from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+
+def evaluate(candidate, example):
+    output = local_lm(
+        [
+            {"role": "system", "content": candidate["system_prompt"]},
+            {"role": "user", "content": example["input"]},
+        ]
+    )
+    score = 1.0 if example["answer"].lower() in output.lower() else 0.0
+    return score, {"Output": output, "Expected": example["answer"]}  # feedback for reflection
+
+
+result = optimize_anything(
+    seed_candidate={"system_prompt": "Answer concisely."},
+    evaluator=evaluate,
+    dataset=trainset,
+    objective="Write a system prompt that makes the assistant answer each question correctly.",
+    config=GEPAConfig(
+        engine=EngineConfig(max_metric_calls=20),
+        reflection=ReflectionConfig(reflection_lm=local_lm),
+    ),
+)
+```
+
+A runnable end-to-end example covering both entry points is in [`examples/local_models/`](https://github.com/gepa-ai/gepa/tree/main/examples/local_models).
 
 ## 3. Settings that matter for GEPA
 
@@ -133,7 +162,7 @@ Set `max_tokens` on the reflection `LM` high enough to cover the thinking plus t
 
 **Cost tracking.** Local servers don't report prices, so `LM.total_cost` stays at `0.0` and `max_reflection_cost` won't stop a local run. Token counts (`total_tokens_in` / `total_tokens_out`) are still taken from the server's usage response. To bound a run, use `max_metric_calls` or another stop condition such as [`TimeoutStopCondition`](../api/stop_conditions/TimeoutStopCondition.md). See [Cost & Token Tracking](cost-tracking.md).
 
-**Throughput.** vLLM and SGLang batch concurrent requests, so evaluation parallelism directly speeds up a run. With `gepa.optimize`, the default adapter sends up to 10 task requests at a time; to change that, pass `adapter=DefaultAdapter(model=local_lm, max_litellm_workers=...)`. With `optimize_anything`, set `EngineConfig(max_workers=...)`. By default, Ollama and llama.cpp process only a few requests in parallel (`OLLAMA_NUM_PARALLEL`, `llama-server --parallel`). Raising client-side concurrency beyond that only queues the extra requests.
+**Throughput.** vLLM and SGLang batch concurrent requests, so evaluation parallelism directly speeds up a run. With `gepa.optimize`, the default adapter sends up to 10 task requests at a time; to change that, pass `adapter=DefaultAdapter(model=local_lm, max_litellm_workers=...)`. With `optimize_anything`, set `EngineConfig(max_workers=...)` (default: the CPU count). By default, Ollama and llama.cpp process only a few requests in parallel (`OLLAMA_NUM_PARALLEL`, `llama-server --parallel`). Raising client-side concurrency beyond that only queues the extra requests.
 
 !!! note "Engine-specific LiteLLM routes"
     LiteLLM also has engine-specific prefixes such as `hosted_vllm/` and `ollama_chat/`. They work with `LM` too, but GEPA doesn't need them: `openai/` plus `api_base` is the one pattern that works for every engine.

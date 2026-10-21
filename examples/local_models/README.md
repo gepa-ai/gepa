@@ -33,6 +33,7 @@ Flags:
 - `--api-base` (required): the server's OpenAI-compatible base URL, **including `/v1`**
 - `--api-key`: defaults to `EMPTY`, which local servers accept
 - `--reflection-model`: a hosted reflection model for a mixed setup, e.g. `openai/gpt-6.1-sol` (default: the same local model)
+- `--api`: the GEPA entry point, `optimize` (default) or `optimize_anything`
 - `--max-metric-calls`: the optimization budget (default `20`)
 
-The script optimizes a short system prompt on a toy QA task and prints the best prompt and its score. To adapt it, swap in your own `TRAINSET` and seed prompt.
+The script optimizes a short system prompt on a toy QA task whose answers must follow a strict format the seed prompt doesn't mention (just the answer, lowercase). The seed scores near 0; GEPA infers the format from the feedback, then prints the score before and after along with the best prompt. With `--api optimize`, `gepa.optimize` and its built-in adapter call the local model for you. With `--api optimize_anything`, the script's own evaluator calls the model and returns a score plus feedback for the reflection model; use this form when you need custom scoring. To adapt either one, swap in your own `TRAINSET` and seed prompt.
