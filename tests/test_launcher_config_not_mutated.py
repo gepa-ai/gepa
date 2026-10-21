@@ -59,3 +59,28 @@ def test_reusing_a_config_repeats_the_run_and_leaves_it_untouched():
     assert config.reflection.reflection_lm is reflection_lm
     assert config.reflection.batch_sampler == "epoch_shuffled"
     assert config.tracking.logger is None
+
+
+def test_optimize_anything_config_nested_configs_are_left_untouched(tmp_path):
+    """The gepa engine overlays the eval budget and run_dir on a copy, so the
+    caller's own ``EngineConfig`` is not rewritten and can be reused (#448 B4)."""
+    from gepa.optimize_anything import OptimizeAnythingConfig
+    from gepa.optimize_anything import optimize_anything as oa_optimize_anything
+
+    engine = EngineConfig(parallel=False, seed=0)
+    reflection = ReflectionConfig(reflection_lm=lambda prompt: "```\nimproved candidate\n```")
+    before = _snapshot(engine)
+    for i in range(2):
+        oa_optimize_anything(
+            seed_candidate="seed",
+            evaluator=lambda candidate, example: ((1.0 if "improved" in candidate else 0.2), {}),
+            dataset=["a", "b"],
+            config=OptimizeAnythingConfig(
+                engine="gepa",
+                max_evals=8,
+                output_dir=tmp_path / f"run{i}",
+                engine_config={"engine": engine, "reflection": reflection},
+            ),
+        )
+        after = _snapshot(engine)
+        assert [k for k, v in before.items() if after[k] is not v] == []
