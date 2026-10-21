@@ -103,22 +103,51 @@ def test_unknown_config_type_raises_type_error():
         optimize_anything(seed_candidate="short", evaluator=_evaluator, config={"max_evals": 4})  # type: ignore[arg-type]
 
 
-def test_legacy_result_has_launcher_bookkeeping():
-    """No eval server on the legacy path: ``total_evals`` is the launcher's
-    ``total_metric_calls`` and the eval log is empty, as in v0.1.4."""
+def test_legacy_result_keeps_eval_log_and_budget_metadata():
+    """The legacy path has no eval server but still returns its bookkeeping:
+    one ``eval_log`` entry per evaluator call and the budget / cost / wall-time
+    metadata. ``total_evals`` is the launcher's ``total_metric_calls``."""
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    calls = []
+
+    def evaluator(candidate, example):
+        calls.append(example)
+        return float(len(candidate)) / 100.0, {"cost": 0.5}
 
     result = optimize_anything(
         seed_candidate="short",
-        evaluator=_evaluator,
+        evaluator=evaluator,
+        dataset=[1, 2, 3],
         objective="maximize length",
         config=GEPAConfig(
-            engine=EngineConfig(max_metric_calls=4), reflection=ReflectionConfig(reflection_lm=_FakeLM())
+            engine=EngineConfig(max_metric_calls=7), reflection=ReflectionConfig(reflection_lm=_FakeLM())
         ),
     )
+    assert [e["eval"] for e in result.eval_log] == list(range(1, len(calls) + 1))
+    assert result.eval_log[-1]["cumulative_cost"] == 0.5 * len(calls)
+    assert result.metadata["budget"] == {
+        "exhausted": True,
+        "max_evals": 7,
+        "used": len(calls),
+        "remaining_evals": 0,
+    }
+    assert result.metadata["total_cost"] == 0.5 * len(calls)
+    assert result.metadata["engine"] == "gepa"
+    assert result.metadata["wall_time"] >= 0
     assert result.eval_server_calls is None
     assert result.total_evals == result.total_metric_calls
-    assert result.eval_log == []
+
+
+def test_legacy_reflection_lm_string_is_not_written_back(monkeypatch):
+    """Building the reflection LM up front (to read its cost) happens on a copy."""
+    import gepa.lm
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    monkeypatch.setattr(gepa.lm.LM, "__call__", lambda self, *a, **k: _FakeLM()())
+    config = GEPAConfig(engine=EngineConfig(max_metric_calls=4), reflection=ReflectionConfig(reflection_lm="openai/x"))
+    optimize_anything(seed_candidate="short", evaluator=_evaluator, objective="maximize length", config=config)
+    assert config.reflection.reflection_lm == "openai/x"
 
 
 def test_legacy_run_dir_matches_v014_layout(tmp_path, monkeypatch):
