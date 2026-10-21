@@ -27,7 +27,6 @@ Example:
 from __future__ import annotations
 
 import dataclasses
-import os
 import time
 import uuid
 import warnings
@@ -176,6 +175,11 @@ def optimize_anything(
         (``candidates``, ``best_idx``, ...); ``metadata`` no longer nests a
         ``gepa_result`` object. ``to_dict()`` still serializes only the pool
         and GEPA-core fields.
+
+        With a legacy :class:`GEPAConfig` there is no eval server, so the
+        launcher's result is returned as in v0.1.4: ``eval_log`` is empty,
+        ``total_evals`` equals ``total_metric_calls``, and ``metadata`` holds
+        only the ``test_set`` scores, if any.
     """
     if isinstance(config, GEPAConfig):
         # Legacy configs keep v0.1.4 semantics by skipping the eval server (#448).
@@ -193,7 +197,7 @@ def optimize_anything(
     if config is None:
         config = OptimizeAnythingConfig()
     elif not isinstance(config, OptimizeAnythingConfig):
-        config = _from_legacy_config(config)
+        raise TypeError(f"config must be an OptimizeAnythingConfig or GEPAConfig, got {type(config).__name__}")
     if evaluator is None and batch_evaluator is None:
         raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
     if config.max_evals is None and config.max_token_cost is None:
@@ -321,55 +325,20 @@ def _run_legacy_config(
     if test_set:
         task = Task(name="test", seed_candidate=seed_candidate, test_set=test_set)
         scorer = EvalServer(task, evaluator, BudgetTracker(max_evals=None), batch_evaluate=batch_evaluator)
-        baseline = _score_test(scorer, task, seed_candidate)
-        optimized = (
-            baseline if result.best_candidate == seed_candidate else _score_test(scorer, task, result.best_candidate)
-        )
-        scorer.stop()
+        try:
+            baseline = _score_test(scorer, task, seed_candidate)
+            optimized = (
+                baseline
+                if result.best_candidate == seed_candidate
+                else _score_test(scorer, task, result.best_candidate)
+            )
+        finally:
+            scorer.stop()
         if baseline is not None:
             result.metadata["baseline_test_scores"], result.metadata["baseline_test_score"] = baseline
         if optimized is not None:
             result.metadata["test_scores"], result.metadata["test_score"] = optimized
     return result
-
-
-def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
-    """Convert a legacy launcher :class:`GEPAConfig` into the OA-shaped config.
-
-    The whole config rides through ``engine_config`` field-for-field (so nested
-    configs and callbacks survive as objects); the launcher's eval budget
-    becomes ``max_evals`` — ``None`` stays unbounded, as in the launcher.
-
-    The launcher's parallelism settings size the eval server, which gates all
-    evaluation: ``parallel=False`` maps to ``max_concurrency=1``, an explicit
-    ``max_workers`` maps to itself, and ``max_workers=None`` falls back to
-    ``os.cpu_count() or 32`` (the same fallback as ``EngineConfig.max_workers``'s
-    default factory).
-
-    ``EngineConfig.run_dir``, when set, nests the eval server under
-    ``<run_dir>/eval_server`` (``evals/``, ``progress_log.jsonl``,
-    ``summary.json``) so those artifacts live inside the engine workspace
-    without sharing the ``run_dir`` root with ``gepa_state.bin``. When
-    ``run_dir`` is unset, ``output_dir`` stays ``None`` and the eval server
-    keeps its default ``outputs/`` tree.
-    """
-    from gepa.gepa_launcher import GEPAConfig
-
-    if not isinstance(config, GEPAConfig):
-        raise TypeError(f"config must be an OptimizeAnythingConfig or GEPAConfig, got {type(config).__name__}")
-    if not config.engine.parallel:
-        max_concurrency = 1
-    else:
-        max_concurrency = config.engine.max_workers or (os.cpu_count() or 32)
-    run_dir = config.engine.run_dir
-    output_dir = None if run_dir is None else Path(run_dir) / "eval_server"
-    return OptimizeAnythingConfig(
-        engine="gepa",
-        max_evals=config.engine.max_metric_calls,
-        max_concurrency=max_concurrency,
-        output_dir=output_dir,
-        engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
-    )
 
 
 def _legacy_result_from(result: Result, seed_candidate: Any) -> GEPAResult:
