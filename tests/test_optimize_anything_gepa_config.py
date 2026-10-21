@@ -49,9 +49,8 @@ def test_unknown_key_fails_fast():
 
 
 def test_legacy_gepa_config_call_returns_gepa_result():
-    """A v0.1.x-style call — legacy imports, ``GEPAConfig`` — still runs through
-    the converted gepa-engine path but returns the launcher's ``GEPAResult``,
-    so old examples using ``result.candidates`` / ``best_idx`` /
+    """A v0.1.x-style call — legacy imports, ``GEPAConfig`` — runs the launcher
+    directly and returns its ``GEPAResult``, so old examples using ``result.candidates`` / ``best_idx`` /
     ``val_aggregate_scores`` run unmodified."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
@@ -74,9 +73,9 @@ def test_legacy_gepa_config_call_returns_gepa_result():
 
 
 def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
-    """Budget smaller than the seed's valset pass: the engine has no GEPAResult
-    to stash, so the legacy path synthesizes a single-candidate one — legacy
-    callers must never see the omni Result."""
+    """Budget smaller than the seed's valset pass: the launcher still evaluates
+    the seed and returns a ``GEPAResult`` — legacy callers must never see the
+    omni Result."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
@@ -134,11 +133,10 @@ def test_legacy_run_dir_unset_leaves_output_dir_none():
     assert converted.output_dir is None
 
 
-def test_legacy_run_dir_also_holds_the_eval_output(tmp_path, monkeypatch):
-    """A legacy ``run_dir`` nests the eval server at ``run_dir/eval_server``:
-    ``gepa_state.bin`` stays at the run root, and the eval server's records
-    (``evals/`` plus ``summary.json``) land one level down. Nothing is created
-    under the current directory (#448)."""
+def test_legacy_run_dir_matches_v014_layout(tmp_path, monkeypatch):
+    """A legacy config runs the launcher directly, so ``run_dir`` holds only
+    what v0.1.4 wrote there: ``gepa_state.bin`` at the root and no eval-server
+    records. Nothing is created under the current directory (#448)."""
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
     run_dir = tmp_path / "run"
@@ -153,14 +151,44 @@ def test_legacy_run_dir_also_holds_the_eval_output(tmp_path, monkeypatch):
         ),
     )
 
-    eval_dir = run_dir / "eval_server"
-    assert not (tmp_path / "outputs").exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["run"]
     assert (run_dir / "gepa_state.bin").exists()
-    assert not (eval_dir / "gepa_state.bin").exists()
-    assert list((eval_dir / "evals").glob("*.json"))
-    assert (eval_dir / "summary.json").is_file()
-    assert not (run_dir / "evals").exists()
+    assert not (run_dir / "eval_server").exists()
     assert not (run_dir / "summary.json").exists()
+
+
+def test_legacy_cap_finishes_the_iteration_like_v014(tmp_path, monkeypatch):
+    """#448: a cap that lands mid-iteration stops at the iteration boundary, as
+    in v0.1.4, instead of discarding the in-flight child. Repro from the issue:
+    cap 7 gives 8 evaluator calls and 2 candidates, no ``_budget`` reaches the
+    reflection prompt, and nothing is written under the current directory."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    monkeypatch.chdir(tmp_path)
+    calls, prompts = [], []
+
+    def evaluator(candidate, example):
+        calls.append(example)
+        return (1.0 if "improved" in candidate else 0.2), {"note": f"scored {example}"}
+
+    def reflection_lm(prompt):
+        prompts.append(prompt)
+        return f"improved candidate v{len(prompts)}"
+
+    data = [f"ex{i}" for i in range(4)]
+    config = GEPAConfig(
+        engine=EngineConfig(max_metric_calls=7, cache_evaluation=True, parallel=False, seed=0),
+        reflection=ReflectionConfig(reflection_lm=reflection_lm, reflection_minibatch_size=2),
+    )
+    for _ in range(2):  # reusing the config must not resume or mutate the first run
+        calls.clear()
+        prompts.clear()
+        result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+        assert len(calls) == 8
+        assert result.val_aggregate_scores == [0.2, 1.0]
+        assert prompts and not any("_budget" in str(p) for p in prompts)
+    assert config.engine.run_dir is None
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_legacy_gepa_config_accepts_test_set():
