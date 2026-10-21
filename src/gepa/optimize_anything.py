@@ -101,7 +101,7 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     test_set: list[Any] | None = None,
-    config: OptimizeAnythingConfig | None = None,
+    config: OptimizeAnythingConfig | GEPAConfig | None = None,
 ) -> GEPAResult:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
@@ -155,8 +155,10 @@ def optimize_anything(
             at least one of ``config.max_evals`` or ``config.max_token_cost``
             must be set. When ``config.name`` is omitted, a name is generated
             from the engine, a short uuid, and a timestamp. A legacy
-            :class:`GEPAConfig` is also accepted and converted to run the gepa
-            engine.
+            :class:`GEPAConfig` is also accepted: the call then runs
+            :func:`gepa.gepa_launcher.optimize_anything` directly, exactly as
+            in v0.1.4 (no eval server; ``max_metric_calls`` is checked between
+            iterations), and ``test_set`` is scored after the run.
 
     Returns:
         A single :class:`~gepa.core.result.GEPAResult` for every run. The
@@ -175,6 +177,19 @@ def optimize_anything(
         ``gepa_result`` object. ``to_dict()`` still serializes only the pool
         and GEPA-core fields.
     """
+    if isinstance(config, GEPAConfig):
+        # Legacy configs keep v0.1.4 semantics by skipping the eval server (#448).
+        return _run_legacy_config(
+            seed_candidate,
+            evaluator=evaluator,
+            batch_evaluator=batch_evaluator,
+            dataset=dataset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            test_set=test_set,
+            config=config,
+        )
     if config is None:
         config = OptimizeAnythingConfig()
     elif not isinstance(config, OptimizeAnythingConfig):
@@ -269,6 +284,53 @@ def _to_gepa_result(result: Result, seed_candidate: Any) -> GEPAResult:
         metadata=metadata,
         eval_server_calls=result.total_evals,
     )
+
+
+def _run_legacy_config(
+    seed_candidate: str | Candidate | None,
+    *,
+    evaluator: Callable[..., Any] | None,
+    batch_evaluator: Callable[..., Any] | None,
+    dataset: list[Any] | None,
+    valset: list[Any] | None,
+    objective: str | None,
+    background: str | None,
+    test_set: list[Any] | None,
+    config: GEPAConfig,
+) -> GEPAResult:
+    """Run a legacy :class:`GEPAConfig` through the launcher, as v0.1.4 did.
+
+    The launcher enforces ``max_metric_calls`` between iterations, so a capped
+    run finishes its last iteration instead of discarding it. No eval server,
+    budget tracker, or ``outputs/`` tree is involved. ``test_set`` is scored
+    afterwards, outside the budget, into the same ``metadata`` keys as the
+    eval-server path.
+    """
+    from gepa.gepa_launcher import optimize_anything as launcher_optimize_anything
+
+    result = launcher_optimize_anything(
+        seed_candidate,
+        evaluator=evaluator,
+        batch_evaluator=batch_evaluator,
+        dataset=dataset,
+        valset=valset,
+        objective=objective,
+        background=background,
+        config=config,
+    )
+    if test_set:
+        task = Task(name="test", seed_candidate=seed_candidate, test_set=test_set)
+        scorer = EvalServer(task, evaluator, BudgetTracker(max_evals=None), batch_evaluate=batch_evaluator)
+        baseline = _score_test(scorer, task, seed_candidate)
+        optimized = (
+            baseline if result.best_candidate == seed_candidate else _score_test(scorer, task, result.best_candidate)
+        )
+        scorer.stop()
+        if baseline is not None:
+            result.metadata["baseline_test_scores"], result.metadata["baseline_test_score"] = baseline
+        if optimized is not None:
+            result.metadata["test_scores"], result.metadata["test_score"] = optimized
+    return result
 
 
 def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
