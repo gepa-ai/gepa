@@ -42,6 +42,22 @@ from gepa.strategies.instruction_proposal import InstructionProposalSignature
 from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy, SingleMutationSampling
 
 
+def _resolve_evaluated_candidate(
+    candidate: dict[str, str], eval_batch: EvaluationBatch[Any, Any]
+) -> dict[str, str] | None:
+    """Return the single candidate that produced every score in ``eval_batch``, or None if there isn't one.
+
+    ``evaluated_candidates`` is per minibatch example (not per parallel child); None means the
+    adapter scored ``candidate`` itself.
+    """
+    winners = eval_batch.evaluated_candidates
+    if winners is None:
+        return candidate
+    if winners and len(winners) == len(eval_batch.scores) and all(c == winners[0] for c in winners):
+        return winners[0]
+    return None
+
+
 class ReflectiveMutationProposer:
     """Implements the reflective mutation flow.
 
@@ -651,12 +667,22 @@ class ReflectiveMutationProposer:
         )
         state.increment_evals(total_child_evals)
 
-        # Update evaluation cache for children
+        evaluated_candidates = [
+            _resolve_evaluated_candidate(new_candidate, child_eval)
+            for (_, (_task, new_candidate, _, _)), child_eval in zip(valid_children, child_evals, strict=True)
+        ]
+
+        # Update evaluation cache for children, keyed by the candidate that produced the scores.
+        # Skip children whose scores came from different candidates per example.
         if state.evaluation_cache is not None:
-            for (_, (task, new_candidate, _, _)), child_eval in zip(valid_children, child_evals, strict=True):
+            for (_, (task, _, _, _)), child_eval, evaluated_candidate in zip(
+                valid_children, child_evals, evaluated_candidates, strict=True
+            ):
+                if evaluated_candidate is None:
+                    continue
                 new_obj_scores = list(child_eval.objective_scores) if child_eval.objective_scores else None
                 state.evaluation_cache.put_batch(
-                    new_candidate,
+                    evaluated_candidate,
                     task.minibatch_ids,
                     child_eval.outputs,
                     child_eval.scores,
@@ -695,11 +721,19 @@ class ReflectiveMutationProposer:
 
         # Stage 5: Build proposals and filter
         proposals: list[CandidateProposal] = []
-        for (_, (task, new_candidate, eval_curr, _lm_metadata)), child_eval in zip(
-            valid_children, child_evals, strict=True
+        for (_, (task, new_candidate, eval_curr, _lm_metadata)), child_eval, evaluated_candidate in zip(
+            valid_children, child_evals, evaluated_candidates, strict=True
         ):
+            # Store the candidate the adapter actually evaluated (e.g. a refiner-produced
+            # replacement) so the stored candidate and its recorded score refer to the same artifact.
+            if evaluated_candidate is None:
+                self.logger.log(
+                    f"Iteration {i}: evaluated_candidates do not name a single candidate for this minibatch; "
+                    "storing the pre-refinement candidate."
+                )
+                evaluated_candidate = new_candidate
             proposal = CandidateProposal(
-                candidate=new_candidate,
+                candidate=evaluated_candidate,
                 parent_program_ids=[task.parent_idx],
                 subsample_indices=task.minibatch_ids,
                 subsample_scores_before=eval_curr.scores,
