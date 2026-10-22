@@ -26,6 +26,7 @@ from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
+from gepa.lm import LM
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -55,7 +56,7 @@ def optimize(
     trainset: list[DataInst] | DataLoader[DataId, DataInst],
     valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
-    task_lm: str | ChatCompletionCallable | None = None,
+    task_lm: str | LM | ChatCompletionCallable | None = None,
     evaluator: Evaluator | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
@@ -260,8 +261,6 @@ def optimize(
     # Resolve reflection LM before building stoppers so cost stopper can reference it
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
-        from gepa.lm import LM
-
         reflection_lm_callable = LM(reflection_lm, **(reflection_lm_kwargs or {}))
     elif reflection_lm is not None:
         from gepa.lm import TrackingLM
