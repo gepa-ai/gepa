@@ -52,13 +52,16 @@ class GepaEngine:
         self.gepa_config = GEPAConfig(**config.engine_config)
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        from gepa.gepa_launcher import optimize_anything
+        from gepa.gepa_launcher import _copy_config, optimize_anything
 
         budget = server.budget
         objective = task.objective
         background = task.background
 
-        gepa_config = self.gepa_config
+        # Overlay on a copy: the nested configs may be the caller's own objects
+        # (GEPAConfig(**engine_config) keeps them), so writing into them would
+        # leak this run's budget and run_dir into the next run that reuses them.
+        gepa_config = _copy_config(self.gepa_config)
 
         # OA owns the eval budget, workspace, and the top-level convenience
         # limits — set them as EngineConfig fields; GEPA core installs the
