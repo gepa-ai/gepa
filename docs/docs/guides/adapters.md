@@ -329,7 +329,7 @@ result = gepa.optimize(
     seed_candidate={"system_prompt": "Answer questions accurately."},
     trainset=trainset,
     adapter=adapter,
-    reflection_lm="openai/gpt-4o",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=50,
 )
 ```

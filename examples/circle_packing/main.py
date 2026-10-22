@@ -95,7 +95,7 @@ def main():
                 cache_evaluation=True,
                 frontier_type="objective",
             ),
-            reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-6.1-sol"),
             refiner=RefinerConfig(),  # A refiner LLM will try to improve the candidate based on the evaluation feedback.
         ),
         objective="Optimize circle packing code to maximize sum of circle radii within a unit square for N=26 circles.",

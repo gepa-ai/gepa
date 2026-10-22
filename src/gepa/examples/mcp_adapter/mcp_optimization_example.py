@@ -13,7 +13,7 @@ What you'll learn:
 
 MODEL CONFIGURATION:
 Defaults to Ollama models (no API key needed). Requires Ollama installed: https://ollama.com
-Pull models: ollama pull llama3.1:8b && ollama pull qwen3:8b
+Pull models: ollama pull qwen3.5:9b
 
 To use OpenAI models: --task-model gpt-4o-mini (requires OPENAI_API_KEY)
 
@@ -191,7 +191,7 @@ def metric_fn(data_inst, output: str) -> float:
 # ============================================================================
 
 
-def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
+def run_local_example(task_model: str = "ollama/qwen3.5:9b", reflection_model: str = "ollama/qwen3.5:9b"):
     """Run optimization with local stdio MCP server."""
     logger.info("=" * 60)
     logger.info("GEPA MCP Tool Optimization")
@@ -257,7 +257,7 @@ def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: 
 # ============================================================================
 
 
-def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
+def run_remote_example(url: str, task_model: str = "ollama/qwen3.5:9b", reflection_model: str = "ollama/qwen3.5:9b"):
     """Run optimization with remote SSE MCP server."""
     logger.info("=" * 60)
     logger.info("GEPA MCP Tool Optimization")
@@ -325,7 +325,7 @@ def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflect
 # ============================================================================
 
 
-def run_multitool_example(task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
+def run_multitool_example(task_model: str = "ollama/qwen3.5:9b", reflection_model: str = "ollama/qwen3.5:9b"):
     """Run optimization with multiple tools."""
     logger.info("=" * 60)
     logger.info("GEPA MCP Tool Optimization (Multi-Tool)")
@@ -425,14 +425,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task-model",
         type=str,
-        default="ollama/llama3.1:8b",
-        help='Model for task execution (default: "ollama/llama3.1:8b")',
+        default="ollama/qwen3.5:9b",
+        help='Model for task execution (default: "ollama/qwen3.5:9b")',
     )
     parser.add_argument(
         "--reflection-model",
         type=str,
-        default="ollama/qwen3:8b",
-        help='Model for reflection (default: "ollama/qwen3:8b")',
+        default="ollama/qwen3.5:9b",
+        help='Model for reflection (default: "ollama/qwen3.5:9b")',
     )
 
     args = parser.parse_args()

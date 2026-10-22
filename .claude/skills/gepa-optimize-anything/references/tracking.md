@@ -11,7 +11,7 @@ result = optimize_anything(
     config=OptimizeAnythingConfig(
         engine="gepa", max_evals=300,
         engine_config={
-            "reflection": {"reflection_lm": "anthropic/claude-sonnet-4-6"},
+            "reflection": {"reflection_lm": "anthropic/claude-sonnet-5-5"},
             "tracking": {                       # -> TrackingConfig
                 "use_wandb": True,
                 "wandb_init_kwargs": {"project": "my-gepa-run", "name": "experiment-1"},

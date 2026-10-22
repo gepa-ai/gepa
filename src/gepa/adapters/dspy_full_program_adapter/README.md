@@ -21,7 +21,7 @@ seed_program = """import dspy
 program = dspy.ChainOfThought("question -> answer")"""
 
 # Run optimization
-reflection_lm = dspy.LM(model="openai/gpt-4.1", max_tokens=32000) # <-- This LM will only be used to propose new DSPy programs
+reflection_lm = dspy.LM(model="openai/gpt-6.1-sol", temperature=1.0, max_tokens=32000) # <-- This LM will only be used to propose new DSPy programs
 result = optimize(
     seed_candidate={"program": seed_program},
     trainset=train_data,
