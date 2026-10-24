@@ -36,6 +36,10 @@ This is the instruction without language specifier.
 Done.""",
                 "This is the instruction without language specifier.",
             ),
+            # Language specifier followed by CRLF or trailing whitespace
+            ("```markdown\r\nThis is the instruction.\r\n```", "This is the instruction."),
+            ("```markdown \nThis is the instruction.\n```", "This is the instruction."),
+            ("```text\t\r\nThis is the instruction.\r\n```", "This is the instruction."),
             (
                 """```markdown
 Don't get confused by these backticks: ```
