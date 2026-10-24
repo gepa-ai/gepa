@@ -82,7 +82,7 @@ class ProposalAdapter:
         end = lm_out.rfind("```")
         if self._has_fence_pair(lm_out):
             content = lm_out[start:end]
-            match = re.match(r"^\S*\n", content)
+            match = re.match(r"^\S*[ \t]*\r?\n", content)
             if match:
                 content = content[match.end() :]
             value = content.strip()
