@@ -33,6 +33,13 @@ class ProposalParseResult:
         return self.text
 
 
+# The rest of an opening fence line: a language tag, optional attributes
+# (``title="x"``, ``{.class}``), trailing whitespace, and a LF or CRLF ending.
+_FENCE_INFO_LINE = re.compile(r"\S*(?:[ \t]+(?:[\w-]+=(?:\"[^\"\n]*\"|'[^'\n]*')|\{[^}\n]*\}))*[ \t]*\r?\n")
+# An output that is one ``~~~`` fenced block, closed by at least as many tildes.
+_TILDE_BLOCK = re.compile(r"(~{3,})[^\n]*\n(?:(.*)\n)?\1~*", re.DOTALL)
+
+
 class ProposalAdapter:
     """Format a signature normally and parse its output compatibly.
 
@@ -78,24 +85,36 @@ class ProposalAdapter:
             detail = f"finish_reason={reason!r}" if reason is not None else "unterminated reasoning block"
             return SignatureParseResult.failure(f"reflection output is incomplete ({detail})")
 
-        start = lm_out.find("```") + 3
+        start = lm_out.find("```")
         end = lm_out.rfind("```")
         if self._has_fence_pair(lm_out):
-            content = lm_out[start:end]
-            match = re.match(r"^\S*[ \t]*\r?\n", content)
+            # A longer opening fence (````) wraps content that itself contains
+            # ```; it closes with a run of the same length.
+            fence = len(lm_out) - start - len(lm_out[start:].lstrip("`"))
+            if fence > 3 and lm_out.rfind("`" * fence) > start + fence:
+                end = lm_out.rfind("`" * fence)
+            else:
+                fence = 3
+            content = lm_out[start + fence : end]
+            match = _FENCE_INFO_LINE.match(content)
             if match:
                 content = content[match.end() :]
             value = content.strip()
         else:
             # Preserve GEPA's original permissive contract for custom LMs.
             value = lm_out.strip()
-            if value.startswith("```"):
+            tilde = _TILDE_BLOCK.fullmatch(value)
+            if tilde:
+                value = (tilde.group(2) or "").strip()
+            elif value.startswith("```"):
                 match = re.match(r"^```\S*\n?", value)
                 if match:
                     value = value[match.end() :].strip()
             elif value.endswith("```"):
                 value = value[:-3].strip()
 
+        if not value:
+            return SignatureParseResult.failure("reflection output is empty")
         return SignatureParseResult.success({self.output_key: value})
 
 
