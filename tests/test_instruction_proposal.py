@@ -40,6 +40,18 @@ Done.""",
             ("```markdown\r\nThis is the instruction.\r\n```", "This is the instruction."),
             ("```markdown \nThis is the instruction.\n```", "This is the instruction."),
             ("```text\t\r\nThis is the instruction.\r\n```", "This is the instruction."),
+            ("```\r\nThis is the instruction.\r\n```", "This is the instruction."),
+            # A longer fence wraps content that itself contains ```
+            ("````markdown\nUse ``` for code.\n````", "Use ``` for code."),
+            # Fence attributes belong to the info string
+            ('```markdown title="x"\nThis is the instruction.\n```', "This is the instruction."),
+            ("```python {.numberLines}\nx = 1\n```", "x = 1"),
+            # Text on the fence line that isn't a tag or attributes is kept
+            ("```Respond x=1\nThen stop.\n```", "Respond x=1\nThen stop."),
+            ("```You are a helpful assistant.\nBe concise.\n```", "You are a helpful assistant.\nBe concise."),
+            # An output that is one ~~~ block; an embedded ~~~ example is not a wrapper
+            ("~~~markdown\r\nThis is the instruction.\r\n~~~", "This is the instruction."),
+            ("Do X.\n~~~\ncode\n~~~\nThen Y.", "Do X.\n~~~\ncode\n~~~\nThen Y."),
             (
                 """```markdown
 Don't get confused by these backticks: ```
@@ -117,6 +129,14 @@ End text
 
         assert result.text is None
         assert result.error is not None
+
+    @pytest.mark.parametrize("lm_output", ["", "   ", "```\n```", "```markdown\r\n```", "~~~text\n~~~"])
+    def test_empty_proposals_are_a_typed_miss(self, lm_output):
+        """An empty reflection must not become the next candidate's text."""
+        result = parse_proposal(InstructionProposalSignature, lm_output)
+
+        assert result.text is None
+        assert result.error == "reflection output is empty"
 
     def test_legacy_extractor_raises_only_at_its_hard_fail_boundary(self):
         with pytest.raises(InstructionProposalError, match="incomplete"):
