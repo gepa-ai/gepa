@@ -117,7 +117,7 @@ import random
 import threading
 import warnings
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import (
     Any,
     Literal,
@@ -1133,18 +1133,19 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
-def _copy_config(config: GEPAConfig) -> GEPAConfig:
-    """Copy ``config`` and its nested config dataclasses, sharing every other value.
+_CONFIG_SECTIONS = ("engine", "reflection", "tracking", "merge", "refiner")
 
-    User objects inside (LMs, callbacks, adapters, samplers) stay the same
-    instances; only the config containers the launcher assigns into are new.
+
+def _copy_config(config: GEPAConfig) -> GEPAConfig:
+    """Copy ``config`` and its config sections, sharing every other value.
+
+    Only the sections the launcher assigns into are new objects. Everything
+    else (LMs, callbacks, adapters, samplers, a user's own dataclass stopper)
+    stays the same instance, so state those objects keep is visible to the
+    caller.
     """
-    nested = {
-        f.name: replace(v)
-        for f in fields(config)
-        if is_dataclass(v := getattr(config, f.name)) and not isinstance(v, type)
-    }
-    return replace(config, **nested)
+    sections = {name: replace(v) for name in _CONFIG_SECTIONS if (v := getattr(config, name)) is not None}
+    return replace(config, **sections)
 
 
 def optimize_anything(

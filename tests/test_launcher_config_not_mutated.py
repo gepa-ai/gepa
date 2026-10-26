@@ -61,6 +61,30 @@ def test_reusing_a_config_repeats_the_run_and_leaves_it_untouched():
     assert config.tracking.logger is None
 
 
+def test_user_dataclass_stopper_is_shared_not_copied():
+    """Only config sections are copied: a user's own dataclass stopper passed as
+    ``stop_callbacks`` is the object the run polls, so its state stays visible."""
+
+    @dataclasses.dataclass
+    class CountingStopper:
+        calls: int = 0
+
+        def __call__(self, state):
+            self.calls += 1
+            return False
+
+    stopper = CountingStopper()
+    config = GEPAConfig(
+        engine=EngineConfig(max_metric_calls=12, parallel=False, seed=0),
+        reflection=ReflectionConfig(reflection_lm=lambda prompt: "```\nimproved candidate\n```"),
+        stop_callbacks=stopper,
+    )
+    _run(config)
+
+    assert config.stop_callbacks is stopper
+    assert stopper.calls > 0
+
+
 def test_optimize_anything_config_nested_configs_are_left_untouched(tmp_path):
     """The gepa engine overlays the eval budget and run_dir on a copy, so the
     caller's own ``EngineConfig`` is not rewritten and can be reused (#448 B4)."""
