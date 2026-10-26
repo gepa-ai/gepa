@@ -1,7 +1,12 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from typing import ClassVar
+
+import pytest
+
 from gepa.proposer.reflective_mutation.base import Signature, SignatureParseResult
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 
 class MockSignature(Signature):
@@ -113,3 +118,87 @@ class TestSignatureRun:
                 return {"legacy": lm_out}
 
         assert LegacySubclass.run(lambda prompt: " result ", {}) == {"legacy": "result"}
+
+    @pytest.mark.parametrize("with_metadata", [False, True])
+    def test_inherited_prompt_renderer_takes_precedence_over_adapter(self, with_metadata):
+        class Adapter:
+            def format(self, signature, input_dict):
+                raise AssertionError("adapter format should not replace an inherited override")
+
+            def parse(self, signature, lm_out):
+                return SignatureParseResult.success({"output": lm_out})
+
+        class LegacySignature(Signature):
+            adapter = Adapter()
+            prompt_template = "parent"
+
+            @classmethod
+            def prompt_renderer(cls, input_dict):
+                return f"{cls.prompt_template}: {input_dict['value']}"
+
+        class ChildSignature(LegacySignature):
+            prompt_template = "child"
+
+        seen = []
+
+        def lm(prompt):
+            seen.append(prompt)
+            return " result "
+
+        if with_metadata:
+            assert ChildSignature.run_with_metadata(lm, {"value": "x"}) == (
+                {"output": "result"},
+                "child: x",
+                "result",
+            )
+        else:
+            assert ChildSignature.run(lm, {"value": "x"}) == {"output": "result"}
+        assert seen == ["child: x"]
+
+    @pytest.mark.parametrize("with_metadata", [False, True])
+    def test_inherited_output_extractor_takes_precedence_over_adapter(self, with_metadata):
+        class Adapter:
+            def format(self, signature, input_dict):
+                return "adapter prompt"
+
+            def parse(self, signature, lm_out):
+                raise AssertionError("adapter parser should not replace an inherited override")
+
+        class LegacySignature(Signature):
+            adapter = Adapter()
+            output_keys: ClassVar[list[str]] = ["parent"]
+
+            @classmethod
+            def output_extractor(cls, lm_out):
+                return {cls.output_keys[0]: lm_out}
+
+        class ChildSignature(LegacySignature):
+            output_keys: ClassVar[list[str]] = ["child"]
+
+        if with_metadata:
+            assert ChildSignature.run_with_metadata(lambda prompt: " result ", {}) == (
+                {"child": "result"},
+                "adapter prompt",
+                "result",
+            )
+        else:
+            assert ChildSignature.run(lambda prompt: " result ", {}) == {"child": "result"}
+
+    @pytest.mark.parametrize("with_metadata", [False, True])
+    def test_instruction_proposal_subclass_inherits_custom_output_extractor(self, with_metadata):
+        class CustomProposal(InstructionProposalSignature):
+            @classmethod
+            def output_extractor(cls, lm_out):
+                return {"new_instruction": f"custom: {lm_out}"}
+
+        class ChildProposal(CustomProposal):
+            pass
+
+        inputs = {"current_instruction_doc": "seed", "dataset_with_feedback": []}
+        if with_metadata:
+            output, prompt, raw_output = ChildProposal.run_with_metadata(lambda prompt: " result ", inputs)
+            assert output == {"new_instruction": "custom: result"}
+            assert prompt == ChildProposal.prompt_renderer(inputs)
+            assert raw_output == "result"
+        else:
+            assert ChildProposal.run(lambda prompt: " result ", inputs) == {"new_instruction": "custom: result"}
