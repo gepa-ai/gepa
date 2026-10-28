@@ -52,6 +52,7 @@ from gepa.proposer.base import CandidateProposal
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
+from gepa.strategies.batch_sampler import BatchSamplerError, ProposalAwareBatchSampler
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
 from gepa.utils import StopperProtocol
@@ -192,6 +193,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
+        if merge_proposer is not None and getattr(reflective_proposer.batch_sampler, "requires_single_parent", False):
+            raise ValueError("This batch sampler supports single-parent mutations, not multi-parent merge")
         self.frontier_type: FrontierType = frontier_type
 
         # Merge scheduling flags (mirroring previous behavior)
@@ -642,6 +645,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         for proposal in proposals:
             if id(proposal) in selected_ids:
                 continue
+            if isinstance(self.reflective_proposer.batch_sampler, ProposalAwareBatchSampler):
+                self.reflective_proposer.batch_sampler.observe_proposal(
+                    iteration=iteration,
+                    proposal=proposal,
+                    accepted=False,
+                    state=state,
+                )
             if any(proposal is d for d in duplicates):
                 self._report_rejected_proposal(
                     proposal,
@@ -659,7 +669,21 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             return False
 
         # 3) Full-valset eval of the selected candidates (one batched, read-only call).
-        valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
+        try:
+            valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
+        except Exception:
+            # Minibatch evidence is complete even if validation fails. None of
+            # these candidates entered the pool; preserve their evaluated
+            # outcomes before the engine either continues or propagates the error.
+            if isinstance(self.reflective_proposer.batch_sampler, ProposalAwareBatchSampler):
+                for proposal in selected:
+                    self.reflective_proposer.batch_sampler.observe_proposal(
+                        iteration=iteration,
+                        proposal=proposal,
+                        accepted=False,
+                        state=state,
+                    )
+            raise
 
         # 4) Add each selected candidate to the pool, in order.
         any_accepted = False
@@ -685,6 +709,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 num_actual_evals=num_actual_evals,
                 iteration_id=candidate_iteration_id,
             )
+            if isinstance(self.reflective_proposer.batch_sampler, ProposalAwareBatchSampler):
+                self.reflective_proposer.batch_sampler.observe_proposal(
+                    iteration=iteration,
+                    proposal=proposal,
+                    accepted=True,
+                    state=state,
+                    candidate_idx=new_idx,
+                )
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
             notify_callbacks(
                 self.callbacks,
@@ -1111,10 +1143,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ErrorEvent(
                         iteration=state.i + 1,
                         exception=e,
-                        will_continue=not self.raise_on_exception and made_progress,
+                        will_continue=not self.raise_on_exception
+                        and made_progress
+                        and not isinstance(e, BatchSamplerError),
                     ),
                 )
-                if self.raise_on_exception or not made_progress:
+                if self.raise_on_exception or not made_progress or isinstance(e, BatchSamplerError):
                     raise e
                 else:
                     continue

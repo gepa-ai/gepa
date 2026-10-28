@@ -37,7 +37,12 @@ from gepa.proposer.reflective_mutation.base import (
     ReflectionComponentSelector,
 )
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM, StatelessReflectionLM
-from gepa.strategies.batch_sampler import BatchSampler
+from gepa.strategies.batch_sampler import (
+    BatchSampler,
+    BatchSamplerError,
+    EvaluationAwareBatchSampler,
+    ReflectionAwareBatchSampler,
+)
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy, SingleMutationSampling
 
@@ -91,6 +96,10 @@ class ReflectiveMutationProposer:
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
         self.sampling_strategy: SamplingStrategy = sampling_strategy or SingleMutationSampling()
+        if getattr(batch_sampler, "requires_sequential_sampling", False) is True and not isinstance(
+            self.sampling_strategy, SingleMutationSampling
+        ):
+            raise ValueError("This batch sampler requires SingleMutationSampling to observe prior outcomes")
         self.reflective_dataset_enricher = reflective_dataset_enricher
 
         self.reflection_prompt_template = reflection_prompt_template
@@ -378,6 +387,15 @@ class ReflectiveMutationProposer:
         )
         state.increment_evals(total_parent_evals)
 
+        if isinstance(self.batch_sampler, EvaluationAwareBatchSampler):
+            for task, key in zip(tasks, task_to_key, strict=True):
+                self.batch_sampler.observe_evaluation(
+                    iteration=i,
+                    task_ids=task.minibatch_ids,
+                    evaluation=key_to_eval[key],
+                    state=state,
+                )
+
         # Update evaluation cache for parents
         if state.evaluation_cache is not None:
             for task, key in zip(tasks, task_to_key, strict=True):
@@ -473,9 +491,19 @@ class ReflectiveMutationProposer:
             )
 
             try:
-                reflective_dataset = self.adapter.make_reflective_dataset(
-                    task.parent_candidate, eval_curr, predictor_names
-                )
+                if isinstance(self.batch_sampler, ReflectionAwareBatchSampler):
+                    reflective_dataset = self.batch_sampler.build_reflective_dataset(
+                        candidate=task.parent_candidate,
+                        task_ids=task.minibatch_ids,
+                        evaluation=eval_curr,
+                        components_to_update=predictor_names,
+                        make_reflective_dataset=self.adapter.make_reflective_dataset,
+                        state=state,
+                    )
+                else:
+                    reflective_dataset = self.adapter.make_reflective_dataset(
+                        task.parent_candidate, eval_curr, predictor_names
+                    )
                 if self.reflective_dataset_enricher is not None:
                     reflective_dataset = self.reflective_dataset_enricher(
                         candidate=task.parent_candidate,
@@ -497,6 +525,27 @@ class ReflectiveMutationProposer:
                         dataset=reflective_dataset_concrete,
                     ),
                 )
+                if isinstance(self.batch_sampler, ReflectionAwareBatchSampler):
+                    # A curator can omit tasks/components with no usable material.
+                    # Custom/adapter proposers must not receive empty reflection jobs.
+                    predictor_names = [name for name in predictor_names if reflective_dataset_concrete.get(name)]
+                    if not predictor_names:
+                        self.logger.log(
+                            f"Iteration {i}: No reflection material for parent {task.parent_idx}. Skipping."
+                        )
+                        notify_callbacks(
+                            self.callbacks,
+                            "on_evaluation_skipped",
+                            EvaluationSkippedEvent(
+                                iteration=i,
+                                candidate_idx=task.parent_idx,
+                                reason="no_reflection_material",
+                                scores=eval_curr.scores,
+                                is_seed_candidate=task.parent_idx == 0,
+                            ),
+                        )
+                        prepared.append(None)
+                        continue
                 notify_callbacks(
                     self.callbacks,
                     "on_proposal_start",
@@ -507,6 +556,8 @@ class ReflectiveMutationProposer:
                         reflective_dataset=reflective_dataset_concrete,
                     ),
                 )
+            except BatchSamplerError:
+                raise
             except Exception as e:
                 self.logger.log(f"Iteration {i}: Exception building reflective dataset: {e}")
                 self.logger.log(traceback.format_exc())

@@ -9,7 +9,7 @@ from typing import Generic, Protocol
 from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState
 from gepa.proposer.reflective_mutation.base import CandidateSelector
-from gepa.strategies.batch_sampler import BatchSampler
+from gepa.strategies.batch_sampler import BatchSampler, CandidateAwareBatchSampler
 
 
 @dataclass
@@ -57,7 +57,10 @@ class SingleMutationSampling(SamplingStrategy):
         trainset: DataLoader,
     ) -> list[ProposalTask]:
         parent_idx = candidate_selector.select_candidate_idx(state)
-        mb_ids = batch_sampler.next_minibatch_ids(trainset, state)
+        if isinstance(batch_sampler, CandidateAwareBatchSampler):
+            mb_ids = batch_sampler.next_minibatch_ids_for_candidate(trainset, state, candidate_idx=parent_idx)
+        else:
+            mb_ids = batch_sampler.next_minibatch_ids(trainset, state)
         return [ProposalTask(parent_idx, state.program_candidates[parent_idx], mb_ids, trainset.fetch(mb_ids))]
 
 

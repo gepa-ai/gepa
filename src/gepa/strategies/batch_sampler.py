@@ -3,11 +3,13 @@
 
 import random
 from collections import Counter
-from typing import Protocol
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Protocol, runtime_checkable
 
-from gepa.core.adapter import DataInst
+from gepa.core.adapter import DataInst, EvaluationBatch
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState
+from gepa.proposer.base import CandidateProposal
 
 
 class BatchSampler(Protocol[DataId, DataInst]):
@@ -21,6 +23,88 @@ class BatchSampler(Protocol[DataId, DataInst]):
     """
 
     def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], state: GEPAState) -> list[DataId]: ...
+
+
+class BatchSamplerError(ValueError):
+    """Fatal sampling/evidence contract violation; continuing could corrupt history."""
+
+
+@runtime_checkable
+class CandidateAwareBatchSampler(Protocol[DataId, DataInst]):
+    """Optional sampling interface for state scoped to the explicitly selected parent.
+
+    Ordinary samplers continue to receive ``next_minibatch_ids`` unchanged.
+    """
+
+    def next_minibatch_ids_for_candidate(
+        self, loader: DataLoader[DataId, DataInst], state: GEPAState, *, candidate_idx: int
+    ) -> list[DataId]: ...
+
+
+@runtime_checkable
+class EvaluationAwareBatchSampler(Protocol):
+    """Optional hook receiving each sampled parent's evaluation, even without a proposal.
+
+    Implementations may set ``requires_sequential_sampling = True`` when each
+    sampling decision must see all previous evaluation/proposal outcomes.
+    """
+
+    def observe_evaluation(
+        self,
+        *,
+        iteration: int,
+        task_ids: Sequence[DataId],
+        evaluation: EvaluationBatch,
+        state: GEPAState,
+    ) -> None: ...
+
+
+@runtime_checkable
+class ProposalAwareBatchSampler(Protocol):
+    """Optional hook receiving evaluated proposals and their final selection outcome.
+
+    ``accepted`` means the proposal was selected and added to the candidate pool,
+    not merely that its minibatch score passed the acceptance criterion.
+    ``candidate_idx`` identifies the newly registered child, or is None on rejection.
+    """
+
+    def observe_proposal(
+        self,
+        *,
+        iteration: int,
+        proposal: CandidateProposal,
+        accepted: bool,
+        state: GEPAState,
+        candidate_idx: int | None = None,
+    ) -> None: ...
+
+
+ReflectiveDatasetBuilder = Callable[
+    [dict[str, str], EvaluationBatch, list[str]], Mapping[str, Sequence[Mapping[str, Any]]]
+]
+
+
+@runtime_checkable
+class ReflectionAwareBatchSampler(Protocol):
+    """Optional reflection assembly before the user's reflective-dataset enricher.
+
+    The sampler receives the original adapter builder and the aligned evaluation
+    and task IDs. It owns any source tracking and enrichment; adapters need no
+    additional metadata or interface changes. Ordinary samplers keep the
+    original whole-minibatch builder call. Components without records are not
+    proposed; if all selected components are empty, the proposal is skipped.
+    """
+
+    def build_reflective_dataset(
+        self,
+        *,
+        candidate: dict[str, str],
+        task_ids: Sequence[DataId],
+        evaluation: EvaluationBatch,
+        components_to_update: list[str],
+        make_reflective_dataset: ReflectiveDatasetBuilder,
+        state: GEPAState,
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]: ...
 
 
 class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
