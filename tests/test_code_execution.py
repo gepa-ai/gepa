@@ -29,8 +29,6 @@ def test_timeout_kills_orphan_after_wrapper_has_exited(tmp_path, monkeypatch, ps
         return process
 
     monkeypatch.setattr("gepa.utils.code_execution.subprocess.Popen", launch_and_reap_wrapper)
-    if not psutil_available:
-        monkeypatch.setitem(sys.modules, "psutil", None)
     code = f"""
 import subprocess, sys
 pid = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]).pid
@@ -39,7 +37,12 @@ with open({str(marker)!r}, "w") as f:
 """
 
     try:
-        result = execute_code(code, timeout=0.2, mode=ExecutionMode.SUBPROCESS, kill_child_processes=True)
+        # Restore the real module before assertions/cleanup: Linux psutil
+        # resolves PROCFS_PATH through sys.modules even on existing handles.
+        with monkeypatch.context() as import_patch:
+            if not psutil_available:
+                import_patch.setitem(sys.modules, "psutil", None)
+            result = execute_code(code, timeout=0.2, mode=ExecutionMode.SUBPROCESS, kill_child_processes=True)
 
         assert not result.success
         assert "Timeout" in result.error
