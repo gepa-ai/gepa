@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import pickle
+
 import pytest
 
 from gepa.lm import LMOutput
@@ -8,11 +10,60 @@ from gepa.strategies.instruction_proposal import (
     InstructionProposalError,
     InstructionProposalSignature,
     parse_proposal,
+    run_proposal,
 )
 
 
 class TestInstructionProposalSignature:
     """Test InstructionProposalSignature functions."""
+
+    @pytest.mark.parametrize(
+        "lm_output",
+        [
+            "  New instruction  ",
+            "```text\nNew instruction\n```",
+            "```text\nNew instruction",
+            "New instruction\n```",
+            "~~~text\nNew instruction\n~~~",
+        ],
+    )
+    def test_provider_output_becomes_plain_candidate_text(self, lm_output):
+        result = InstructionProposalSignature.output_extractor(LMOutput(lm_output, finish_reason="stop"))
+
+        assert result["new_instruction"] == "New instruction"
+        assert type(result["new_instruction"]) is str
+
+    def test_candidate_pickle_does_not_require_lm_output_class(self, monkeypatch):
+        candidate = InstructionProposalSignature.output_extractor(LMOutput("New instruction", finish_reason="stop"))
+        checkpoint = pickle.dumps(candidate)
+
+        # Older GEPA versions do not define the provider response wrapper.
+        monkeypatch.delattr("gepa.lm.LMOutput")
+
+        assert pickle.loads(checkpoint) == {"new_instruction": "New instruction"}
+
+    @pytest.mark.parametrize(
+        "lm_output,expected_text",
+        [
+            (LMOutput("New instruction", finish_reason="stop"), "New instruction"),
+            (LMOutput("New instruction", finish_reason="length"), None),
+            (LMOutput("```\nNew instruction\n```", finish_reason="length"), "New instruction"),
+        ],
+    )
+    def test_candidate_normalization_preserves_raw_termination_metadata(self, lm_output, expected_text):
+        result, _, raw_output = run_proposal(
+            InstructionProposalSignature,
+            lambda prompt: lm_output,
+            {"current_instruction_doc": "Old instruction", "dataset_with_feedback": []},
+        )
+
+        assert result.text == expected_text
+        if result.text is not None:
+            assert type(result.text) is str
+        else:
+            assert result.error is not None and "incomplete" in result.error
+        assert isinstance(raw_output, LMOutput)
+        assert raw_output.finish_reason == lm_output.finish_reason
 
     @pytest.mark.parametrize(
         "lm_output,expected_instruction",
