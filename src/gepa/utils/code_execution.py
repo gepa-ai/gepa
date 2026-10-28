@@ -356,9 +356,7 @@ def _execute_in_process(
     else:
         # Capture all variables except Python dunder variables (e.g., __name__, __builtins__)
         # Note: User-defined private variables (single _) are preserved for backwards compatibility
-        variables = {
-            k: v for k, v in context.items() if not k.startswith("__")
-        }
+        variables = {k: v for k, v in context.items() if not k.startswith("__")}
 
     # Always include __return__ if it exists
     if "__return__" in context:
@@ -396,6 +394,7 @@ def _execute_subprocess(
         args_path = args_file.name
         if _USE_CLOUDPICKLE:
             import cloudpickle
+
             cloudpickle.dump(
                 {
                     "code": code,  # Pass code through pickle to avoid escaping issues
@@ -515,11 +514,14 @@ with open({results_path!r}, 'wb') as f:
         if os.path.exists(venv_python):
             python_executable = venv_python
 
-        # Run subprocess
+        # An isolated POSIX group also covers descendants that get reparented
+        # or are spawned after the best-effort psutil snapshot below.
+        use_process_group = kill_child_processes and os.name == "posix"
         process = subprocess.Popen(
             [python_executable, script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            start_new_session=use_process_group,
         )
 
         try:
@@ -534,6 +536,7 @@ with open({results_path!r}, 'wb') as f:
                 try:
                     if _USE_CLOUDPICKLE:
                         import cloudpickle
+
                         with open(results_path, "rb") as f:
                             output = cloudpickle.load(f)
                     else:
@@ -589,6 +592,12 @@ with open({results_path!r}, 'wb') as f:
                         children = []
                 except ImportError:
                     children = []
+
+            if os.name == "posix" and use_process_group:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass  # The isolated group has already exited.
 
             process.kill()
             process.wait()
