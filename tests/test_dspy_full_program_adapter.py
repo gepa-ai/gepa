@@ -16,7 +16,7 @@ import pytest
 
 pytest.importorskip("dspy", reason="dspy is not installed — skipping DspyAdapter tests")
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import dspy
 from dspy.primitives import Example
@@ -638,6 +638,11 @@ class CumulativeProgram(dspy.Module):
             tools=[calculator],
             max_iters=4,
         )
+        # Trace selection does not depend on native CoT reasoning or its wire name.
+        # Keep the scripted rationale explicitly textual across DSPy versions.
+        self.react.extract.predict.signature = self.react.extract.predict.signature.with_updated_fields(
+            "reasoning", type_=str
+        )
 
     def forward(self, question):
         return self.react(question=question)
@@ -742,7 +747,7 @@ class TestLiveDspyTraceSelection:
             [
                 {"next_thought": "add", "next_tool_name": "calculator", "next_tool_args": {"x": "2+2"}},
                 {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"reasoning": "2+2=4", "plan": "2+2=4", "answer": "4"},
+                {"reasoning": "2+2=4", "answer": "4"},
             ],
         )
 
@@ -767,7 +772,7 @@ class TestLiveDspyTraceSelection:
                 {"next_thought": "add", "next_tool_name": "calculator", "next_tool_args": {"x": "2+2"}},
                 {"next_thought": "check", "next_tool_name": "calculator", "next_tool_args": {"x": "4"}},
                 {"next_thought": "done", "next_tool_name": "finish", "next_tool_args": {}},
-                {"reasoning": "2+2=4", "plan": "2+2=4", "answer": "4"},
+                {"reasoning": "2+2=4", "answer": "4"},
             ],
         )
 
@@ -919,6 +924,53 @@ class CrashOnSomeProgram(dspy.Module):
 
 program = CrashOnSomeProgram()
 """
+
+
+@pytest.mark.parametrize(
+    ("candidate_src", "answers", "expected_modules"),
+    [
+        (
+            'import dspy\nprogram = dspy.Predict("question -> answer")',
+            [{"unexpected": "malformed answer"}] * 4,
+            ["self"],
+        ),
+        (
+            'import dspy\nprogram = dspy.ChainOfThought("question -> answer")',
+            [{"answer": "missing rationale"}] * 4,
+            ["predict"],
+        ),
+        (
+            MATH_CANDIDATE,
+            [{"reasoning": "2+2=4", "answer": "4"}] + [{"unexpected": "malformed answer"}] * 4,
+            ["reasoner", "extractor"],
+        ),
+    ],
+    ids=["predict", "chain-of-thought", "partial-program"],
+)
+def test_failed_program_output_reaches_reflection(candidate_src, answers, expected_modules):
+    """A real parse failure can be both a program output and a trace output."""
+    lm = DummyLM(answers)
+    adapter = _make_adapter(task_lm=lm)
+    candidate = {"program": candidate_src}
+    batch = [Example(question="What is 2+2?").with_inputs("question")]
+
+    with dspy.context(lm=lm):
+        eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
+        assert eval_batch.scores == [0.0]
+        failed = eval_batch.outputs[0]
+        assert isinstance(failed, FailedPrediction)
+        reflective = adapter.make_reflective_dataset(candidate, eval_batch, ["program"])
+
+    assert len(reflective["program"]) == 1
+    example = reflective["program"][0]
+    assert example["Program Inputs"] == {"question": "What is 2+2?"}
+    assert failed.completion_text in example["Program Outputs"]
+    assert "Couldn't parse the output" in example["Program Outputs"]
+    trace = example["Program Trace"]
+    assert [entry["Called Module"] for entry in trace] == expected_modules
+    assert trace[-1]["Generated Outputs"] == example["Program Outputs"]
+    if len(trace) > 1:
+        assert trace[0]["Generated Outputs"] == {"reasoning": "2+2=4", "answer": "4"}
 
 
 class TestEvaluateKeepsBatchAlignment:

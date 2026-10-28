@@ -53,10 +53,7 @@ class RecordingProposer:
             self._proposal_index += 1
             proposal_index = self._proposal_index
             self.calls.append((candidate, reflective_dataset, components_to_update))
-        return {
-            name: f"{candidate[name]} Compatibility proposal {proposal_index}."
-            for name in components_to_update
-        }
+        return {name: f"{candidate[name]} Compatibility proposal {proposal_index}." for name in components_to_update}
 
 
 def feedback_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
@@ -75,8 +72,10 @@ def single_example():
     return dspy.Example(question="What is 2 + 2?", answer="4").with_inputs("question")
 
 
-def task_lm(num_responses=200):
-    return DummyLM([{"answer": "four", "category": "math"}] * num_responses)
+def task_lm(num_responses=200, *, two_stage=False):
+    # XML rejects extra fields, so script only each predictor's output fields.
+    answers = [{"category": "math"}, {"answer": "four"}] if two_stage else [{"answer": "four"}]
+    return DummyLM(answers * num_responses)
 
 
 def test_dspy_imported_contract_is_available():
@@ -103,9 +102,7 @@ def test_dspy_imported_contract_is_available():
         "seed",
     } <= optimize_parameters
 
-    assert {"outputs", "scores", "trajectories", "objective_scores"} <= set(
-        EvaluationBatch.__dataclass_fields__
-    )
+    assert {"outputs", "scores", "trajectories", "objective_scores"} <= set(EvaluationBatch.__dataclass_fields__)
     assert {
         "candidates",
         "parents",
@@ -152,7 +149,7 @@ def test_custom_proposer_selector_and_metric_trace_contracts():
         return list(candidate)
 
     trainset = [single_example()]
-    with dspy.context(lm=task_lm()):
+    with dspy.context(lm=task_lm(two_stage=True)):
         compiled = dspy.GEPA(
             metric=metric,
             instruction_proposer=proposer,
@@ -209,8 +206,7 @@ def test_multi_proposal_optimization_uses_dspy_batch_evaluate(monkeypatch):
 
     monkeypatch.setattr(DspyAdapter, "batch_evaluate", recording_batch_evaluate)
     trainset = [
-        dspy.Example(question=f"Question {index}", answer="answer").with_inputs("question")
-        for index in range(2)
+        dspy.Example(question=f"Question {index}", answer="answer").with_inputs("question") for index in range(2)
     ]
 
     with dspy.context(lm=task_lm()):
