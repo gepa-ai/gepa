@@ -9,6 +9,49 @@ from gepa.gepa_launcher import EngineConfig, GEPAConfig, ReflectionConfig, optim
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 
 
+class ChangingIdLoader:
+    def __init__(self, ids):
+        self.ids = ids
+
+    def all_ids(self):
+        return self.ids
+
+    def __len__(self):
+        return len(self.ids)
+
+    def fetch(self, ids):
+        items = {i: f"example {i}" for i in self.ids}
+        return [items[i] for i in ids]
+
+
+@pytest.mark.parametrize("next_iteration", [0, 1])
+@pytest.mark.parametrize("new_ids", [[10, 11, 12, 13], [0, 1, 2, 10]])
+def test_epoch_sampler_refreshes_replaced_ids_without_size_change(next_iteration, new_ids):
+    loader = ChangingIdLoader([0, 1, 2, 3])
+    sampler = EpochShuffledBatchSampler(minibatch_size=2)
+    state = SimpleNamespace(i=0)
+    sampler.next_minibatch_ids(loader, state)
+
+    loader.ids = new_ids
+    state.i = next_iteration
+    batch = sampler.next_minibatch_ids(loader, state)
+
+    assert len(batch) == 2
+    assert set(batch).issubset(loader.all_ids())
+    assert len(loader.fetch(batch)) == 2
+
+
+def test_epoch_sampler_keeps_shuffle_when_only_loader_order_changes():
+    loader = ChangingIdLoader([0, 1, 2, 3])
+    control_loader = ChangingIdLoader([0, 1, 2, 3])
+    sampler = EpochShuffledBatchSampler(minibatch_size=2)
+    control = EpochShuffledBatchSampler(minibatch_size=2)
+    for i in range(5):
+        state = SimpleNamespace(i=i)
+        assert sampler.next_minibatch_ids(loader, state) == control.next_minibatch_ids(control_loader, state)
+        loader.ids = list(reversed(loader.ids))
+
+
 @pytest.mark.parametrize("minibatch_size", [0, -1, -3])
 def test_epoch_sampler_rejects_nonpositive_minibatch_size(minibatch_size):
     with pytest.raises(ValueError, match="minibatch_size must be positive"):
