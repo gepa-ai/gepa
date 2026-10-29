@@ -76,11 +76,13 @@ def find_common_ancestor_pair(
     max_attempts: int = 10,
 ) -> tuple[int, int, int] | None:
     def get_ancestors(node: int, ancestors_found: set[int]) -> list[int]:
-        parents = parent_list[node]
-        for parent in parents:
-            if parent is not None and parent not in ancestors_found:
-                ancestors_found.add(parent)
-                get_ancestors(parent, ancestors_found)
+        # Long mutation lineages can exceed Python's recursion limit.
+        pending = [node]
+        while pending:
+            for parent in parent_list[pending.pop()]:
+                if parent is not None and parent not in ancestors_found:
+                    ancestors_found.add(parent)
+                    pending.append(parent)
 
         return list(ancestors_found)
 
