@@ -745,9 +745,17 @@ class ReflectionConfig:
     targeted improvements on that subset.  Over iterations, all examples get
     attention, and the Pareto frontier preserves specialized gains across
     iterations rather than averaging them away.
+
+    ``skip_perfect_score`` (default ``True``) skips reflection for a parent
+    whose minibatch scores all reach ``perfect_score``, since there is nothing
+    left to fix on those examples. If your scores have a known upper bound,
+    set ``perfect_score`` to it. When ``perfect_score`` is ``None``, GEPA
+    assumes ``1.0``, logs that assumption, and turns skipping off for the rest
+    of the run as soon as any score above ``1.0`` appears. For unbounded
+    scores you can also set ``skip_perfect_score=False``.
     """
 
-    skip_perfect_score: bool = False
+    skip_perfect_score: bool = True
     perfect_score: float | None = None
     # Advanced: a ReflectionLM implementation that owns how reflective mutation
     # calls the reflection model (sessions, ComBEE-style aggregation, coding
@@ -1687,6 +1695,18 @@ def optimize_anything(
         if callable(_bind_lm_kwargs):
             _bind_lm_kwargs(config.reflection.reflection_lm_kwargs)
 
+    # Without a known upper bound, assume scores top out at 1.0 for skipping
+    # (the proposer turns skipping off if a higher score shows up).
+    perfect_score = config.reflection.perfect_score
+    perfect_score_assumed = config.reflection.skip_perfect_score and perfect_score is None
+    if perfect_score_assumed:
+        perfect_score = 1.0
+        config.tracking.logger.log(
+            "skip_perfect_score: assuming a perfect score of 1.0; reflection is skipped when every minibatch "
+            "example reaches it. Set ReflectionConfig(perfect_score=...) for a different upper bound, or "
+            "skip_perfect_score=False if scores are unbounded."
+        )
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
         trainset=train_loader,
@@ -1694,8 +1714,9 @@ def optimize_anything(
         candidate_selector=candidate_selector,
         module_selector=module_selector_instance,
         batch_sampler=config.reflection.batch_sampler,
-        perfect_score=config.reflection.perfect_score,
+        perfect_score=perfect_score,
         skip_perfect_score=config.reflection.skip_perfect_score,
+        perfect_score_assumed=perfect_score_assumed,
         experiment_tracker=experiment_tracker,
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
@@ -1738,7 +1759,7 @@ def optimize_anything(
         run_dir=config.engine.run_dir,
         valset=val_loader,
         seed_candidate=seed_candidate,
-        perfect_score=config.reflection.perfect_score,
+        perfect_score=perfect_score,
         seed=config.engine.seed,
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
