@@ -51,6 +51,46 @@ class GepaEngine:
         # overlays (budget, run_dir) are applied in run().
         self.gepa_config = GEPAConfig(**config.engine_config)
 
+        # Git-commit candidate mode: candidates are commit SHAs. Wire the pool
+        # into a GitAgentProposer and turn off text-merge (SHAs can't be merged
+        # by component text).
+        self.git_commit = config.git_commit
+        if self.git_commit is not None:
+            self._wire_git_commit_mode()
+
+    def _wire_git_commit_mode(self) -> None:
+        """Configure the GEPA loop for git-commit candidates.
+
+        Merge is disabled (it compares component text for equality, meaningless
+        across SHAs). When the caller supplied a coding-agent callable via
+        ``git_commit['agent']`` and did not already set a custom proposer, build
+        the default :class:`~gepa.oa.proposers.git_agent.GitAgentProposer`.
+        """
+        assert self.git_commit is not None
+        pool = self.git_commit.get("worktree_pool")
+        manifest_globs = self.git_commit.get("manifest_globs")
+        if pool is None or not manifest_globs:
+            raise ValueError("config.git_commit requires 'worktree_pool' and 'manifest_globs'")
+        # Text-merge is meaningless for SHA candidates.
+        self.gepa_config.merge = None
+
+        reflection = self.gepa_config.reflection
+        if reflection.custom_candidate_proposer is not None:
+            # Caller supplied their own proposer (e.g. a GitAgentProposer with a
+            # real coding CLI) — respect it.
+            return
+        agent = self.git_commit.get("agent")
+        if agent is None:
+            raise ValueError(
+                "config.git_commit has no 'agent' and reflection.custom_candidate_proposer "
+                "is unset: git-commit mode needs a way to propose commits. Supply either."
+            )
+        from gepa.oa.proposers.git_agent import GitAgentProposer
+
+        reflection.custom_candidate_proposer = GitAgentProposer(
+            agent=agent, pool=pool, manifest_globs=list(manifest_globs)
+        )
+
     def run(self, task: Task, server: EvalServer) -> Result:
         from gepa.gepa_launcher import optimize_anything
 
