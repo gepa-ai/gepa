@@ -571,7 +571,7 @@ optimized = optimizer.compile(program, trainset=train_data, valset=val_data)
 
 Without a separate valset, GEPA will tend to overfit the training data. Follow the standard 80/20 train/val split.
 
-**2. Prompt-level overfitting** — the optimized prompt contains specific keywords, phrases, or examples from your training data. This improves training scores but fails on new inputs. Fix this by injecting anti-overfit constraints into your reflective dataset — see [GEPA copied specific keywords from my training examples — how do I prevent this?](#gepa-copied-specific-keywords-or-phrases-from-my-training-examples-into-the-prompt----how-do-i-prevent-this)
+**2. Prompt-level overfitting** — the optimized prompt contains specific keywords, phrases, or examples from your training data. This improves training scores but fails on new inputs. Fix this by injecting anti-overfit constraints into your reflective dataset — see [GEPA copied specific keywords from my training examples — how do I prevent this?](#gepa-copied-specific-keywords-or-phrases-from-my-training-examples-into-the-prompt-how-do-i-prevent-this)
 
 ### How do I use GEPA for agentic systems with expensive rollouts?
 
