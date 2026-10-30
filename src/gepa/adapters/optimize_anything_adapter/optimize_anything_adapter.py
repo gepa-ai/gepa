@@ -154,8 +154,7 @@ class BatchEvaluatorWrapper:
                     # Mirror the evaluator path's loudness instead of silently
                     # discarding user diagnostics.
                     raise TypeError(
-                        f"batch_evaluator result {idx}: side_info must be a dict or None, "
-                        f"got {type(si_raw).__name__}"
+                        f"batch_evaluator result {idx}: side_info must be a dict or None, got {type(si_raw).__name__}"
                     )
                 # Defensive copy (mirror of EvaluatorWrapper): the user may
                 # retain and mutate their dict; the cache, best-evals history,
@@ -397,6 +396,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
         # outputs = list of (score, best_candidate, side_info) tuples
         outputs = [out for _, out, _ in eval_output]
+        # The refiner may have swapped in a different candidate than the one
+        # passed in; surface it so callers can store the candidate that
+        # actually produced this score, instead of assuming it's `candidate`.
+        evaluated_candidates = [best_candidate for _, best_candidate, _ in outputs]
         objective_scores = [self._extract_objective_scores(candidate, si) for si in side_infos]
 
         # Count actual evaluator invocations from the attempt history recorded
@@ -414,6 +417,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
             num_metric_calls=num_metric_calls,
+            evaluated_candidates=evaluated_candidates,
         )
 
     def batch_evaluate(
