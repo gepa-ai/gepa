@@ -123,6 +123,7 @@ Strategies for various aspects of the optimization process.
 
 - [`BatchSampler`](strategies/BatchSampler.md)
 - [`EpochShuffledBatchSampler`](strategies/EpochShuffledBatchSampler.md)
+- [`DynamicBatchSampler`](strategies/DynamicBatchSampler.md)
 - [`CandidateSelector`](strategies/CandidateSelector.md)
 - [`ParetoCandidateSelector`](strategies/ParetoCandidateSelector.md)
 - [`CurrentBestCandidateSelector`](strategies/CurrentBestCandidateSelector.md)
