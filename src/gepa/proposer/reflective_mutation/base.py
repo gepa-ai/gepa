@@ -78,16 +78,24 @@ class Signature:
         raise NotImplementedError
 
     @classmethod
+    def _has_legacy_hook(cls, name: str) -> bool:
+        """Check the resolved hook's owner, including inherited overrides."""
+        for base in cls.__mro__:
+            if name in base.__dict__:
+                return base is not Signature
+        return False
+
+    @classmethod
     def _render(cls, input_dict: Mapping[str, Any]) -> str | list[dict[str, Any]]:
-        # An explicitly overridden legacy hook wins. This makes adapters an
+        # A legacy override, including an inherited one, wins. This makes adapters an
         # additive seam rather than a breaking change for existing subclasses.
-        if cls.adapter is None or "prompt_renderer" in cls.__dict__:
+        if cls.adapter is None or cls._has_legacy_hook("prompt_renderer"):
             return cls.prompt_renderer(input_dict)
         return cls.adapter.format(cls, input_dict)
 
     @classmethod
     def _parse(cls, lm_out: str) -> dict[str, str]:
-        if cls.adapter is None or "output_extractor" in cls.__dict__:
+        if cls.adapter is None or cls._has_legacy_hook("output_extractor"):
             return cls.output_extractor(lm_out)
         return cls.adapter.parse(cls, lm_out).require()
 
