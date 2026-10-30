@@ -21,7 +21,7 @@ GEPA's `langchain` extra contains only `langchain` + `langchain-core`. To run th
    missing package if you skip this step.
 
 3. Export your API key in the shell. The default models are `openai:gpt-4o-mini`
-   (task) and `openai:gpt-5-mini` (reflection), so:
+   (task) and `openai:gpt-6.1-sol` (reflection), so:
 
    ```bash
    export OPENAI_API_KEY=sk-...
@@ -71,7 +71,7 @@ is a top-level `reasoning` kwarg:
 ```bash
 uv run python examples/langchain_adapter/pair_sum_product.py \
   --task-model openrouter:openai/gpt-4o-mini \
-  --reflection-model openrouter:openai/gpt-5-mini \
+  --reflection-model openrouter:openai/gpt-6.1-sol \
   --reflection-model-kwargs '{"reasoning":{"effort":"medium"}}'
 ```
 

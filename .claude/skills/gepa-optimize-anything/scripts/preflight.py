@@ -3,7 +3,7 @@
 
     python preflight.py                      # checks gepa + reflection-LM creds
     python preflight.py --engine autoresearch  # also checks the `claude` CLI + jq
-    GEPA_REFLECTION_LM=anthropic/claude-sonnet-4-6 python preflight.py --test-lm
+    GEPA_REFLECTION_LM=anthropic/claude-sonnet-5-5 python preflight.py --test-lm
 
 Exit code 0 = all good; non-zero = at least one blocker.
 """

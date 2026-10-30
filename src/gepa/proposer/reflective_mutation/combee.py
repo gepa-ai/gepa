@@ -26,7 +26,7 @@ Usage::
 
     result = gepa.optimize(
         ...,
-        reflection_strategy=ComBEEReflectionLM("openai/gpt-5"),
+        reflection_strategy=ComBEEReflectionLM("openai/gpt-6.1-sol"),
         reflection_minibatch_size=9,
     )
 
