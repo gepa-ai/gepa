@@ -60,6 +60,9 @@ print("Best prompt:", result.best_candidate['system_prompt'])
 print("Best score:", result.val_aggregate_scores[result.best_idx])
 ```
 
+!!! tip "Model selection"
+    Choose `task_lm` to match your intended execution environment and select `reflection_lm` based on the diagnostic quality required by your optimization task. See [FAQ: Choosing reflection vs. task models](faq.md#should-reflection_lm-and-task_lm-be-the-same-model).
+
 ### Option 2: Using optimize_anything
 
 The `optimize_anything` API can optimize any text artifact — code, prompts, agent architectures, configurations, SVG graphics — not just prompts. You provide an evaluator that scores candidates and returns diagnostic feedback (Actionable Side Information), and the system handles the search.
