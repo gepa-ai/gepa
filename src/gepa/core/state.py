@@ -522,7 +522,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             components: dict[str, str] | None,
             val_subscores: dict[DataId, float] | None,
         ) -> None:
-            self._atomic_write_json(run_dir, f"{base}/meta.json", meta)
             if components is not None:
                 self._save_components_dir(run_dir, base, components)
             if val_subscores is not None:
@@ -531,6 +530,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     f"{base}/val_scores.json",
                     {str(k): v for k, v in val_subscores.items()},
                 )
+            # meta.json marks this directory complete; leave failed exports retryable.
+            self._atomic_write_json(run_dir, f"{base}/meta.json", meta)
 
         # Seed candidate (candidate_idx 0).
         seed_base = f"iterations/{SEED_ITERATION_ID}"
