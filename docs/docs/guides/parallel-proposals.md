@@ -61,7 +61,7 @@ result = gepa.optimize(
     trainset=trainset,
     valset=valset,
     task_lm="openai/gpt-4.1-mini",
-    reflection_lm="openai/gpt-5",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=600,
     sampling_strategy=PxNSampling(p=2, n=2),
     selection_strategy=TopKImprovements(k=2),

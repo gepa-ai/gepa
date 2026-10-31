@@ -89,7 +89,7 @@ pip install "gepa[full]"   # [full] pulls cloudpickle — needed to pickle closu
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
 # Proposer LLM: the gepa backend's reflection LM defaults to "openai/gpt-5.1" (a LiteLLM id) — set
-# that provider's key (OPENAI_API_KEY), or pass your own id (e.g. "anthropic/claude-sonnet-4-6" with
+# that provider's key (OPENAI_API_KEY), or pass your own id (e.g. "anthropic/claude-sonnet-5-5" with
 # ANTHROPIC_API_KEY, or a Bedrock ARN with AWS creds). You can also pass any callable implementing
 # GEPA's LM protocol — a self-hosted / custom inference engine — instead of a model-id string.
 # Agentic backends (autoresearch, meta_harness) additionally need the `claude` CLI on PATH (plus
@@ -197,7 +197,7 @@ result = optimize_anything(
         engine_config={              # gepa backend: a GEPAConfig-shaped dict, validated strictly —
             "reflection": {          #   an unknown key raises TypeError immediately (fail fast)
                 # a LiteLLM id (set the provider key) OR any callable implementing the LM protocol
-                "reflection_lm": "anthropic/claude-sonnet-4-6",
+                "reflection_lm": "anthropic/claude-sonnet-5-5",
                 "reflection_minibatch_size": 5,
             },
             "engine": {"max_workers": 32, "seed": 0},  # seed = reproducibility

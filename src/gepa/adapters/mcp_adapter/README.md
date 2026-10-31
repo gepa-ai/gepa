@@ -80,7 +80,7 @@ result = gepa.optimize(
     trainset=dataset[:20],
     valset=dataset[20:],
     adapter=adapter,
-    reflection_lm="ollama/llama3.1:8b",  # Larger local model for reflection replace with our choice 
+    reflection_lm="ollama/qwen3.5:9b",  # Larger local model for reflection replace with our choice 
     max_metric_calls=150,
 )
 
@@ -93,7 +93,7 @@ print("Optimized tool description:", result.best_candidate["tool_description"])
 Install Ollama: https://ollama.com
 
 # Pull models
-ollama pull llama3.1:8b
+ollama pull qwen3.5:9b
 ollama pull llama3.2:1b
 ```
 
@@ -113,7 +113,7 @@ result = gepa.optimize(
     trainset=dataset[:20],
     valset=dataset[20:],
     adapter=adapter,
-    reflection_lm="openai/gpt-5",  # OpenAI for reflection, replace with yout model choice 
+    reflection_lm="openai/gpt-6.1-sol",  # OpenAI for reflection, replace with yout model choice 
     max_metric_calls=150,
 )
 ```
@@ -153,7 +153,7 @@ result = gepa.optimize(
     trainset=dataset[:20],
     valset=dataset[20:],
     adapter=adapter,
-    reflection_lm="openai/gpt-4o",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=150,
 )
 ```

@@ -34,7 +34,7 @@ result = gepa.optimize(
     trainset=trainset,
     valset=valset,
     adapter=adapter,
-    reflection_lm="openai/gpt-5",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=200,
     callbacks=[MyCallback()],
 )
