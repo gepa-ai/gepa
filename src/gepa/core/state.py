@@ -644,9 +644,15 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         used: set[str] = set()
         for i, (name, text) in enumerate(components.items()):
             safe = _sanitize_component_name(name)
-            if not safe or safe in used:
-                safe = f"component_{i:02d}"
-            used.add(safe)
+            if not safe or safe.casefold() in used:
+                stem = f"component_{i:02d}"
+                safe = stem
+                suffix = 1
+                while safe.casefold() in used:
+                    safe = f"{stem}_{suffix}"
+                    suffix += 1
+            # Exported files must also be distinct on case-insensitive filesystems.
+            used.add(safe.casefold())
             index_map[name] = f"{safe}.txt"
             self._atomic_write_text(run_dir, f"{base}/components/{safe}.txt", text)
         self._atomic_write_json(run_dir, f"{base}/components/_index.json", index_map)
