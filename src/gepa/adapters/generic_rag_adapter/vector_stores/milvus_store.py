@@ -183,8 +183,15 @@ class MilvusVectorStore(VectorStoreInterface):
             }
 
     def supports_hybrid_search(self) -> bool:
-        """Milvus supports hybrid search through dense + sparse vectors."""
-        return True
+        """Report no hybrid-search support.
+
+        ``hybrid_search`` below is currently a vector-similarity fallback that
+        ignores ``alpha`` and does not use sparse/keyword vectors, so advertising
+        support would let callers believe ``hybrid_alpha`` is being honored when
+        it is not. Return ``False`` until dense+sparse blending is implemented;
+        the pipeline then transparently uses ``similarity_search``.
+        """
+        return False
 
     def hybrid_search(
         self,
@@ -198,6 +205,7 @@ class MilvusVectorStore(VectorStoreInterface):
 
         Note: This implementation focuses on vector search with filtering.
         Full hybrid search with sparse vectors would require additional setup.
+        This fallback ignores ``alpha`` (see ``supports_hybrid_search``).
         """
         # For now, implement as filtered vector search
         # Future enhancement could include sparse vector search for text matching
