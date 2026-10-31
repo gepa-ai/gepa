@@ -150,6 +150,81 @@ When passing a **string** as `reflection_lm`, GEPA uses [LiteLLM](https://docs.l
 !!! tip "Recommendation"
     Use a large `reflection_lm` for proposing improved prompts, but use the same LM for `task_lm` that you'll deploy in production.
 
+### Should `reflection_lm` and `task_lm` be the same model?
+
+Not necessarily, though they can be depending on your setup. In GEPA, the two models serve distinct roles in the optimization loop:
+
+- **`task_lm`** executes candidate prompts or programs during training, validation, and production rollouts.
+- **`reflection_lm`** analyzes evaluation feedback, execution traces, and Actionable Side Information (ASI) across minibatches to diagnose failure modes and propose targeted mutations.
+
+Because reflection requires meta-reasoning across execution traces, using a more capable model for `reflection_lm` often yields more accurate failure diagnosis and higher-quality prompt mutations. At the same time, keeping `task_lm` aligned with your target production model (such as a smaller, lower-latency model) ensures the discovered prompts are tailored to that model's specific behavior and sensitivities. For instance, in the [AIME benchmark tutorial](https://dspy.ai/tutorials/gepa_aime/), pairing a smaller `task_lm` (`gpt-4.1-mini`) with a stronger `reflection_lm` (`gpt-5`) improved accuracy on AIME 2025 from 46.6% to 56.6%. Similarly, [Databricks](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization) showed that optimizing open-source task models with GEPA can achieve frontier-level performance at significantly lower inference costs.
+
+However, using the **same model** for both roles is reasonable in several practical scenarios:
+
+- **Capable production model**: When `task_lm` is already a frontier model (such as GPT-5 or Claude Opus), using it for reflection avoids configuring an additional model provider.
+- **Deployment and privacy constraints**: In on-premise, air-gapped, or local environments where only one model is available or authorized.
+- **Deterministic diagnostic feedback**: In code, SQL, or systems tasks where the environment emits explicit, structured feedback (such as compiler errors or unit test outputs) that the task model can parse and fix directly.
+- **Inductive bias alignment**: A model reflecting on its own outputs may phrase instructions in vocabulary and formatting styles it natively adheres to.
+
+Whether an asymmetric or identical configuration works better depends on the task, available budget, and diagnostic feedback quality. We recommend determining the best setup empirically on held-out validation data rather than assuming one configuration always dominates.
+
+### How should I choose models for reflection versus execution?
+
+When selecting models, consider the distinct operational constraints of execution versus reflection:
+
+| Dimension | `task_lm` (Execution) | `reflection_lm` (Reflection) |
+|---|---|---|
+| **Primary role** | Executes task rollouts and candidate evaluations | Analyzes available execution feedback and proposes candidate improvements |
+| **Typical model choice** | A model appropriate for the intended deployment constraints | A model capable of reliable diagnosis and useful mutations within the optimization budget |
+| **Call frequency** | Depends on rollouts, evaluation strategy, and caching | Depends on proposal strategy and optimization configuration |
+| **Key considerations** | Task quality, latency, throughput, and inference cost | Reasoning capability, trace interpretation, context capacity, and reflection cost |
+| **Potential failure mode** | Insufficient task capability can limit optimization results | Weak diagnosis can produce ineffective or regressive candidate changes |
+
+Model selection should always be validated empirically on the target task and held-out data.
+
+#### Selection Criteria
+
+**For `task_lm`:**
+
+- **Deployment alignment**: Choose the exact model, quantization level, and inference parameters (such as temperature) you plan to run in production. Prompt optimizations discovered for one model family do not necessarily transfer to another.
+- **Inference constraints**: Balance task quality against production requirements for latency, throughput, and per-token cost.
+- **Prompt sensitivity**: Ensure the model is compatible with the formatting, tool schemas, or output structures required by your application.
+
+**For `reflection_lm`:**
+
+- **Diagnostic and reasoning capability**: The model must synthesize insights across diverse failure traces and formulate clear, actionable instructions.
+- **Feedback interpretation**: Match the model to your task domain. Mathematical problem-solving, code debugging, classification, and RAG pipelines each produce different diagnostic signals (e.g., chain-of-thought steps, stack traces, confusion patterns, or retrieval relevance) that the reflection model must interpret.
+- **Context window**: Reflection prompts combine system guidelines, the current candidate text, and execution feedback from multiple minibatch examples. Ensure the model has adequate context capacity to avoid truncating diagnostic traces. When long traces or large minibatches create context-window pressure, consult the [ComBEE guide](combee.md) for scaling reflection via partitioned map-shuffle-reduce groups.
+- **Optimization budget and cost tracking**: While `task_lm` is evaluated across rollouts, `reflection_lm` is invoked during proposal steps. Rather than assuming that a stronger reflection model makes optimization prohibitively expensive, measure the actual cost. You can inspect accumulated reflection spend via the `LM.total_cost` attribute (see the [Cost & Token Tracking guide](cost-tracking.md)) or set a hard spending cap with `max_reflection_cost`.
+
+#### Configuration Example
+
+The following illustrates the configuration pattern; use models and arguments supported by your installed GEPA version and provider configuration:
+
+```python
+import gepa
+
+# seed_prompt, trainset, and valset are defined by the caller
+result = gepa.optimize(
+    seed_candidate=seed_prompt,
+    trainset=trainset,
+    valset=valset,
+    task_lm="openai/gpt-4.1-mini",    # Deployment-oriented task model
+    reflection_lm="openai/gpt-5",     # High-reasoning model for failure diagnosis
+    max_metric_calls=150,             # Evaluation budget
+)
+```
+
+Both `task_lm` and `reflection_lm` accept LiteLLM model identifier strings or callable functions. If you want to track reflection spend directly on the model object, pass an `LM` instance (e.g., `from gepa.lm import LM; reflection_lm = LM("openai/gpt-5")`) and inspect `reflection_lm.total_cost` after optimization completes.
+
+!!! warning "Common Pitfalls"
+    - **Overly complex prompt mutations:** A frontier reflection model may generate instructions that are too verbose or complex for a smaller task model to follow. Evaluate whether the task model adheres to the proposed changes, and consider adding formatting constraints in your prompt template or evaluator feedback.
+    - **Context-window pressure:** Long execution traces and large minibatches can exceed the practical context budget of the reflection model. Keep trace logging focused on actionable diagnostic information, or consult the [ComBEE guide](combee.md) when evaluating large trace batches.
+    - **Production-model mismatch:** Optimizing on one model and deploying on another can degrade performance because prompt sensitivities differ across model families. Prefer evaluating candidates using the actual intended `task_lm` and its target inference configuration. If cross-model transfer is intentional, validate it separately on held-out data.
+
+!!! tip "Rule of Thumb"
+    Use a `task_lm` that reflects your deployment requirements, and choose a `reflection_lm` that can reliably diagnose its failure modes within your optimization budget. Always validate the final candidate on held-out evaluation data.
+
 ### Do prompt optimizers work better for smaller models?
 
 There's a common belief that prompt optimizers only help smaller models. **Counter evidence suggests otherwise**:
