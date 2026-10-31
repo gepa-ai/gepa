@@ -965,3 +965,56 @@ def test_resume_different_seed_not_readded_on_third_call(run_dir):
     assert third.total_metric_calls == second.total_metric_calls
     assert resume_adapter.evaluate_calls == 0
     assert resume_adapter.examples_evaluated == 0
+
+
+@pytest.mark.parametrize(
+    "components",
+    [
+        {"component_02": "reserved", "prompt/a": "slash", "prompt a": "space"},
+        {"component_03": "reserved", "component_03_1": "suffix", "prompt/a": "slash", "prompt a": "space"},
+        {"Component_02": "reserved", "prompt/a": "slash", "prompt a": "space"},
+        {"Prompt": "upper", "prompt": "lower"},
+        {"prompt/a": "slash", "prompt a": "space", "component_01": "literal"},
+        {"": "empty", "component_00": "literal"},
+    ],
+    ids=[
+        "fallback-collision",
+        "repeated-fallback-collision",
+        "fallback-case-collision",
+        "case-only",
+        "later-literal",
+        "empty",
+    ],
+)
+def test_agent_state_component_files_do_not_overwrite_each_other(run_dir, components):
+    state = state_mod.GEPAState(
+        components,
+        ValsetEvaluation(outputs_by_val_id={0: "output"}, scores_by_val_id={0: 0.5}),
+    )
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir, write_agent_state=True)
+
+    component_dir = run_dir / "iterations" / "seed" / "components"
+    index = json.loads((component_dir / "_index.json").read_text(encoding="utf-8"))
+    assert set(index) == set(components)
+    # All exported directories must remain readable on case-insensitive filesystems.
+    assert len({filename.casefold() for filename in index.values()}) == len(components)
+    assert {
+        name: (component_dir / filename).read_text(encoding="utf-8") for name, filename in index.items()
+    } == components
+    assert state_mod.GEPAState.load(run_dir).program_candidates == [components]
+
+
+def test_agent_state_ordinary_component_filenames_are_unchanged(run_dir):
+    components = {"system_prompt": "system", "planner.prompt": "planner", "solver-v1": "solver"}
+    state = state_mod.GEPAState(
+        components,
+        ValsetEvaluation(outputs_by_val_id={0: "output"}, scores_by_val_id={0: 0.5}),
+    )
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir, write_agent_state=True)
+    component_dir = run_dir / "iterations" / "seed" / "components"
+    index = json.loads((component_dir / "_index.json").read_text(encoding="utf-8"))
+    assert index == {name: f"{name}.txt" for name in components}
