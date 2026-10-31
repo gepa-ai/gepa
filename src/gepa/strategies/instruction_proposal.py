@@ -115,7 +115,8 @@ class ProposalAdapter:
 
         if not value:
             return SignatureParseResult.failure("reflection output is empty")
-        return SignatureParseResult.success({self.output_key: value})
+        # Keep provider metadata on the raw response, not on persisted candidates.
+        return SignatureParseResult.success({self.output_key: str(value)})
 
 
 _INSTRUCTION_PROPOSAL_ADAPTER = ProposalAdapter("new_instruction")
