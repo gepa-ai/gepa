@@ -36,11 +36,11 @@ class TimeoutStopCondition(StopperProtocol):
 
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
-        self.start_time = time.time()
+        self.start_time = time.monotonic()
 
     def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if timeout has been reached
-        return time.time() - self.start_time > self.timeout_seconds
+        return time.monotonic() - self.start_time > self.timeout_seconds
 
 
 class FileStopper(StopperProtocol):
