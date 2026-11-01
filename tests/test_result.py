@@ -115,3 +115,59 @@ def test_from_state_preserves_disabled_and_empty_best_outputs(track_best_outputs
     result = GEPAResult.from_state(state)
 
     assert result.best_outputs_valset == ({} if track_best_outputs else None)
+
+
+@pytest.mark.parametrize("mutate_result", [False, True])
+@pytest.mark.parametrize("field", ["candidates", "parents"])
+def test_from_state_detaches_candidate_and_parent_rows(mutate_result, field):
+    state = GEPAState(
+        {"prompt": "seed"},
+        ValsetEvaluation(
+            outputs_by_val_id={0: "seed output"},
+            scores_by_val_id={0: 0.5},
+            objective_scores_by_val_id=None,
+        ),
+    )
+    state.update_state_with_new_program(
+        [0],
+        {"prompt": "next"},
+        ValsetEvaluation(
+            outputs_by_val_id={0: "next output"},
+            scores_by_val_id={0: 0.75},
+            objective_scores_by_val_id=None,
+        ),
+        run_dir=None,
+        num_metric_calls_by_discovery_of_new_program=1,
+        iteration_id="next",
+    )
+    result = GEPAResult.from_state(state)
+
+    if field == "candidates":
+        source = result.candidates if mutate_result else state.program_candidates
+        source[0]["prompt"] = "edited seed"
+        source[1]["prompt"] = "edited next"
+        untouched = state.program_candidates if mutate_result else result.candidates
+        assert untouched == [{"prompt": "seed"}, {"prompt": "next"}]
+    else:
+        source = result.parents if mutate_result else state.parent_program_for_candidate
+        source[0].append(1)
+        source[1][0] = None
+        untouched = state.parent_program_for_candidate if mutate_result else result.parents
+        assert untouched == [[None], [0]]
+
+
+def test_string_candidate_snapshot_keeps_original_best_text():
+    state = GEPAState(
+        {"current_candidate": "seed"},
+        ValsetEvaluation(
+            outputs_by_val_id={},
+            scores_by_val_id={0: 0.5},
+            objective_scores_by_val_id=None,
+        ),
+    )
+    result = GEPAResult.from_state(state, str_candidate_key="current_candidate")
+
+    state.program_candidates[0]["current_candidate"] = "edited"
+
+    assert result.best_candidate == "seed"
+    assert result.to_dict()["candidates"] == [{"current_candidate": "seed"}]
