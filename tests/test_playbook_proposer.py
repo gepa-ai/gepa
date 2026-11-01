@@ -1,0 +1,83 @@
+# Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
+# https://github.com/gepa-ai/gepa
+
+import copy
+import json
+from unittest.mock import Mock
+
+import pytest
+
+from gepa.proposer import PlaybookProposer
+
+
+def test_appends_without_rewriting_or_mutating_inputs():
+    candidate = {"system": "Keep this spacing.  \n", "tools": "Use tools carefully."}
+    examples = {"system": [{"Input": "2 + 2", "Feedback": "Check arithmetic."}]}
+    original = copy.deepcopy((candidate, examples))
+    lm = Mock(return_value=json.dumps({"system": ["Verify the final answer."]}))
+
+    proposed = PlaybookProposer(lm)(candidate, examples, ["system"])
+
+    assert proposed == {"system": candidate["system"] + "\n\n- Verify the final answer."}
+    assert (candidate, examples) == original
+    prompt = lm.call_args.args[0]
+    assert "Check arithmetic." in prompt
+    assert "Use tools carefully." in prompt
+    assert "Do not rewrite or remove existing content" in prompt
+
+
+def test_addition_limit_applies_across_components():
+    lm = Mock(return_value='{"system": ["Check units."], "tools": ["Validate output."]}')
+    proposer = PlaybookProposer(lm, max_additions_per_step=2)
+    candidate = {"system": "Be precise.", "tools": "Use tools."}
+    examples = {name: [{"Feedback": "Needs improvement."}] for name in candidate}
+
+    assert proposer(candidate, examples, list(candidate)) == {
+        "system": "Be precise.\n\n- Check units.",
+        "tools": "Use tools.\n\n- Validate output.",
+    }
+    lm.return_value = '{"system": ["One", "Two"], "tools": ["Three"]}'
+    with pytest.raises(ValueError, match="max_additions_per_step"):
+        proposer(candidate, examples, list(candidate))
+
+
+@pytest.mark.parametrize("avoid_redundancy", [True, False])
+def test_duplicate_bullets_follow_redundancy_option(avoid_redundancy):
+    lm = Mock(return_value='{"system": ["Keep units.", "Check signs.", "Check signs."]}')
+    candidate = {"system": "Be precise.\n- Keep units."}
+    proposer = PlaybookProposer(lm, avoid_redundancy=avoid_redundancy)
+
+    proposed = proposer(candidate, {"system": [{"Feedback": "Sign error."}]}, ["system"])
+
+    additions = "- Check signs." if avoid_redundancy else "- Keep units.\n- Check signs.\n- Check signs."
+    assert proposed == {"system": candidate["system"] + "\n\n" + additions}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "not JSON",
+        "[]",
+        '{"unselected": ["Do something else."]}',
+        '{"system": "Replace the whole prompt."}',
+        '{"system": [1]}',
+        '{"system": ["   "]}',
+    ],
+)
+def test_invalid_additions_cannot_change_candidate(response):
+    candidate = {"system": "Preserve this."}
+    proposer = PlaybookProposer(Mock(return_value=response))
+
+    with pytest.raises(ValueError):
+        proposer(candidate, {"system": [{"Feedback": "Try again."}]}, ["system"])
+
+    assert candidate == {"system": "Preserve this."}
+
+
+@pytest.mark.parametrize("components, examples", [([], {}), (["system"], {"system": []})])
+def test_no_reflective_examples_does_not_call_lm(components, examples):
+    lm = Mock()
+
+    assert PlaybookProposer(lm)({"system": "Keep this."}, examples, components) == {}
+
+    lm.assert_not_called()
