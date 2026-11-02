@@ -106,7 +106,7 @@ jobs:
           VIRTUAL_ENV="$PWD/test_before_testpypi" uv run --active --no-sync pytest -m "not llm_live and not extra" tests/
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -195,7 +195,7 @@ jobs:
           VIRTUAL_ENV="$PWD/test_before_pypi" uv run --active --no-sync pytest -m "not llm_live and not extra" tests/
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (gepa)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           attestations: false
       
