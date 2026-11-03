@@ -27,7 +27,8 @@ Example:
 from __future__ import annotations
 
 import dataclasses
-import os
+import functools
+import threading
 import time
 import uuid
 import warnings
@@ -77,7 +78,7 @@ from gepa.oa.ensemble import (
     optimize_vote,
     optimize_vote_with_server,
 )
-from gepa.oa.eval_server import EvalServer, _resolve_id
+from gepa.oa.eval_server import EvalServer, _normalize_result, _resolve_id
 from gepa.oa.proposers import ClaudeCodeAgentProposer
 from gepa.oa.registry import (
     get_engine_cls,
@@ -101,7 +102,7 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     test_set: list[Any] | None = None,
-    config: OptimizeAnythingConfig | None = None,
+    config: OptimizeAnythingConfig | GEPAConfig | None = None,
 ) -> GEPAResult:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
@@ -155,8 +156,10 @@ def optimize_anything(
             at least one of ``config.max_evals`` or ``config.max_token_cost``
             must be set. When ``config.name`` is omitted, a name is generated
             from the engine, a short uuid, and a timestamp. A legacy
-            :class:`GEPAConfig` is also accepted and converted to run the gepa
-            engine.
+            :class:`GEPAConfig` is also accepted: the call then runs
+            :func:`gepa.gepa_launcher.optimize_anything` directly, exactly as
+            in v0.1.4 (no eval server; ``max_metric_calls`` is checked between
+            iterations), and ``test_set`` is scored after the run.
 
     Returns:
         A single :class:`~gepa.core.result.GEPAResult` for every run. The
@@ -174,11 +177,29 @@ def optimize_anything(
         (``candidates``, ``best_idx``, ...); ``metadata`` no longer nests a
         ``gepa_result`` object. ``to_dict()`` still serializes only the pool
         and GEPA-core fields.
+
+        With a legacy :class:`GEPAConfig` there is no eval server: the
+        launcher's result is returned with the same ``eval_log`` and
+        ``wall_time`` / ``budget`` / ``total_cost`` / ``engine`` metadata, and
+        ``total_evals`` equals the launcher's ``total_metric_calls``.
     """
+    if isinstance(config, GEPAConfig):
+        # Legacy configs keep v0.1.4 semantics by skipping the eval server (#448).
+        return _run_legacy_config(
+            seed_candidate,
+            evaluator=evaluator,
+            batch_evaluator=batch_evaluator,
+            dataset=dataset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            test_set=test_set,
+            config=config,
+        )
     if config is None:
         config = OptimizeAnythingConfig()
     elif not isinstance(config, OptimizeAnythingConfig):
-        config = _from_legacy_config(config)
+        raise TypeError(f"config must be an OptimizeAnythingConfig or GEPAConfig, got {type(config).__name__}")
     if evaluator is None and batch_evaluator is None:
         raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
     if config.max_evals is None and config.max_token_cost is None:
@@ -271,43 +292,160 @@ def _to_gepa_result(result: Result, seed_candidate: Any) -> GEPAResult:
     )
 
 
-def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
-    """Convert a legacy launcher :class:`GEPAConfig` into the OA-shaped config.
+class _EvalRecorder:
+    """Pass-through evaluator wrapper that keeps the eval server's ``eval_log``.
 
-    The whole config rides through ``engine_config`` field-for-field (so nested
-    configs and callbacks survive as objects); the launcher's eval budget
-    becomes ``max_evals`` — ``None`` stays unbounded, as in the launcher.
-
-    The launcher's parallelism settings size the eval server, which gates all
-    evaluation: ``parallel=False`` maps to ``max_concurrency=1``, an explicit
-    ``max_workers`` maps to itself, and ``max_workers=None`` falls back to
-    ``os.cpu_count() or 32`` (the same fallback as ``EngineConfig.max_workers``'s
-    default factory).
-
-    ``EngineConfig.run_dir``, when set, nests the eval server under
-    ``<run_dir>/eval_server`` (``evals/``, ``progress_log.jsonl``,
-    ``summary.json``) so those artifacts live inside the engine workspace
-    without sharing the ``run_dir`` root with ``gepa_state.bin``. When
-    ``run_dir`` is unset, ``output_dir`` stays ``None`` and the eval server
-    keeps its default ``outputs/`` tree.
+    Used on the legacy path, which has no eval server. It records one entry
+    per evaluator call in the eval server's format and changes nothing else:
+    ``functools.wraps`` keeps the user's signature visible, so the launcher
+    introspects (``example`` / ``opt_state`` / ``opt_states``) exactly as it
+    would on the unwrapped function.
     """
-    from gepa.gepa_launcher import GEPAConfig
 
-    if not isinstance(config, GEPAConfig):
-        raise TypeError(f"config must be an OptimizeAnythingConfig or GEPAConfig, got {type(config).__name__}")
-    if not config.engine.parallel:
-        max_concurrency = 1
-    else:
-        max_concurrency = config.engine.max_workers or (os.cpu_count() or 32)
-    run_dir = config.engine.run_dir
-    output_dir = None if run_dir is None else Path(run_dir) / "eval_server"
-    return OptimizeAnythingConfig(
-        engine="gepa",
-        max_evals=config.engine.max_metric_calls,
-        max_concurrency=max_concurrency,
-        output_dir=output_dir,
-        engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
+    def __init__(self) -> None:
+        self.log: list[dict[str, Any]] = []
+        self.calls = 0
+        self.total_cost = 0.0
+        self._start = time.time()
+        self._lock = threading.Lock()
+
+    def _count_failure(self, n: int) -> None:
+        with self._lock:
+            self.calls += n
+
+    def _record(self, candidate: Any, result: Any) -> None:
+        try:
+            score, info = _normalize_result(result)
+        except Exception:
+            return  # the launcher reports malformed results itself
+        cost = float(info.get("cost", 0.0) or 0.0)
+        with self._lock:
+            self.calls += 1
+            self.total_cost += cost
+            entry: dict[str, Any] = {
+                "eval": self.calls,
+                "score": score,
+                "candidate_len": len(candidate) if isinstance(candidate, str) else sum(map(len, candidate.values())),
+                "wall_time": time.time() - self._start,
+                "cumulative_cost": self.total_cost,
+            }
+            if cost:
+                entry["cost"] = cost
+            self.log.append(entry)
+
+    def wrap(self, fn: Callable[..., Any] | None) -> Callable[..., Any] | None:
+        if fn is None:
+            return None
+
+        @functools.wraps(fn)
+        def evaluate(candidate: Any, *args: Any, **kwargs: Any) -> Any:
+            try:
+                result = fn(candidate, *args, **kwargs)
+            except Exception:
+                self._count_failure(1)
+                raise
+            self._record(candidate, result)
+            return result
+
+        return evaluate
+
+    def wrap_batch(self, fn: Callable[..., Any] | None) -> Callable[..., Any] | None:
+        if fn is None:
+            return None
+
+        @functools.wraps(fn)
+        def evaluate_batch(pairs: Any, *args: Any, **kwargs: Any) -> Any:
+            pairs = list(pairs)
+            try:
+                results = list(fn(pairs, *args, **kwargs))
+            except Exception:
+                self._count_failure(len(pairs))
+                raise
+            for (candidate, _example), result in zip(pairs, results, strict=False):
+                self._record(candidate, result)
+            return results
+
+        return evaluate_batch
+
+
+def _run_legacy_config(
+    seed_candidate: str | Candidate | None,
+    *,
+    evaluator: Callable[..., Any] | None,
+    batch_evaluator: Callable[..., Any] | None,
+    dataset: list[Any] | None,
+    valset: list[Any] | None,
+    objective: str | None,
+    background: str | None,
+    test_set: list[Any] | None,
+    config: GEPAConfig,
+) -> GEPAResult:
+    """Run a legacy :class:`GEPAConfig` through the launcher, as v0.1.4 did.
+
+    The launcher enforces ``max_metric_calls`` between iterations, so a capped
+    run finishes its last iteration instead of discarding it. No eval server,
+    budget tracker, or ``outputs/`` tree is involved. The result still gets
+    the eval server's bookkeeping: ``eval_log`` and the ``wall_time`` /
+    ``budget`` / ``total_cost`` / ``engine`` metadata. ``test_set`` is scored
+    afterwards, outside the budget, into the same ``metadata`` keys as the
+    eval-server path.
+    """
+    from gepa.gepa_launcher import optimize_anything as launcher_optimize_anything
+
+    # Build the reflection LM up front (as the launcher would) on a copy of
+    # the config, so its cost can be read after the run without writing into
+    # the caller's config. A refiner keeps defaulting to the model by name.
+    config = dataclasses.replace(
+        config,
+        reflection=dataclasses.replace(config.reflection),
+        refiner=None if config.refiner is None else dataclasses.replace(config.refiner),
     )
+    if config.refiner is not None and config.refiner.refiner_lm is None:
+        config.refiner.refiner_lm = config.reflection.reflection_lm
+    cost_source = GepaEngine._resolve_cost_source(config)
+
+    recorder = _EvalRecorder()
+    result = launcher_optimize_anything(
+        seed_candidate,
+        evaluator=recorder.wrap(evaluator),
+        batch_evaluator=recorder.wrap_batch(batch_evaluator),
+        dataset=dataset,
+        valset=valset,
+        objective=objective,
+        background=background,
+        config=config,
+    )
+    max_evals = config.engine.max_metric_calls
+    budget: dict[str, Any] = {"exhausted": max_evals is not None and recorder.calls >= max_evals}
+    if max_evals is not None:
+        budget.update(max_evals=max_evals, used=recorder.calls, remaining_evals=max(0, max_evals - recorder.calls))
+    reflection_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0)
+    result = dataclasses.replace(result, eval_log=recorder.log)
+    result.metadata.update(
+        wall_time=time.time() - recorder._start,
+        budget=budget,
+        adapter_cost=reflection_cost,
+        total_cost=recorder.total_cost + reflection_cost,
+        progress_log=[],
+        engine="gepa",
+    )
+    if test_set:
+        task = Task(name="test", seed_candidate=seed_candidate, test_set=test_set)
+        scorer = EvalServer(task, evaluator, BudgetTracker(max_evals=None), batch_evaluate=batch_evaluator)
+        try:
+            baseline = _score_test(scorer, task, seed_candidate)
+            optimized = (
+                baseline
+                if result.best_candidate == seed_candidate
+                else _score_test(scorer, task, result.best_candidate)
+            )
+        finally:
+            scorer.stop()
+        if baseline is not None:
+            result.metadata["baseline_test_scores"], result.metadata["baseline_test_score"] = baseline
+        if optimized is not None:
+            result.metadata["test_scores"], result.metadata["test_score"] = optimized
+    return result
 
 
 def _legacy_result_from(result: Result, seed_candidate: Any) -> GEPAResult:

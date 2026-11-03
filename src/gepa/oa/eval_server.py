@@ -525,6 +525,7 @@ class EvalServer:
             self._http_stopped = True
             if self._server:
                 self._server.shutdown()
+                self._server.server_close()
                 self._server = None
         self._pool.shutdown(wait=False)
 

@@ -438,6 +438,91 @@ def test_agent_state_sanitizes_component_names(run_dir):
         assert (comp_dir / fname).read_text() == seed[real_name]
 
 
+def _state_with_accepted_and_rejected_exports():
+    evaluation = ValsetEvaluation(outputs_by_val_id={0: "output"}, scores_by_val_id={0: 0.5})
+    state = state_mod.GEPAState({"prompt": "seed text"}, evaluation)
+    state.total_num_evals = 2
+    state.num_full_ds_evals = 1
+    state.full_program_trace.append(
+        {
+            "i": 0,
+            "iteration_id": "accepted",
+            "selected_program_candidate": 0,
+            "proposal_accepted": True,
+            "new_program_idx": 1,
+        }
+    )
+    state.update_state_with_new_program([0], {"prompt": "accepted text"}, evaluation, None, 2, iteration_id="accepted")
+    state.full_program_trace.append(
+        {
+            "i": 1,
+            "iteration_id": "rejected",
+            "selected_program_candidate": 0,
+            "proposal_accepted": False,
+            "proposed_candidate": {"prompt": "rejected text"},
+        }
+    )
+    return state
+
+
+@pytest.mark.parametrize(
+    ("iteration_id", "obstruction"),
+    [
+        (iteration_id, obstruction)
+        for iteration_id in ("seed", "accepted", "rejected")
+        for obstruction in ("components", "components/_index.json.tmp", "val_scores.json.tmp", "meta.json.tmp")
+        if iteration_id != "rejected" or obstruction != "val_scores.json.tmp"
+    ],
+)
+def test_agent_state_failed_iteration_export_can_be_retried(run_dir, iteration_id, obstruction):
+    state = _state_with_accepted_and_rejected_exports()
+    iteration_dir = run_dir / "iterations" / iteration_id
+    blocked = iteration_dir / obstruction
+    blocked.parent.mkdir(parents=True, exist_ok=True)
+    if obstruction == "components":
+        blocked.write_text("temporary obstruction", encoding="utf-8")
+    else:
+        blocked.mkdir()
+
+    with pytest.raises(OSError):
+        state.save(run_dir, write_agent_state=True)
+    marked_complete = (iteration_dir / "meta.json").exists()
+    assert state_mod.GEPAState.load(run_dir).program_candidates == state.program_candidates
+
+    if blocked.is_dir():
+        blocked.rmdir()
+    else:
+        blocked.unlink()
+    state.save(run_dir, write_agent_state=True)
+
+    component_dir = iteration_dir / "components"
+    index = json.loads((component_dir / "_index.json").read_text(encoding="utf-8"))
+    assert (component_dir / index["prompt"]).read_text(encoding="utf-8") == f"{iteration_id} text"
+    if iteration_id != "rejected":
+        assert json.loads((iteration_dir / "val_scores.json").read_text(encoding="utf-8")) == {"0": 0.5}
+    assert (iteration_dir / "meta.json").is_file()
+    assert not marked_complete
+
+
+def test_agent_state_completed_iteration_exports_are_not_rewritten(run_dir):
+    state = _state_with_accepted_and_rejected_exports()
+    state.save(run_dir, write_agent_state=True)
+    iteration_root = run_dir / "iterations"
+    before = {
+        file.relative_to(iteration_root): file.read_bytes() for file in iteration_root.rglob("*") if file.is_file()
+    }
+
+    state.program_candidates[0]["prompt"] = "later seed text"
+    state.program_candidates[1]["prompt"] = "later accepted text"
+    state.full_program_trace[-1]["proposed_candidate"] = {"prompt": "later rejected text"}
+    state.save(run_dir, write_agent_state=True)
+
+    after = {
+        file.relative_to(iteration_root): file.read_bytes() for file in iteration_root.rglob("*") if file.is_file()
+    }
+    assert after == before
+
+
 def test_budget_hooks_excluded_from_serialization(run_dir):
     """Budget hooks are runtime-only and should not be serialized."""
     seed = {"model": "m"}

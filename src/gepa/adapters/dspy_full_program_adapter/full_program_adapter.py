@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 _TraceInstance = tuple[Any, dict[str, Any], Any]
 
 
+def _format_failed_prediction(prediction: FailedPrediction) -> str:
+    """Keep malformed completions visible as feedback instead of treating them as mappings."""
+    return (
+        "Couldn't parse the output as per the expected output format. The model's raw response was:\n"
+        f"```\n{prediction.completion_text}\n```\n\n"
+    )
+
+
 def _trajectory_field_grew(key: str, prev: Any, curr: Any) -> bool:
     """True when ReAct's ``trajectory`` input grew as a strict prefix extension.
 
@@ -204,7 +212,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         Consecutive ReAct calls whose ``trajectory`` string grew as a prefix are collapsed
         to the last call of that run. Independent repeats, History inputs, and interleaved
         calls are kept in execution order. A FailedPrediction stays in the trace and is
-        not merged into a neighboring call.
+        not merged into a neighboring call. Failed program outputs also retain the raw
+        completion as parse-error feedback.
         """
         proposed_program, _ = self.build_program(candidate)
 
@@ -224,7 +233,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             example = data["example"]
             example_data["Program Inputs"] = {**example.inputs()}
             prediction = data["prediction"]
-            example_data["Program Outputs"] = {**prediction}
+            example_data["Program Outputs"] = (
+                _format_failed_prediction(prediction) if isinstance(prediction, FailedPrediction) else {**prediction}
+            )
             module_score = data["score"]
 
             if hasattr(module_score, "feedback"):
@@ -279,11 +290,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     new_inputs[input_key] = str(input_val)
 
                 if isinstance(outputs, FailedPrediction):
-                    s = "Couldn't parse the output as per the expected output format. The model's raw response was:\n"
-                    s += "```\n"
-                    s += outputs.completion_text + "\n"
-                    s += "```\n\n"
-                    new_outputs = s
+                    new_outputs = _format_failed_prediction(outputs)
                 else:
                     for output_key, output_val in outputs.items():
                         new_outputs[output_key] = str(output_val)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import socket
 import tempfile
 import threading
 import unittest
@@ -16,6 +17,48 @@ from gepa.oa.task import Task
 
 
 class OptimizeAnythingEvalServerTests(unittest.TestCase):
+    def test_stop_releases_listener_while_http_evaluation_finishes(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+
+        def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+            entered.set()
+            if not release.wait(timeout=10):
+                raise TimeoutError("Evaluation was not released")
+            return 1.0, {}
+
+        server = EvalServer(Task(name="task", seed_candidate="seed"), evaluate, BudgetTracker(max_evals=1))
+        port = server.start()
+        http_server = server._server
+        assert http_server is not None
+
+        def request() -> dict[str, object]:
+            req = urllib.request.Request(
+                f"http://localhost:{port}/evaluate",
+                data=json.dumps({"candidate": "candidate"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as response:
+                return json.loads(response.read())
+
+        with ThreadPoolExecutor(max_workers=1) as client:
+            response = client.submit(request)
+            try:
+                self.assertTrue(entered.wait(timeout=5))
+                server.stop()
+                self.assertFalse(response.done())
+                self.assertEqual(http_server.socket.fileno(), -1)
+                # The accepted connection may finish, but the listening socket
+                # must no longer reserve the port after stop() returns.
+                with socket.socket() as listener:
+                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    listener.bind(("localhost", port))
+                server.stop()  # Closing remains idempotent.
+            finally:
+                release.set()
+                server.stop()
+            self.assertEqual(response.result(timeout=5)["score"], 1.0)
+
     def test_shared_output_dir_summary_writes_use_independent_temp_files(self) -> None:
         """Composition engines may create independent servers in one run dir."""
 
