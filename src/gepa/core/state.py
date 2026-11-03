@@ -753,6 +753,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         # handle schema migration
         version = data.get("validation_schema_version")
+        if version is not None and version > GEPAState._VALIDATION_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported GEPAState validation schema version {version}; "
+                f"max supported is {GEPAState._VALIDATION_SCHEMA_VERSION}"
+            )
         if version is None or version < 2:
             GEPAState._migrate_from_legacy_state_v0(data)
             version = data.get("validation_schema_version")

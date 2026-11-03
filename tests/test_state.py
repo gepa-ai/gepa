@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 import shutil
 from copy import deepcopy
 from pathlib import Path
@@ -167,6 +168,43 @@ def test_gepa_state_save_and_initialize(run_dir):
     )
 
     assert state.__dict__ == result.__dict__
+
+
+@pytest.mark.parametrize("version_delta", [1, 10])
+def test_load_rejects_newer_validation_schema(run_dir, version_delta):
+    state = state_mod.GEPAState(
+        {"prompt": "seed"},
+        ValsetEvaluation(outputs_by_val_id={0: "output"}, scores_by_val_id={0: 0.5}),
+    )
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(str(run_dir))
+    checkpoint = run_dir / "gepa_state.bin"
+    saved = pickle.loads(checkpoint.read_bytes())
+    version = state_mod.GEPAState._VALIDATION_SCHEMA_VERSION + version_delta
+    saved["validation_schema_version"] = version
+    checkpoint.write_bytes(pickle.dumps(saved))
+    original = checkpoint.read_bytes()
+
+    with pytest.raises(ValueError, match=f"Unsupported GEPAState validation schema version {version}"):
+        state_mod.GEPAState.load(str(run_dir))
+
+    assert checkpoint.read_bytes() == original
+
+
+def test_newer_validation_schema_is_rejected_before_cache_cleanup(run_dir, monkeypatch):
+    def cleanup_must_not_run(self):
+        pytest.fail("unsupported checkpoint reached evaluation-cache cleanup")
+
+    monkeypatch.setattr(state_mod.EvaluationCache, "drop_unsplit_entries", cleanup_must_not_run)
+    checkpoint = {
+        "validation_schema_version": state_mod.GEPAState._VALIDATION_SCHEMA_VERSION + 1,
+        "evaluation_cache": state_mod.EvaluationCache(),
+    }
+    (run_dir / "gepa_state.bin").write_bytes(pickle.dumps(checkpoint))
+
+    with pytest.raises(ValueError, match="Unsupported GEPAState validation schema version"):
+        state_mod.GEPAState.load(str(run_dir))
 
 
 def test_agent_state_directory_layout(run_dir):
