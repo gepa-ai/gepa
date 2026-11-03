@@ -51,9 +51,7 @@ class TraceAwareBatchImprovingAdapter(ImprovingAdapter):
 
     def batch_evaluate(self, items, *, capture_traces=True):
         self.batch_calls.append((items[0][1][0]["split"], len(items), capture_traces))
-        return [
-            self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items
-        ]
+        return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
 
 
 def _run(adapter, sampling_strategy, tmp_path):
@@ -92,17 +90,59 @@ def test_trace_aware_adapter_batches_accepted_candidates_without_traces(tmp_path
     assert any(split == "train" and capture_traces is True for split, _, capture_traces in adapter.batch_calls)
 
 
-def test_legacy_batch_adapter_gets_clear_contract_error():
+def test_legacy_batch_adapter_is_called_with_a_deprecation_warning():
+    """``batch_evaluate(self, items)`` was the documented v0.1.4 signature."""
+
+    class LegacyAdapter(ImprovingAdapter):
+        def __init__(self):
+            super().__init__()
+            self.batch_items = []
+
+        def batch_evaluate(self, items):
+            self.batch_items.append(items)
+            return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
+
+    adapter = LegacyAdapter()
+    items = [({"system_prompt": "s"}, [{"split": "train"}])]
+    with pytest.warns(DeprecationWarning, match="does not accept capture_traces"):
+        results = invoke_batch_evaluate(adapter, items, capture_traces=False)
+    assert adapter.batch_items == [items]
+    assert len(results) == 1
+
+
+def test_legacy_batch_adapter_runs_end_to_end(tmp_path):
     class LegacyAdapter(ImprovingAdapter):
         def batch_evaluate(self, items):
-            return []
+            return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
 
-    with pytest.raises(TypeError, match="unexpected keyword argument 'capture_traces'"):
-        invoke_batch_evaluate(
-            LegacyAdapter(),
-            [({"system_prompt": "s"}, [{"split": "train"}])],
-            capture_traces=True,
-        )
+    with pytest.warns(DeprecationWarning):
+        result = _run(LegacyAdapter(), IndependentSampling(3), tmp_path)
+    assert len(result.candidates) > 1
+
+
+@pytest.mark.parametrize(
+    "signature",
+    ["keyword", "var_keyword"],
+)
+def test_trace_aware_batch_signatures_get_capture_traces_without_warning(signature, recwarn):
+    seen = []
+
+    class Adapter(ImprovingAdapter):
+        if signature == "keyword":
+
+            def batch_evaluate(self, items, *, capture_traces=True):
+                seen.append(capture_traces)
+                return []
+
+        else:
+
+            def batch_evaluate(self, items, **kwargs):
+                seen.append(kwargs["capture_traces"])
+                return []
+
+    invoke_batch_evaluate(Adapter(), [], capture_traces=False)
+    assert seen == [False]
+    assert not [w for w in recwarn if issubclass(w.category, DeprecationWarning)]
 
 
 def test_batch_error_without_budget_progress_does_not_loop_when_exceptions_are_suppressed(tmp_path):
@@ -115,10 +155,7 @@ def test_batch_error_without_budget_progress_does_not_loop_when_exceptions_are_s
             self.batch_calls += 1
             if capture_traces:
                 raise TypeError("adapter bug")
-            return [
-                self.evaluate(batch, candidate, capture_traces=False)
-                for candidate, batch in items
-            ]
+            return [self.evaluate(batch, candidate, capture_traces=False) for candidate, batch in items]
 
     adapter = BrokenAdapter()
     with pytest.raises(TypeError, match="adapter bug"):
