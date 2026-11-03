@@ -885,6 +885,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         example) combining shared SideInfo fields with any
         ``<component>_specific_info`` data.  The ``"scores"`` key is renamed
         to ``"Scores (Higher is Better)"`` for clarity in the LLM prompt.
+        Top-level keys starting with ``_`` are bookkeeping (``_budget`` from
+        the eval server, ``_cost``, ...) and are not shown.
         """
         scores, side_infos = eval_batch.scores, eval_batch.trajectories
         assert side_infos is not None
@@ -894,6 +896,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             for _score, side_info in zip(scores, side_infos, strict=False):
                 ret[component_name].append({})
                 for k, v in side_info.items():
+                    if isinstance(k, str) and k.startswith("_"):
+                        continue
                     if k == "scores":
                         ret[component_name][-1]["Scores (Higher is Better)"] = v
                     elif not k.endswith("_specific_info"):

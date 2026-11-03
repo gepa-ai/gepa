@@ -588,7 +588,7 @@ class EvalServer:
     # ── Internal ────────────────────────────────────────────────────────
 
     def _track(self, candidate: str, score: float, info: dict[str, Any] | None = None) -> None:
-        cost = float(info.get("cost", 0.0)) if info else 0.0
+        cost = float(info.get("cost", info.get("_cost", 0.0)) or 0.0) if info else 0.0
         with self._lock:
             self.total_cost += cost
             idx = len(self.eval_log)
