@@ -318,7 +318,7 @@ class _EvalRecorder:
             score, info = _normalize_result(result)
         except Exception:
             return  # the launcher reports malformed results itself
-        cost = float(info.get("cost", 0.0) or 0.0)
+        cost = float(info.get("cost", info.get("_cost", 0.0)) or 0.0)
         with self._lock:
             self.calls += 1
             self.total_cost += cost
