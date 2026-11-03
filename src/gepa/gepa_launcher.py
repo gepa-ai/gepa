@@ -117,7 +117,7 @@ import random
 import threading
 import warnings
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import (
     Any,
     Literal,
@@ -1133,6 +1133,21 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
+_CONFIG_SECTIONS = ("engine", "reflection", "tracking", "merge", "refiner")
+
+
+def _copy_config(config: GEPAConfig) -> GEPAConfig:
+    """Copy ``config`` and its config sections, sharing every other value.
+
+    Only the sections the launcher assigns into are new objects. Everything
+    else (LMs, callbacks, adapters, samplers, a user's own dataclass stopper)
+    stays the same instance, so state those objects keep is visible to the
+    caller.
+    """
+    sections = {name: replace(v) for name in _CONFIG_SECTIONS if (v := getattr(config, name)) is not None}
+    return replace(config, **sections)
+
+
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
@@ -1278,9 +1293,11 @@ def optimize_anything(
                 background="Use build123d for CSG geometry, export to STL, render with pyrender.",
             )
     """
-    # Use default config if not provided
-    if config is None:
-        config = GEPAConfig()
+    # Use default config if not provided. Otherwise work on a copy: the setup
+    # below resolves defaults in place (reflection LM, batch sampler, logger,
+    # templates), and writing those into the caller's config would leak this
+    # run's state into the next run that reuses it.
+    config = GEPAConfig() if config is None else _copy_config(config)
 
     # Detect seed generation mode: when seed_candidate is None, the LLM
     # will generate the initial candidate from the objective.
