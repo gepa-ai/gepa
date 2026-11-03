@@ -325,5 +325,159 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         self.assertEqual(result.metadata["adapter_cost"], 2.75)
 
 
+# ── Real gepa slices on a shared server ────────────────────────────────────
+
+
+def _real_gepa_config() -> OptimizeAnythingConfig:
+    from gepa.gepa_launcher import EngineConfig, ReflectionConfig
+
+    counter = iter(range(1, 10_000))
+    return OptimizeAnythingConfig(
+        engine="gepa",
+        engine_config={
+            "reflection": ReflectionConfig(
+                reflection_lm=lambda prompt: "```\n" + "improved " * next(counter) + "\n```",
+                reflection_minibatch_size=2,
+            ),
+            "engine": EngineConfig(parallel=False, seed=0, raise_on_exception=True),
+        },
+    )
+
+
+class _HardCapEngine:
+    """Stands in for an engine that relies on the server's hard cap to stop
+    (autoresearch, meta_harness): it evaluates until ``BudgetExhausted``."""
+
+    name = "hardcap"
+
+    def __init__(self, config):
+        del config
+
+    def run(self, task, server):
+        from gepa.oa.budget import BudgetExhausted
+        from gepa.oa.engine import Result
+
+        try:
+            for n in range(500):  # a missing cap shows up as 500 calls, not a hang
+                server.evaluate(f"hardcap {n}", task.train_set[n % len(task.train_set)])
+        except BudgetExhausted:
+            pass
+        return Result(best_candidate=str(server.best_candidate), best_score=0.0, total_evals=server.budget.used)
+
+    def process_result(self, result, output_dir):
+        del result, output_dir
+
+
+DATA = [f"ex{i}" for i in range(4)]
+
+
+def test_gepa_slice_restores_the_hard_cap_for_the_next_engine(tmp_path, monkeypatch):
+    """The gepa engine turns the server's hard cap off for its own run (it stops
+    between iterations instead). It must turn it back on: the next slice's
+    engine shares the server and relies on it."""
+    from gepa.oa.registry import _ENGINES
+
+    monkeypatch.setitem(_ENGINES, "hardcap", _HardCapEngine)
+    calls = []
+
+    def evaluator(candidate, example):
+        calls.append(candidate)
+        return 0.5, {}  # flat score: the gepa stage plateaus and the scheduler switches
+
+    result = optimize_adaptive_sequential(
+        "seed",
+        evaluator=evaluator,
+        configs=[_real_gepa_config(), OptimizeAnythingConfig(engine="hardcap")],
+        plateau_evals=10,
+        dataset=DATA,
+        valset=DATA,
+        max_evals=30,
+        patience=1,
+        cycle=False,
+        output_dir=tmp_path,
+    )
+
+    engines = [stage["engine"] for stage in result.metadata["adaptive_schedule"]]
+    assert engines[0] == "gepa" and engines[-1] == "hardcap"
+    assert len(calls) == 30
+
+
+def test_gepa_slices_on_a_shared_server_each_get_their_own_window(tmp_path):
+    """Each gepa slice is capped at what is left of its window, counted from
+    zero, and starts from a fresh state directory instead of resuming the
+    previous slice (which had already used more than the new window)."""
+    calls = []
+
+    def evaluator(candidate, example):
+        calls.append(candidate)
+        return min(1.0, len(candidate) / 200.0), {}
+
+    result = optimize_adaptive_sequential(
+        "seed",
+        evaluator=evaluator,
+        configs=[_real_gepa_config(), _real_gepa_config()],
+        plateau_evals=10,
+        dataset=DATA,
+        valset=DATA,
+        max_evals=40,
+        patience=1,
+        output_dir=tmp_path,
+    )
+
+    deltas = [stage["eval_delta"] for stage in result.metadata["adaptive_schedule"]]
+    assert len(deltas) > 1 and all(d > 0 for d in deltas)
+    # Soft cap: a slice finishes the iteration in flight (seed valset pass of 4
+    # plus one iteration of 8 here), so the total stays within one slice's
+    # overshoot of the cap.
+    assert 40 <= len(calls) <= 40 + 12
+    assert result.total_evals == len(calls)
+    assert len(list(tmp_path.rglob("gepa_state*"))) >= len(deltas)
+
+
+def test_gepa_engine_counts_from_what_is_left_and_restores_enforcement():
+    from gepa.oa.ensemble import optimize_anything_with_server
+
+    calls = []
+
+    def evaluator(candidate, example):
+        calls.append(candidate)
+        return min(1.0, len(candidate) / 200.0), {}
+
+    server = EvalServer(
+        Task(name="t", seed_candidate="seed", train_set=DATA, val_set=DATA),
+        evaluator,
+        BudgetTracker(max_evals=22),
+        max_concurrency=1,
+    )
+    for _ in range(12):  # an earlier slice already used 12 of the 22
+        server.budget.record(0.0)
+
+    result = optimize_anything_with_server(server, _real_gepa_config())
+
+    gepa_result = result.metadata["gepa_result"]
+    assert 10 <= len(calls) <= 10 + 8  # 10 left, plus at most the iteration in flight
+    assert gepa_result.total_metric_calls == len(calls)
+    assert server.budget.enforce is True
+
+
+def test_gepa_engine_on_a_used_up_budget_evaluates_nothing():
+    from gepa.oa.ensemble import optimize_anything_with_server
+
+    calls = []
+    server = EvalServer(
+        Task(name="t", seed_candidate="seed", train_set=DATA, val_set=DATA),
+        lambda candidate, example: (calls.append(candidate), (1.0, {}))[1],
+        BudgetTracker(max_evals=5),
+        max_concurrency=1,
+    )
+    for _ in range(5):
+        server.budget.record(0.0)
+
+    optimize_anything_with_server(server, _real_gepa_config())
+
+    assert calls == []
+    assert server.budget.enforce is True
+
+
 if __name__ == "__main__":
     unittest.main()
