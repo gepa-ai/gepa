@@ -12,6 +12,7 @@ stays single-threaded and pool/Pareto mutation stays sequential.
 import pytest
 
 from gepa.core.adapter import EvaluationBatch, invoke_batch_evaluate
+from gepa.core.engine import MAX_FAILED_ITERATIONS_WITHOUT_PROGRESS
 from gepa.strategies.proposal_sampling import IndependentSampling, SingleMutationSampling
 from gepa.strategies.proposal_selection import AllImprovements
 
@@ -135,7 +136,8 @@ def test_batch_error_without_budget_progress_does_not_loop_when_exceptions_are_s
             run_dir=str(tmp_path),
         )
 
-    assert adapter.batch_calls == 2  # One seed evaluation, then one failed reflective evaluation.
+    # One seed evaluation, then the failed reflective evaluations before giving up.
+    assert adapter.batch_calls == 1 + MAX_FAILED_ITERATIONS_WITHOUT_PROGRESS
 
 
 def test_runtime_batch_type_error_is_not_retried_sequentially():
