@@ -95,7 +95,6 @@ def optimize(
     track_best_outputs: bool = True,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
-    write_agent_state: bool = False,
     # Evaluation caching
     cache_evaluation: bool = False,
     # Reproducibility
@@ -110,6 +109,7 @@ def optimize(
     reflection_strategy: ReflectionLM | None = None,
     *,
     # Added after the positional parameters so existing positional calls keep their meaning.
+    write_agent_state: bool = False,
     reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """

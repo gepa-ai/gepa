@@ -474,21 +474,11 @@ class EngineConfig:
     raise_on_exception: bool = True
     use_cloudpickle: bool = True
     track_best_outputs: bool = True
-    # Write an agent-readable directory tree (``iterations/<id>/`` +
-    # ``pareto/``) under ``run_dir`` on every save. Each loop iteration —
-    # accepted or rejected — gets its own directory with ``meta.json``,
-    # ``components/``, ``trace.json`` (with before/after scores and
-    # trajectories), plus ``val_scores.json`` + ``outputs/`` + ``trajectories/``
-    # for accepted ones. The seed is pinned at ``iterations/seed/``. Default
-    # off.
-    write_agent_state: bool = False
 
     # Simple stopping conditions
     max_metric_calls: int | None = None
     max_candidate_proposals: int | None = None
     max_reflection_cost: float | None = None
-    stop_at_score: float | None = None
-    """Stop once the best valset aggregate score reaches this threshold."""
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
@@ -534,6 +524,20 @@ class EngineConfig:
     # Swap in a different SamplingStrategy to propose multiple candidates.
     sampling_strategy: SamplingStrategy | None = None
     selection_strategy: SelectionStrategy | None = None
+
+    # Fields added after v0.1.4 go last and are keyword-only, so existing
+    # positional EngineConfig(...) calls keep their meaning.
+
+    # Write an agent-readable directory tree (``iterations/<id>/`` +
+    # ``pareto/``) under ``run_dir`` on every save. Each loop iteration —
+    # accepted or rejected — gets its own directory with ``meta.json``,
+    # ``components/``, ``trace.json`` (with before/after scores and
+    # trajectories), plus ``val_scores.json`` + ``outputs/`` + ``trajectories/``
+    # for accepted ones. The seed is pinned at ``iterations/seed/``. Default
+    # off.
+    write_agent_state: bool = field(default=False, kw_only=True)
+    stop_at_score: float | None = field(default=None, kw_only=True)
+    """Stop once the best valset aggregate score reaches this threshold."""
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
