@@ -3,6 +3,11 @@
 
 """Tests for the candidate tree visualization module."""
 
+import json
+import re
+
+import pytest
+
 from gepa.visualization import candidate_tree_dot_from_data, candidate_tree_html_from_data
 
 
@@ -73,8 +78,52 @@ class TestCandidateTreeDot:
         assert "digraph G {" in dot
         assert '0 [label="' in dot
 
+    @pytest.mark.parametrize(
+        "text,escaped",
+        [
+            ("ending in \\", r"ending in \\\\"),
+            ("ending in \\\\", r"ending in \\\\\\\\"),
+            ("C:\\new\\reports\\", r"C:\\\\new\\\\reports\\\\"),
+            (r"\N \G \L \n \l \r", r"\\\\N \\\\G \\\\L \\\\n \\\\l \\\\r"),
+            (r"\d+\s+\w+", r"\\\\d+\\\\s+\\\\w+"),
+            ("first\\\nsecond", "first\\\\\\\\\nsecond"),
+            ('Use "<tag>" & \\', "Use &quot;&lt;tag&gt;&quot; &amp; " r"\\\\"),
+        ],
+    )
+    def test_tooltip_preserves_literal_backslashes(self, text, escaped):
+        dot = candidate_tree_dot_from_data(
+            candidates=[{"prompt": text}],
+            parents=[[None]],
+            val_scores=[0.5],
+            pareto_front_programs={"ex_0": {0}},
+        )
+        # The candidate must remain inside the quoted DOT attribute. Literal
+        # backslashes must not become quote escapes, line continuations or
+        # Graphviz substitutions when a renderer consumes the export.
+        assert f'--- prompt ---\n{escaped}"];' in dot
+
+    def test_tooltip_escapes_backslashes_in_component_names(self):
+        dot = candidate_tree_dot_from_data(
+            candidates=[{r"part\N": "text"}],
+            parents=[[None]],
+            val_scores=[0.5],
+            pareto_front_programs={"ex_0": {0}},
+        )
+        assert "--- part\\\\\\\\N ---\ntext" in dot
+
 
 class TestCandidateTreeHtml:
+    def test_rich_tooltip_keeps_original_backslashes(self):
+        candidate = {r"part\N": "C:\\new\\reports\\"}
+        html = candidate_tree_html_from_data(
+            candidates=[candidate],
+            parents=[[None]],
+            val_scores=[0.5],
+            pareto_front_programs={"ex_0": {0}},
+        )
+        nodes = json.loads(re.search(r"const NODES = (.*?);\nconst DOT", html, re.DOTALL).group(1))
+        assert nodes[0]["components"] == candidate
+
     def test_returns_valid_html(self):
         candidates, parents, val_scores, pareto_front = _sample_data()
         html = candidate_tree_html_from_data(candidates, parents, val_scores, pareto_front)
