@@ -2,7 +2,7 @@
 
 Each iteration, GEPA samples a **minibatch** of training examples to evaluate the current candidate on. The **batch sampler** controls which examples are selected and in what order. This directly affects what feedback the reflection LM sees — and therefore what improvements it proposes.
 
-GEPA ships with one built-in strategy (`EpochShuffledBatchSampler`) and a `BatchSampler` protocol for writing your own.
+GEPA ships with the default `EpochShuffledBatchSampler`, an opt-in `DifficultyAwareBatchSampler`, and a `BatchSampler` protocol for writing your own.
 
 ---
 
@@ -15,7 +15,7 @@ GEPA ships with one built-in strategy (`EpochShuffledBatchSampler`) and a `Batch
 └──────────────────┘     └──────────────────┘     └──────────────────┘
 ```
 
-The batch sampler is called once per iteration. It returns a list of training example IDs, which are then fetched and passed to the adapter for evaluation. The reflection LM sees the outputs and feedback from **only these examples**, so the minibatch composition determines what failure modes get surfaced each iteration.
+The batch sampler is called once per proposal task; multi-proposal strategies can request several batches in one iteration. It returns a list of training example IDs, which are then fetched and passed to the adapter for evaluation. The reflection LM sees the outputs and feedback from **only these examples**, so the minibatch composition determines what failure modes get surfaced each iteration.
 
 ---
 
@@ -85,6 +85,50 @@ For **code optimization** or **single-task** problems, a minibatch of 1-3 is usu
 
 ---
 
+## Difficulty-aware sampling
+
+When most examples already score perfectly, shuffled minibatches can contain only
+solved examples. GEPA skips reflection on those batches, spending evaluations
+without finding improvements. `DifficultyAwareBatchSampler` makes lower-scoring
+training examples more likely to appear, while continuing to revisit easy examples
+to detect regressions.
+
+```python
+import random
+
+from gepa.strategies.batch_sampler import DifficultyAwareBatchSampler
+
+sampler = DifficultyAwareBatchSampler(
+    minibatch_size=5,
+    exploration_fraction=0.25,
+    rng=random.Random(42),
+)
+result = gepa.optimize(..., batch_sampler=sampler)
+```
+
+Pass the same instance through `ReflectionConfig(batch_sampler=sampler)` when
+using `optimize_anything`. Set the size on the sampler rather than setting
+`reflection_minibatch_size`.
+
+The exploration slots (at least one per batch) follow a shuffled traversal of all
+training IDs. The remaining slots sample without replacement, weighted by the
+gap from the highest observed score. Unseen examples receive the largest current
+gap; equally scored examples use uniform sampling. With a batch size of one, the
+exploration slot provides full coverage without difficulty weighting.
+
+Scores come from existing parent training evaluations, including all-perfect
+batches. Validation and child scores are excluded, and no extra evaluations are
+requested. Only the latest finite observation for each training ID is kept;
+this assumes higher scores are better and comparable across examples. Each batch
+contains distinct IDs and is capped at the loader size.
+
+`observed_scores` returns a copy of those observations. The sampler starts fresh
+for a new optimization or replacement loader, and preserves surviving observations
+when the loader grows. Observations are not stored in optimization checkpoints;
+resuming with a new sampler starts with shuffled exploration again.
+
+---
+
 ## Custom Batch Samplers
 
 You can implement your own batch sampler by writing a class that satisfies the `BatchSampler` protocol:
@@ -100,24 +144,19 @@ class MyBatchSampler:
 
     def __init__(self, minibatch_size: int):
         self.minibatch_size = minibatch_size
+        self.scores = {}
+
+    def observe_evaluation(self, ids, scores):
+        self.scores.update(zip(ids, scores))
 
     def next_minibatch_ids(
         self, loader: DataLoader, state: GEPAState
     ) -> list:
-        # Access the Pareto front to find the hardest examples
-        hardest = sorted(
-            state.pareto_front_valset.items(),
-            key=lambda x: x[1],  # sort by best score (ascending)
-        )
-        # Return the IDs with the lowest best scores
-        ids = [val_id for val_id, _score in hardest[: self.minibatch_size]]
-
-        # Fall back to all IDs if not enough in the Pareto front
-        if len(ids) < self.minibatch_size:
-            all_ids = list(loader.all_ids())
-            ids = all_ids[: self.minibatch_size]
-
-        return ids
+        # Train and validation IDs need not identify the same examples.
+        return sorted(
+            loader.all_ids(),
+            key=lambda data_id: self.scores.get(data_id, float("-inf")),
+        )[: self.minibatch_size]
 ```
 
 ### Using a custom sampler
@@ -165,9 +204,19 @@ Your sampler receives:
 
 It must return a list of data IDs. The engine will call `loader.fetch(ids)` to retrieve the actual examples.
 
+A sampler can optionally implement `observe_evaluation(ids, scores)` to learn
+from parent training evaluations. This method receives each deduplicated
+evaluation once, including batches skipped for perfect scores. Validation and
+child evaluations are not sent. Use these training observations when prioritizing
+training IDs: validation IDs may refer to different examples, even when their
+integer values match.
+
+
 ---
 
 ## API Reference
 
 - [`BatchSampler` protocol](../api/strategies/BatchSampler.md)
 - [`EpochShuffledBatchSampler`](../api/strategies/EpochShuffledBatchSampler.md)
+
+- [`DifficultyAwareBatchSampler`](../api/strategies/DifficultyAwareBatchSampler.md)
