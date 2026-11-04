@@ -54,6 +54,17 @@ Return ONLY a valid JSON object with the improved parameters (no explanation, no
 """
 
 
+def _is_bookkeeping_key(key: object) -> bool:
+    """Top-level side_info keys starting with ``_`` (``_budget``, ``_cost``, ...) are never shown to an LM."""
+    return isinstance(key, str) and key.startswith("_")
+
+
+def _without_bookkeeping(side_info: "SideInfo | None") -> "SideInfo | None":
+    if not isinstance(side_info, dict):
+        return side_info
+    return {k: v for k, v in side_info.items() if not _is_bookkeeping_key(k)}
+
+
 class BatchEvaluatorWrapper:
     """Wraps a user ``batch_evaluator`` while preserving its single-external-call contract.
 
@@ -778,7 +789,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 "iteration": 0,
                 "candidate": params_dict,
                 "score": original_score,
-                "side_info": original_side_info,
+                "side_info": _without_bookkeeping(original_side_info),
             }
         ]
 
@@ -838,7 +849,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                         "iteration": refinement_iter + 1,
                         "candidate": parsed_refined,
                         "score": refined_score,
-                        "side_info": refined_eval_side_info,
+                        "side_info": _without_bookkeeping(refined_eval_side_info),
                     }
                 )
 
@@ -896,7 +907,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             for _score, side_info in zip(scores, side_infos, strict=False):
                 ret[component_name].append({})
                 for k, v in side_info.items():
-                    if isinstance(k, str) and k.startswith("_"):
+                    if _is_bookkeeping_key(k):
                         continue
                     if k == "scores":
                         ret[component_name][-1]["Scores (Higher is Better)"] = v

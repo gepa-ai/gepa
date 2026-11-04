@@ -223,7 +223,7 @@ Structure
    SVGs, charts, screenshots).  Requires a VLM as ``reflection_lm``.
 
 5. **Bookkeeping** — top-level keys starting with ``_`` are not shown to
-   the reflection LM.  ``"_cost"`` (or ``"cost"``) is summed by the
+   the reflection or refiner LM.  ``"_cost"`` (or ``"cost"``) is summed by the
    optimize_anything eval server as the evaluation's cost.
 
 Example::
