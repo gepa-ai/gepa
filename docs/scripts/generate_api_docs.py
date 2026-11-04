@@ -116,6 +116,7 @@ API_MAPPING = {
     "strategies": [
         ("gepa.strategies.batch_sampler", "BatchSampler", "BatchSampler"),
         ("gepa.strategies.batch_sampler", "EpochShuffledBatchSampler", "EpochShuffledBatchSampler"),
+        ("gepa.strategies.batch_sampler", "DynamicBatchSampler", "DynamicBatchSampler"),
         ("gepa.proposer.reflective_mutation.base", "CandidateSelector", "CandidateSelector"),
         ("gepa.strategies.candidate_selector", "ParetoCandidateSelector", "ParetoCandidateSelector"),
         ("gepa.strategies.candidate_selector", "CurrentBestCandidateSelector", "CurrentBestCandidateSelector"),
@@ -137,7 +138,7 @@ CATEGORY_INFO = {
     },
     "gepa_engine": {
         "title": "GEPA Engine",
-        "description": "Configuration for the built-in GEPA engine (`engine=\"gepa\"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.",
+        "description": 'Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.',
         "dir": "optimize_anything",
     },
     "core": {
