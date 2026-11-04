@@ -115,7 +115,9 @@ class ProposalAdapter:
 
         if not value:
             return SignatureParseResult.failure("reflection output is empty")
-        return SignatureParseResult.success({self.output_key: value})
+        # ``LMOutput.strip()`` keeps the subclass; candidates must hold plain
+        # ``str`` so saved state loads without ``gepa.lm`` (and on v0.1.4).
+        return SignatureParseResult.success({self.output_key: str(value)})
 
 
 _INSTRUCTION_PROPOSAL_ADAPTER = ProposalAdapter("new_instruction")

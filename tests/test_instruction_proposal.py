@@ -130,6 +130,21 @@ End text
         assert result.text is None
         assert result.error is not None
 
+    @pytest.mark.parametrize(
+        "lm_output",
+        [
+            LMOutput("  Unfenced proposal  ", finish_reason="stop"),
+            LMOutput("```\nFenced proposal\n```", finish_reason="stop"),
+            LMOutput("~~~\nTilde proposal\n~~~", finish_reason="stop"),
+            LMOutput("```\nUnclosed proposal", finish_reason="stop"),
+        ],
+    )
+    def test_parsed_text_is_a_plain_str(self, lm_output):
+        """Candidates hold ``str``, not ``LMOutput``, whatever form the reflection takes."""
+        result = parse_proposal(InstructionProposalSignature, lm_output)
+
+        assert type(result.text) is str
+
     @pytest.mark.parametrize("lm_output", ["", "   ", "```\n```", "```markdown\r\n```", "~~~text\n~~~"])
     def test_empty_proposals_are_a_typed_miss(self, lm_output):
         """An empty reflection must not become the next candidate's text."""
@@ -153,3 +168,34 @@ End text
         assert InstructionProposalSignature.output_extractor("<reasoning>valid unfenced instruction") == {
             "new_instruction": "<reasoning>valid unfenced instruction"
         }
+
+
+def test_unfenced_lm_output_is_saved_as_plain_str(tmp_path):
+    """An unfenced ``LMOutput`` reflection must not be pickled into the candidate or ``gepa_state.bin``."""
+    import gepa
+    from gepa.core.adapter import EvaluationBatch
+
+    class Adapter:
+        propose_new_texts = None
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            scores = [1.0 if "improved" in candidate["p"] else 0.2 for _ in batch]
+            trajectories = [{}] * len(batch) if capture_traces else None
+            return EvaluationBatch(outputs=[None] * len(batch), scores=scores, trajectories=trajectories)
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return {c: [{"Feedback": "f"}] for c in components_to_update}
+
+    result = gepa.optimize(
+        seed_candidate={"p": "seed"},
+        trainset=[1, 2],
+        valset=[1, 2],
+        adapter=Adapter(),
+        reflection_lm=lambda prompt: LMOutput("improved", finish_reason="stop"),
+        max_metric_calls=8,
+        run_dir=str(tmp_path),
+    )
+
+    assert [c["p"] for c in result.candidates] == ["seed", "improved"]
+    assert all(type(c["p"]) is str for c in result.candidates)
+    assert b"LMOutput" not in (tmp_path / "gepa_state.bin").read_bytes()
