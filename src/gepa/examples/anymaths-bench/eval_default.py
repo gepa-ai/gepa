@@ -1,13 +1,11 @@
 from train_anymaths import init_dataset
 
-from gepa.adapters.anymaths_adapter.anymaths_adapter import AnyMathsStructuredOutput
+from gepa.adapters.anymaths_adapter.anymaths_adapter import AnyMathsAdapter
 
 if __name__ == "__main__":
     import argparse
-    import ast
     from pathlib import Path
 
-    import litellm
     from tqdm import tqdm
 
     parser = argparse.ArgumentParser()
@@ -39,6 +37,7 @@ if __name__ == "__main__":
 
     model = args.model
     max_litellm_workers = args.max_litellm_workers
+    adapter = AnyMathsAdapter(model=model, api_base=api_url, max_litellm_workers=max_litellm_workers)
 
     _, _, testset = init_dataset(dataset)
 
@@ -67,41 +66,8 @@ if __name__ == "__main__":
 
     with tqdm(total=len(testset), desc="Evaluating") as pbar:
         for batch in batched_testset:
-            litellm_requests = []
-
-            for item in batch:
-                user_content = f"{item['input']}"
-                messages = [{"role": "system", "content": instruction}, {"role": "user", "content": user_content}]
-
-                litellm_requests.append(messages)
-
-            try:
-                responses = litellm.batch_completion(
-                    model=model,
-                    messages=litellm_requests,
-                    api_base=api_url,
-                    max_workers=max_litellm_workers,
-                    format=AnyMathsStructuredOutput.model_json_schema(),
-                    response_format={
-                        "type": "json_object",
-                        "response_schema": AnyMathsStructuredOutput.model_json_schema(),
-                        "enforce_validation": True,
-                    },
-                )
-            except litellm.exceptions.JSONSchemaValidationError as e:
-                raise e
-
-            for response, item in zip(responses, batch, strict=False):
-                correct_output_format = True
-                try:
-                    assistant_response = ast.literal_eval(response.choices[0].message.content.strip())
-                    assistant_final_answer = assistant_response["final_answer"]
-                    ground_truth = item["answer"]
-                    score = 1.0 if ground_truth in assistant_final_answer else 0.0
-                    total_score += score
-                except Exception:
-                    correct_output_format = False
-                    continue
+            evaluation = adapter.evaluate(batch, {"system": instruction})
+            total_score += sum(evaluation.scores)
 
             pbar.update(len(batch))
             pbar.set_postfix({"Score": f"{total_score} / {len(testset):.4f}"})

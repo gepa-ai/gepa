@@ -40,6 +40,26 @@ The AnyMaths Adapter can work for any LiteLLM supported providers (e.g., OpenAI,
 
 ---
 
+### Answer scoring
+
+Training, validation and test evaluation use the same final-answer metric. The
+adapter compares the complete `final_answer`, so an expected answer of `2` does
+not match `42`, `-2` or `2.5`. Equivalent finite numeric forms such as `42` and
+`42.0`, or `1/2` and `0.5`, compare equal. Other answers require an exact match
+after trimming surrounding whitespace. Empty answers and non-finite numbers
+receive `failure_score`.
+
+Responses must satisfy the structured-output schema. Invalid JSON, missing
+fields and non-string fields receive `failure_score` and incorrect-answer
+feedback rather than aborting an evaluation batch. A positive `failure_score`
+also remains incorrect in reflection feedback.
+
+This metric measures final-answer accuracy. It does not certify that the
+solution steps are valid. Tasks that need reasoning verification should implement
+their own adapter metric and include that feedback in the reflective dataset.
+
+---
+
 ### ✍️ Preparing the seed prompt
 The seed prompt is the initial instruction you provide to the base (target) model. It sets the context for the task at hand and this prompt evolves or changes over time toward maximizing the model's performance. The default failure score (i.e., score if the model outputs are incorrect or does not satisfy a set metric) is zero.
 
