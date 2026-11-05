@@ -311,10 +311,6 @@ class GEPACallback(Protocol):
     # Candidate Selection and Sampling
     # =========================================================================
 
-    def on_sequential_evidence(self, event: SequentialEvidenceEvent) -> None:
-        """Observe a comparison, validation deferral or completed promotion."""
-        ...
-
     def on_candidate_selected(self, event: CandidateSelectedEvent) -> None:
         """Called when a candidate is selected for mutation."""
         ...
@@ -413,6 +409,15 @@ class GEPACallback(Protocol):
 
     def on_error(self, event: ErrorEvent) -> None:
         """Called when an error occurs during optimization."""
+        ...
+
+
+@runtime_checkable
+class SequentialEvidenceCallback(Protocol):
+    """Optional evidence observer, separate from the legacy callback protocol."""
+
+    def on_sequential_evidence(self, event: SequentialEvidenceEvent) -> None:
+        """Observe a comparison, validation deferral or completed promotion."""
         ...
 
 
