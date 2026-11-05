@@ -65,3 +65,12 @@ def test_config_roundtrip_and_fingerprint_excludes_only_increased_global_cap():
     assert SequentialEvidenceConfig.from_dict(contract.to_dict()) == contract
     assert contract.fingerprint == config().fingerprint
     assert contract.fingerprint != config(effect_margin=0.1).fingerprint
+
+
+def test_subnormal_alpha_uses_log_allocation_without_underflow():
+    from gepa.evidence.statistics import log_alpha_at, mean_interval_log
+    log_delta = log_alpha_at(5e-324, 20, 0, 30, 1)
+    expected = math.log(5e-324) - math.log(2) - math.log(20) - math.log(21) - math.log(30) - math.log(31)
+    assert log_delta == pytest.approx(expected)
+    moments = RunningMoments(count=10000, mean=0.5)
+    assert all(math.isfinite(x) for x in mean_interval_log(moments, 0, 1, log_delta))

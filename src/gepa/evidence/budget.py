@@ -21,6 +21,9 @@ class Reservation:
     status: Literal["reserved", "completed", "failed", "abandoned"] = "reserved"
     actual_cost: int | None = None
     failure: str | None = None
+    comparison_id: str | None = None
+    round_index: int | None = None
+    side: str | None = None
 
     @property
     def charged(self) -> int:
@@ -59,13 +62,35 @@ class MetricBudgetGuard:
             raise ValueError("upper cost must be a nonnegative integer")
         return upper_cost <= self.available
 
-    def reserve(self, token: str, upper_cost: int, purpose: str) -> str:
+    def reserve(
+        self,
+        token: str,
+        upper_cost: int,
+        purpose: str,
+        *,
+        comparison_id: str | None = None,
+        round_index: int | None = None,
+        side: str | None = None,
+    ) -> str:
         positive_integer(upper_cost, "reserved upper cost")
         if not isinstance(token, str) or not token or token in self.records:
             raise ValueError("reservation IDs must be unique; replay completed observations instead")
         if not self.can_fit(upper_cost):
             raise BudgetExhaustedError(f"{purpose} requires {upper_cost} metric calls; {self.available} available")
-        self.records[token] = Reservation(token, upper_cost, purpose)
+        if purpose == "evidence":
+            if not comparison_id or side not in ("parent", "child"):
+                raise ValueError("evidence reservations require comparison and side identities")
+            positive_integer(round_index, "evidence round index")
+        elif comparison_id is not None or round_index is not None or side is not None:
+            raise ValueError("comparison metadata belongs only to evidence reservations")
+        self.records[token] = Reservation(
+            token,
+            upper_cost,
+            purpose,
+            comparison_id=comparison_id,
+            round_index=round_index,
+            side=side,
+        )
         self._reserved += upper_cost
         self._publish()
         return token
@@ -133,6 +158,14 @@ class MetricBudgetGuard:
             if not record.token or record.token in guard.records:
                 raise ValueError("duplicate budget reservation")
             positive_integer(record.upper_cost, "saved upper cost")
+            if record.purpose == "evidence":
+                if not isinstance(record.comparison_id, str) or not record.comparison_id:
+                    raise ValueError("saved evidence reservation lacks comparison identity")
+                if record.side not in ("parent", "child"):
+                    raise ValueError("saved evidence reservation has invalid side")
+                positive_integer(record.round_index, "saved evidence round")
+            elif any(x is not None for x in (record.comparison_id, record.round_index, record.side)):
+                raise ValueError("native reservation has unexpected comparison metadata")
             if record.status not in ("reserved", "completed", "failed", "abandoned"):
                 raise ValueError("corrupt reservation status")
             if record.status == "reserved":

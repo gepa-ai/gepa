@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
-from gepa.core.adapter import EvaluationBatch
+from gepa.core.adapter import EvaluationBatch, ProposalFn
 from gepa.evidence.budget import BudgetExhaustedError, MetricBudgetGuard
 from gepa.evidence.config import SequentialEvidenceConfig
 from gepa.evidence.observations import TrialContext
@@ -25,9 +26,18 @@ class GuardedAdapter:
         self.guard = guard
         self.config = config
         self.purpose = "native"
+        self.propose_new_texts: ProposalFn | None = getattr(adapter, "propose_new_texts", None)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.wrapped, name)
+
+    def make_reflective_dataset(
+        self,
+        candidate: dict[str, str],
+        eval_batch: EvaluationBatch,
+        components_to_update: list[str],
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
+        return self.wrapped.make_reflective_dataset(candidate, eval_batch, components_to_update)
 
     def upper_cost(self, size: int) -> int:
         return size * self.config.max_calls_per_example
@@ -91,7 +101,9 @@ class GuardedAdapter:
         """Dispatch an already reserved evidence side without reserving it twice."""
         replicate = getattr(self.wrapped, "evaluate_replication", None)
         if callable(replicate):
-            result = replicate(batch, candidate, trial_context=trial_context, capture_traces=False)
+            result = cast(
+                EvaluationBatch, replicate(batch, candidate, trial_context=trial_context, capture_traces=False)
+            )
         else:
             result = self.wrapped.evaluate(batch, candidate, capture_traces=False)
         self._validate_batch(result, len(batch), False)

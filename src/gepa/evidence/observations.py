@@ -19,6 +19,8 @@ def candidate_identity(candidate: dict[str, str]) -> str:
 
 def example_identity(example_id: Any) -> str:
     """Preserve JSON type identity, including integer versus string IDs."""
+    if type(example_id) not in (str, int):
+        raise ValueError("initial evidence release requires string or integer example IDs")
     return digest([type(example_id).__name__, example_id])
 
 

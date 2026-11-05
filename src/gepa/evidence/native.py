@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from gepa.evidence.config import positive_integer
+from gepa.proposer.reflective_mutation.reflection_lm import StatelessReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
@@ -33,6 +34,8 @@ def validate_native_support(proposer: Any, merge: Any, policy: Any, max_metric_c
         raise ValueError(
             "sequential evidence requires the audited native reflective proposer, without custom proposers"
         )
+    if proposer._reflection_lm is not None and type(proposer._reflection_lm) is not StatelessReflectionLM:
+        raise ValueError("sequential evidence requires the audited native stateless reflection strategy")
     supported = (
         (proposer.sampling_strategy, (SingleMutationSampling, SameParentSampling, IndependentSampling, PxNSampling)),
         (proposer.batch_sampler, (EpochShuffledBatchSampler,)),

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from gepa.evidence.adapter import GuardedAdapter
 from gepa.evidence.budget import MetricBudgetGuard
 from gepa.evidence.config import SequentialEvidenceConfig, digest, positive_integer
-from gepa.evidence.observations import TrialContext, candidate_identity, example_identity
+from gepa.evidence.observations import Side, TrialContext, candidate_identity, example_identity
 from gepa.evidence.persistence import EvidenceStore
+from gepa.evidence.recovery import audit_ledger
 from gepa.evidence.state import ComparisonState
 from gepa.proposer.base import CandidateProposal
 
@@ -24,6 +25,7 @@ class EvidenceController:
         max_metric_calls: int,
         run_dir: str | None,
         seed: int,
+        context_extra: dict[str, Any] | None = None,
     ) -> None:
         positive_integer(max_metric_calls, "max_metric_calls")
         self.config = config
@@ -36,6 +38,7 @@ class EvidenceController:
             context = digest(
                 {
                     "config": config.to_dict(),
+                    "native": context_extra,
                     "seed": seed,
                     "train_ids": list(trainset.all_ids()),
                     "val_ids": list(valset.all_ids()),
@@ -45,6 +48,8 @@ class EvidenceController:
             )
         except (TypeError, ValueError) as error:
             raise ValueError("initial evidence release requires stable JSON-serializable data and IDs") from error
+        for example_id in (*trainset.all_ids(), *valset.all_ids()):
+            example_identity(example_id)
         self.store = EvidenceStore(run_dir, context)
         self.comparisons: dict[str, ComparisonState] = {}
         self.batch_sequence = 0
@@ -61,6 +66,7 @@ class EvidenceController:
                 if record.comparison_id in self.comparisons or record.index != len(self.comparisons) + 1:
                     raise ValueError("invalid saved comparison allocation order")
                 self.comparisons[record.comparison_id] = record
+            audit_ledger(self.comparisons, self.guard, saved["comparisons"], config)
         self.adapter = GuardedAdapter(adapter, self.guard, config)
         self.guard.persist = self.save
         self.save()
@@ -148,6 +154,7 @@ class EvidenceController:
             example_keys=keys,
             weights=weights,
             support=self.config.assumption if self.config.confidence_supported else "none",
+            replication_context_supplied=callable(getattr(self.adapter.wrapped, "evaluate_replication", None)),
             diagnostics_before=proposal.subsample_scores_before,
             diagnostics_after=proposal.subsample_scores_after,
         )
@@ -170,7 +177,16 @@ class EvidenceController:
             # Both sides are reserved before either is dispatched.
             for side in ("parent", "child"):
                 token = self.guard.next_token(f"evidence:{record.index}:{record.completed_rounds + 1}:{side}")
-                tokens.append(self.guard.reserve(token, upper_side, "evidence"))
+                tokens.append(
+                    self.guard.reserve(
+                        token,
+                        upper_side,
+                        "evidence",
+                        comparison_id=identity,
+                        round_index=record.completed_rounds + 1,
+                        side=side,
+                    )
+                )
             before = self.guard.used
             try:
                 for side, candidate, observation_ids, token in (
@@ -182,7 +198,7 @@ class EvidenceController:
                         identity,
                         record.completed_rounds + 1,
                         trial,
-                        side,
+                        cast(Side, side),
                         tuple(keys),
                         int(digest([self.seed, identity, record.completed_rounds + 1])[:16], 16),
                     )

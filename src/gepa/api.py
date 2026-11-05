@@ -202,6 +202,14 @@ def optimize(
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
     - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
 
+    - sequential_evidence: Optional keyword-only bounded-evaluator contract. Fresh,
+      matched parent/child repetitions gate reflective acceptance using simultaneous
+      Hoeffding bounds. Requires finite max_metric_calls, the native reflective
+      proposer and FullEvaluationPolicy; merge/custom proposer paths are rejected.
+      Budget includes seed, proposals, evidence and validation. Unsupported noise
+      assumptions may explicitly use heuristic mode without a confidence claim.
+      See docs/docs/guides/sequential-evidence.md for cost, recovery and data contracts.
+
     # Evaluation caching
     - cache_evaluation: Whether to cache the (score, output, objective_scores) of
       (candidate, split, example) triples. If True and a cache entry exists, GEPA skips the

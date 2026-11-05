@@ -271,6 +271,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     # Core GEPA never inspects this; adapters read/write via get_adapter_state()/set_adapter_state().
     adapter_state: dict[str, Any]
 
+    # Optional evidence fields are absent in legacy checkpoints.
+    sequential_evidence_state: dict[str, Any] | None
+    sequential_evidence_report: dict[str, Any] | None
+    sequential_proposer_state: dict[str, Any] | None
+
     def __init__(
         self,
         seed_candidate: dict[str, str],

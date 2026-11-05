@@ -93,3 +93,31 @@ def test_proxy_failure_charges_attempts_and_stops_batch_at_remaining_cap():
     with pytest.raises(BudgetExhaustedError):
         proxy.batch_evaluate([({"x": "y"}, ["a"]), ({"x": "z"}, ["b"])])
     assert raw.calls == 1
+
+
+def test_directory_fsync_unsupported_filesystem_preserves_atomic_artifact(tmp_path, monkeypatch):
+    import errno
+    import os
+    real_fsync = os.fsync
+    def fsync(descriptor):
+        import stat
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "directory fsync unsupported")
+        return real_fsync(descriptor)
+    monkeypatch.setattr(os, "fsync", fsync)
+    store = EvidenceStore(str(tmp_path), "v1")
+    store.save({"cost": 3})
+    assert store.load() == {"cost": 3}
+
+
+def test_failed_atomic_replace_preserves_previous_artifact_and_removes_temp(tmp_path, monkeypatch):
+    import os
+    store = EvidenceStore(str(tmp_path), "v1")
+    store.save({"cost": 3})
+    def fail_replace(source, target):
+        raise OSError("disk write failure")
+    monkeypatch.setattr(os, "replace", fail_replace)
+    with pytest.raises(OSError, match="disk"):
+        store.save({"cost": 9})
+    assert store.load() == {"cost": 3}
+    assert list(tmp_path.glob(".sequential-evidence-*")) == []

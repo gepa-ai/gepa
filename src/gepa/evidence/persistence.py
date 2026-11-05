@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import tempfile
@@ -62,11 +63,16 @@ class EvidenceStore:
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
             # Persist the rename where directory fsync is supported.
-            directory = os.open(self.run_dir, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            if os.name != "nt":
+                directory = os.open(self.run_dir, os.O_RDONLY)
+                try:
+                    try:
+                        os.fsync(directory)
+                    except OSError as error:
+                        if error.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EBADF):
+                            raise
+                finally:
+                    os.close(directory)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

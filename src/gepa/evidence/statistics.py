@@ -47,13 +47,34 @@ def alpha_at(alpha: float, comparison: int, stratum: int, count: int, strata: in
     return alpha / (2 * strata * comparison * (comparison + 1) * count * (count + 1))
 
 
+def log_alpha_at(alpha: float, comparison: int, stratum: int, count: int, strata: int) -> float:
+    # Validate using the same public allocation oracle; compute its logarithm
+    # directly so valid subnormal error budgets never become log(0).
+    alpha_at(alpha, comparison, stratum, count, strata)
+    return (
+        math.log(alpha)
+        - math.log(2)
+        - math.log(strata)
+        - math.log(comparison)
+        - math.log(comparison + 1)
+        - math.log(count)
+        - math.log(count + 1)
+    )
+
+
 def mean_interval(moments: RunningMoments, lower: float, upper: float, delta: float) -> tuple[float, float]:
     if lower >= upper or not 0 < delta < 1:
         raise ValueError("invalid bounds or error allocation")
+    return mean_interval_log(moments, lower, upper, math.log(delta))
+
+
+def mean_interval_log(moments: RunningMoments, lower: float, upper: float, log_delta: float) -> tuple[float, float]:
+    if lower >= upper or not math.isfinite(log_delta) or log_delta >= 0:
+        raise ValueError("invalid bounds or log error allocation")
     if moments.count == 0:
         return lower, upper
     # Subtract logs rather than forming 2/delta, which can overflow at tiny alpha.
-    radius = (upper - lower) * math.sqrt((math.log(2) - math.log(delta)) / (2 * moments.count))
+    radius = (upper - lower) * math.sqrt((math.log(2) - log_delta) / (2 * moments.count))
     return max(lower, moments.mean - radius), min(upper, moments.mean + radius)
 
 

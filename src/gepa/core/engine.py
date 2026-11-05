@@ -5,6 +5,7 @@ import json
 import os
 import traceback
 from collections.abc import Sequence
+from copy import deepcopy
 from typing import Any, Generic
 
 from gepa.core.adapter import (
@@ -28,6 +29,7 @@ from gepa.core.callbacks import (
     OptimizationEndEvent,
     OptimizationStartEvent,
     ParetoFrontUpdatedEvent,
+    SequentialEvidenceEvent,
     StateSavedEvent,
     ValsetEvaluatedEvent,
     notify_callbacks,
@@ -48,6 +50,7 @@ from gepa.evidence.budget import BudgetExhaustedError
 from gepa.evidence.config import SequentialEvidenceConfig
 from gepa.evidence.controller import EvidenceAcceptance, EvidenceController
 from gepa.evidence.native import validate_native_support
+from gepa.evidence.proposer_state import proposer_signature, restore_proposer, snapshot_proposer
 from gepa.gepa_utils import json_default, try_json_serialize
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
@@ -187,9 +190,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 max_metric_calls=evidence_max_metric_calls,
                 run_dir=run_dir,
                 seed=seed,
+                context_extra={"seed_candidate": seed_candidate, "proposer": proposer_signature(reflective_proposer)},
             )
             adapter = self.evidence.adapter
-            reflective_proposer.adapter = adapter
+            reflective_proposer.adapter = self.evidence.adapter
         elif run_dir is not None and os.path.exists(os.path.join(run_dir, "sequential_evidence.json")):
             raise ValueError("cannot disable sequential evidence when resuming an evidence run")
         self.adapter = adapter
@@ -244,6 +248,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         No-op if the adapter does not implement ``get_adapter_state``.
         Makes a shallow copy to avoid mutations between snapshot and save.
         """
+        if self.evidence is not None:
+            state.sequential_proposer_state = snapshot_proposer(self.reflective_proposer)
+            self.evidence.save()
         getter = getattr(self.adapter, "get_adapter_state", None)
         if getter is not None:
             state.adapter_state = dict(getter())
@@ -253,6 +260,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         No-op if the adapter does not implement ``set_adapter_state``.
         """
+        if self.evidence is not None:
+            saved_proposer = getattr(state, "sequential_proposer_state", None)
+            if saved_proposer is not None:
+                restore_proposer(
+                    self.reflective_proposer, saved_proposer, list(self.reflective_proposer.trainset.all_ids())
+                )
         setter = getattr(self.adapter, "set_adapter_state", None)
         if setter is not None:
             setter(state.adapter_state)
@@ -754,7 +767,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         return any_accepted
 
     def _notify_evidence(self, decision: dict[str, Any], state: GEPAState) -> None:
-        notify_callbacks(self.callbacks, "on_sequential_evidence", {"iteration": state.i + 1, "decision": decision})
+        notify_callbacks(
+            self.callbacks,
+            "on_sequential_evidence",
+            SequentialEvidenceEvent(iteration=state.i + 1, decision=deepcopy(decision)),
+        )
 
     def _run_evidence_validation(self, state: GEPAState) -> bool:
         assert self.evidence is not None and self.valset is not None
@@ -768,6 +785,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 self._notify_evidence(record.summary(), state)
                 break
             try:
+                self.evidence.adapter.purpose = "validation"
                 evaluation, count = self._evaluate_programs_on_valset([record.child], state)[0]
             except Exception as error:
                 record.status = "inconclusive"
@@ -915,6 +933,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             # hook; the state does not exist yet, so get_eval_batch cannot be used here.
             seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
             seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
+            if self.evidence is not None:
+                self.evidence.adapter.purpose = "seed"
             seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
 
         # Initialize state with pre-computed seed evaluation, or load the saved state on resume
@@ -1067,7 +1087,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 ),
             )
 
-        if self.evidence is not None and self.evidence.pending_validation():
+        if self.evidence is not None and self.evidence.pending_validation() and not self._should_stop(state):
             self._run_evidence_validation(state)
 
         # Main loop
@@ -1202,6 +1222,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.merge_proposer.last_iter_found_new_program = False
 
                 # 2) Reflective mutation proposer
+                if self.evidence is not None:
+                    self.evidence.adapter.purpose = "proposal"
                 proposals = self.reflective_proposer.propose(state)
                 if not proposals:
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from gepa.evidence.config import SequentialEvidenceConfig, finite_number
-from gepa.evidence.observations import Observation, ObservationId, candidate_identity
-from gepa.evidence.statistics import RunningMoments, alpha_at, intersect_interval, mean_interval, weighted_difference
+from gepa.evidence.observations import Observation, ObservationId, Side, candidate_identity
+from gepa.evidence.statistics import (
+    RunningMoments,
+    intersect_interval,
+    log_alpha_at,
+    mean_interval_log,
+    weighted_difference,
+)
 
 TERMINAL = {
     "supported_improvement",
@@ -51,6 +57,7 @@ class ComparisonState:
     diagnostics_before: list[float] | None = None
     diagnostics_after: list[float] | None = None
     iteration_id: str | None = None
+    replication_context_supplied: bool = False
 
     @property
     def eligible(self) -> bool:
@@ -75,7 +82,9 @@ class ComparisonState:
         sides = []
         for side, candidate in (("parent", self.parent), ("child", self.child)):
             identities = [
-                ObservationId(config.evaluator_fingerprint, candidate_identity(candidate), "train", key, trial, side)
+                ObservationId(
+                    config.evaluator_fingerprint, candidate_identity(candidate), "train", key, trial, cast(Side, side)
+                )
                 for key in self.example_keys
             ]
             for identity in identities:
@@ -125,9 +134,16 @@ class ComparisonState:
             for stratum, identity in enumerate(identities):
                 score = self.observations[identity.key].score
                 assert score is not None
-                moments[stratum].add(score)
-                allocation = alpha_at(config.alpha, self.index, stratum, moments[stratum].count, len(self.weights))
-                interval = mean_interval(moments[stratum], config.score_min, config.score_max, allocation)
+                # Moments use [0, 1] units. Raw-score second moments can
+                # overflow for valid finite bounds such as [0, 1e300].
+                width = config.score_max - config.score_min
+                moments[stratum].add((score - config.score_min) / width)
+                allocation = log_alpha_at(config.alpha, self.index, stratum, moments[stratum].count, len(self.weights))
+                unit_interval = mean_interval_log(moments[stratum], 0.0, 1.0, allocation)
+                interval = (
+                    max(config.score_min, config.score_min + width * unit_interval[0]),
+                    min(config.score_max, config.score_min + width * unit_interval[1]),
+                )
                 intervals[stratum] = intersect_interval(intervals[stratum], interval)
         self.completed_rounds += 1
         self.lower, self.upper = weighted_difference(self.intervals_parent, self.intervals_child, self.weights)
@@ -163,7 +179,8 @@ class ComparisonState:
                 status: sum(o.status == status for o in self.observations.values())
                 for status in ("reserved", "completed", "failed", "abandoned")
             },
-            "paired_randomness": False,
+            "paired_randomness_benefit_claimed": False,
+            "replication_context_supplied": self.replication_context_supplied,
             "validation_confidence_calibrated": False,
         }
 
@@ -224,6 +241,9 @@ class ComparisonState:
         finite_number(result.upper, "saved upper bound")
         if result.lower > result.upper:
             raise ValueError("corrupt saved interval")
+        from gepa.evidence.recovery import audit_comparison
+
+        audit_comparison(result, config)
         if result.status == "running":
             # No selective completion after an interrupted evaluator call,
             # including a fully returned side whose peer outcome is unknown.
