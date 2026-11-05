@@ -107,11 +107,29 @@ class EvidenceController:
         # A pool write may have committed just before process termination,
         # leaving its promotion journal entry pending. Content identity makes
         # that reconciliation idempotent without adding the candidate twice.
-        pool = {candidate_identity(candidate): idx for idx, candidate in enumerate(state.program_candidates)}
+        pool = [candidate_identity(candidate) for candidate in state.program_candidates]
         for record in self.comparisons.values():
-            if record.selected and candidate_identity(record.child) in pool:
+            parent_idx = record.parent_ids[0]
+            if parent_idx >= len(pool) or pool[parent_idx] != candidate_identity(record.parent):
+                raise ValueError("evidence parent identity differs from the native checkpoint")
+            if not record.selected:
+                continue
+            minimum = record.pool_size_at_selection
+            if minimum is None:
+                raise ValueError("selected evidence lacks its native pool publication boundary")
+            child_key = candidate_identity(record.child)
+            idx = record.validation_candidate_idx
+            if idx is not None:
+                if idx < minimum or idx >= len(pool) or pool[idx] != child_key:
+                    raise ValueError("evidence promotion is missing from the native checkpoint")
+            else:
+                # A matching candidate that was already present at selection
+                # time cannot prove that this proposal's validation committed.
+                idx = next((i for i in range(minimum, len(pool)) if pool[i] == child_key), None)
+                if idx is None:
+                    continue
+                record.validation_candidate_idx = idx
                 record.status = "promoted" if record.selection_label == "supported" else "exploration"
-                record.validation_candidate_idx = pool[candidate_identity(record.child)]
         self.save()
 
     def start_batch(self) -> None:
@@ -220,9 +238,10 @@ class EvidenceController:
     def record_for(self, proposal: CandidateProposal) -> ComparisonState:
         return self.comparisons[proposal.metadata["sequential_evidence_id"]]
 
-    def select(self, proposal: CandidateProposal, *, supported: bool, iteration_id: str) -> None:
+    def select(self, proposal: CandidateProposal, *, supported: bool, iteration_id: str, pool_size: int) -> None:
         record = self.record_for(proposal)
         record.selected = True
+        record.pool_size_at_selection = positive_integer(pool_size, "pool size at selection")
         record.selection_label = "supported" if supported else "unresolved_exploration"
         record.iteration_id = iteration_id
         if not supported:

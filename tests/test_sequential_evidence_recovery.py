@@ -152,3 +152,54 @@ def test_native_checkpoint_ahead_of_journal_rejected(tmp_path):
     state.save(str(tmp_path))
     with pytest.raises(ValueError, match="ahead"):
         run(tmp_path, budget=20)
+
+
+def test_promoted_journal_cannot_silently_outlive_its_native_pool_commit(tmp_path):
+    import shutil
+
+    backup = tmp_path / "seed-checkpoint.bin"
+
+    class SaveSeedCheckpoint:
+        def on_state_saved(self, event):
+            if not backup.exists():
+                shutil.copyfile(tmp_path / "gepa_state.bin", backup)
+
+    run(tmp_path, callbacks=[SaveSeedCheckpoint()], stop_callbacks=lambda state: len(state.program_candidates) > 1)
+    shutil.copyfile(backup, tmp_path / "gepa_state.bin")
+    with pytest.raises(ValueError, match="promotion.*checkpoint"):
+        run(tmp_path, budget=301, stop_callbacks=lambda state: True)
+
+
+def test_existing_candidate_content_cannot_complete_a_new_pending_validation(tmp_path):
+    script = CRASH_SCRIPT.replace('if stage == "seed":', 'if stage == "seed":')
+    # A second selection picks the already-pooled child as explicit exploration,
+    # then dies before that proposal's own complete validation is published.
+    script = script.replace(
+        "stage, directory = sys.argv[1:]",
+        """stage, directory = sys.argv[1:]
+from test_sequential_evidence_native import Explore
+original_select = EvidenceController.select
+selections = 0
+def select(self, *args, **kwargs):
+    global selections
+    original_select(self, *args, **kwargs)
+    selections += 1
+    if selections == 2:
+        os._exit(72)
+EvidenceController.select = select""",
+    )
+    script = script.replace(
+        "budget=300, stop_callbacks=lambda state: len(state.program_candidates) > 1",
+        "budget=500, selection_strategy=Explore()",
+    )
+    root = Path(__file__).resolve().parents[1]
+    process = subprocess.run(
+        [sys.executable, "-c", script, "duplicate", str(tmp_path)], cwd=root, capture_output=True, text=True, timeout=30
+    )
+    assert process.returncode == 72, process.stdout + process.stderr
+    result = run(tmp_path, budget=501, stop_callbacks=lambda state: True)
+    assert len(result.candidates) == 2
+    records = result.sequential_evidence["comparisons"]
+    assert len(records) == 2
+    assert records[0]["validation_candidate_idx"] == 1
+    assert records[1]["validation_candidate_idx"] is None

@@ -54,6 +54,7 @@ class ComparisonState:
     selected: bool = False
     selection_label: str | None = None
     validation_candidate_idx: int | None = None
+    pool_size_at_selection: int | None = None
     diagnostics_before: list[float] | None = None
     diagnostics_after: list[float] | None = None
     iteration_id: str | None = None
@@ -175,6 +176,7 @@ class ComparisonState:
             "selected": self.selected,
             "selection_label": self.selection_label,
             "validation_candidate_idx": self.validation_candidate_idx,
+            "pool_size_at_selection": self.pool_size_at_selection,
             "observation_counts": {
                 status: sum(o.status == status for o in self.observations.values())
                 for status in ("reserved", "completed", "failed", "abandoned")

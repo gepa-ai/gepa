@@ -111,6 +111,10 @@ def audit_comparison(record: ComparisonState, config: SequentialEvidenceConfig) 
         raise ValueError("selected candidate lacks confidence support")
     if record.selected and record.selection_label not in ("supported", "unresolved_exploration"):
         raise ValueError("selected candidate lacks an explicit acceptance label")
+    if record.selected:
+        positive_integer(record.pool_size_at_selection, "saved pool publication boundary")
+    if record.status in ("promoted", "exploration") and record.validation_candidate_idx is None:
+        raise ValueError("saved promoted decision lacks its validation pool index")
     if record.validation_candidate_idx is not None:
         if not record.selected or record.status not in ("promoted", "exploration"):
             raise ValueError("invalid saved candidate promotion state")

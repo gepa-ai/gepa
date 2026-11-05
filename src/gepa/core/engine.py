@@ -714,6 +714,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     proposal,
                     supported=evidence_gate.confidence_supported(proposal),
                     iteration_id=iteration_id if k == 0 else f"{iteration_id}-{k}",
+                    pool_size=len(state.program_candidates),
                 )
             return self._run_evidence_validation(state)
 
