@@ -9,9 +9,11 @@ from gepa.proposer.base import CandidateProposal
 
 class Adapter:
     propose_new_texts = None
+
     def __init__(self, fail_at=None):
         self.calls = []
         self.fail_at = fail_at
+
     def evaluate(self, batch, candidate, capture_traces=False):
         self.calls.append((candidate["p"], tuple(batch)))
         if self.fail_at == len(self.calls):
@@ -22,8 +24,12 @@ class Adapter:
 def controller(tmp_path, adapter=None, **kwargs):
     return EvidenceController(
         SequentialEvidenceConfig("v1", kwargs.pop("comparison_cap", 300), **kwargs),
-        adapter or Adapter(), ensure_loader(["a", "b"]), ensure_loader(["v"]),
-        max_metric_calls=1000, run_dir=str(tmp_path), seed=0,
+        adapter or Adapter(),
+        ensure_loader(["a", "b"]),
+        ensure_loader(["v"]),
+        max_metric_calls=1000,
+        run_dir=str(tmp_path),
+        seed=0,
     )
 
 
@@ -83,8 +89,15 @@ def test_context_and_example_content_mismatch_reject_resume(tmp_path):
     with pytest.raises(ValueError, match="context"):
         controller(tmp_path, effect_margin=0.1)
     with pytest.raises(ValueError, match="context"):
-        EvidenceController(SequentialEvidenceConfig("v1", 300), Adapter(), ensure_loader(["changed", "b"]),
-                           ensure_loader(["v"]), max_metric_calls=1000, run_dir=str(tmp_path), seed=0)
+        EvidenceController(
+            SequentialEvidenceConfig("v1", 300),
+            Adapter(),
+            ensure_loader(["changed", "b"]),
+            ensure_loader(["v"]),
+            max_metric_calls=1000,
+            run_dir=str(tmp_path),
+            seed=0,
+        )
 
 
 def test_heuristic_never_claims_statistical_support(tmp_path):
@@ -112,6 +125,7 @@ def test_invalid_replication_score_is_terminal_missingness(tmp_path, bad_score):
             if len(self.calls) == 2:
                 result.scores[0] = bad_score
             return result
+
     raw = Invalid()
     decision = controller(tmp_path, raw).compare(proposal(), {"p": "parent"})
     assert decision.status == "inconclusive" and decision.completed_rounds == 0
@@ -124,6 +138,7 @@ def test_supported_regression_minimum_rounds_and_tie_exhaustion(tmp_path):
             result = super().evaluate(batch, candidate, capture_traces)
             result.scores = [1 - score for score in result.scores]
             return result
+
     regression = controller(tmp_path / "regression", Reverse()).compare(proposal(), {"p": "parent"})
     assert regression.status == "supported_regression" and regression.upper < 0
     short = controller(tmp_path / "minimum", min_rounds=100, comparison_cap=16).compare(proposal(), {"p": "parent"})
@@ -138,14 +153,16 @@ def test_extreme_finite_score_range_does_not_overflow_persistence(tmp_path):
     class Huge(Adapter):
         def evaluate(self, batch, candidate, capture_traces=False):
             result = super().evaluate(batch, candidate, capture_traces)
-            result.scores = [(0.95 if score else 0.05) * 1e300 + ((-1) ** (len(self.calls) // 2)) * 4e298 for score in result.scores]
+            result.scores = [
+                (0.95 if score else 0.05) * 1e300 + ((-1) ** (len(self.calls) // 2)) * 4e298 for score in result.scores
+            ]
             return result
+
     control = controller(tmp_path, Huge(), score_min=0, score_max=1e300)
     decision = control.compare(proposal(), {"p": "parent"})
     assert decision.status == "supported_improvement"
     # Nonconstant raw scores make a variance of order 1e600; interval state
     # must use normalized bounded observations instead of overflowing m2.
-    from gepa.evidence.statistics import RunningMoments
     assert all(m.m2 < float("inf") for m in decision.moments_child)
 
 
@@ -154,9 +171,11 @@ def test_replication_context_gives_unique_trials_and_shared_seeds_without_pairin
         def __init__(self):
             super().__init__()
             self.contexts = []
+
         def evaluate_replication(self, batch, candidate, *, trial_context, capture_traces):
             self.contexts.append(trial_context)
             return self.evaluate(batch, candidate, capture_traces)
+
     raw = ContextAdapter()
     record = controller(tmp_path, raw).compare(proposal(), {"p": "parent"})
     contexts = raw.contexts
@@ -173,11 +192,24 @@ def test_replication_context_gives_unique_trials_and_shared_seeds_without_pairin
 
 def test_unsupported_identifier_rejected_before_scoring(tmp_path):
     class Loader:
-        def all_ids(self): return [("tuple", 1)]
-        def fetch(self, ids): return ["example"] * len(ids)
-        def __len__(self): return 1
+        def all_ids(self):
+            return [("tuple", 1)]
+
+        def fetch(self, ids):
+            return ["example"] * len(ids)
+
+        def __len__(self):
+            return 1
+
     raw = Adapter()
     with pytest.raises(ValueError, match="IDs"):
-        EvidenceController(SequentialEvidenceConfig("v1", 300), raw, Loader(), Loader(),
-                           max_metric_calls=100, run_dir=str(tmp_path), seed=0)
+        EvidenceController(
+            SequentialEvidenceConfig("v1", 300),
+            raw,
+            Loader(),
+            Loader(),
+            max_metric_calls=100,
+            run_dir=str(tmp_path),
+            seed=0,
+        )
     assert raw.calls == []
