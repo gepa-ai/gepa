@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 from gepa.evidence.config import SequentialEvidenceConfig, finite_number
@@ -129,9 +129,15 @@ class ComparisonState:
         for identities in (parent_ids, child_ids):
             if any(self.observations[key.key].status != "completed" for key in identities):
                 raise ValueError("balanced complete rounds are required")
+        # Interval intersections can fail even for bounded observations. Stage
+        # every stratum and both sides before exposing any learned update.
+        moments_parent = [replace(moment) for moment in self.moments_parent]
+        moments_child = [replace(moment) for moment in self.moments_child]
+        intervals_parent = list(self.intervals_parent)
+        intervals_child = list(self.intervals_child)
         for identities, moments, intervals in (
-            (parent_ids, self.moments_parent, self.intervals_parent),
-            (child_ids, self.moments_child, self.intervals_child),
+            (parent_ids, moments_parent, intervals_parent),
+            (child_ids, moments_child, intervals_child),
         ):
             for stratum, identity in enumerate(identities):
                 score = self.observations[identity.key].score
@@ -147,16 +153,30 @@ class ComparisonState:
                     min(config.score_max, config.score_min + width * unit_interval[1]),
                 )
                 intervals[stratum] = intersect_interval(intervals[stratum], interval)
-        self.completed_rounds += 1
-        self.lower, self.upper = weighted_difference(self.intervals_parent, self.intervals_child, self.weights)
-        if self.completed_rounds < config.min_rounds or not config.confidence_supported:
-            return
-        if self.lower > config.effect_margin:
-            self.status = "supported_improvement"
-            self.reason = "simultaneous lower improvement bound exceeds effect margin"
-        elif self.upper < -config.effect_margin:
-            self.status = "supported_regression"
-            self.reason = "simultaneous upper improvement bound is below negative effect margin"
+        lower, upper = weighted_difference(intervals_parent, intervals_child, self.weights)
+        completed_rounds = self.completed_rounds + 1
+        status, reason = self.status, self.reason
+        if completed_rounds >= config.min_rounds and config.confidence_supported:
+            if lower > config.effect_margin:
+                status = "supported_improvement"
+                reason = "simultaneous lower improvement bound exceeds effect margin"
+            elif upper < -config.effect_margin:
+                status = "supported_regression"
+                reason = "simultaneous upper improvement bound is below negative effect margin"
+        # One update keeps a signal-induced checkpoint from seeing only one
+        # side/count advanced. Failed rounds retain observations and paid costs
+        # as diagnostics while all prior inferential state remains unchanged.
+        self.__dict__.update(
+            moments_parent=moments_parent,
+            moments_child=moments_child,
+            intervals_parent=intervals_parent,
+            intervals_child=intervals_child,
+            completed_rounds=completed_rounds,
+            lower=lower,
+            upper=upper,
+            status=status,
+            reason=reason,
+        )
 
     def summary(self) -> dict[str, Any]:
         return {

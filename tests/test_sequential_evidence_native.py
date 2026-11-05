@@ -353,16 +353,26 @@ def test_native_default_sampler_padding_preserves_mass_and_exact_attempt_count(t
         def __init__(self):
             super().__init__()
             self.evidence_batches = []
+
         def evaluate_replication(self, batch, candidate, *, trial_context, capture_traces):
             self.evidence_batches.append((tuple(batch), trial_context))
-            return super().evaluate_replication(batch, candidate, trial_context=trial_context,
-                                                capture_traces=capture_traces)
+            return super().evaluate_replication(
+                batch, candidate, trial_context=trial_context, capture_traces=capture_traces
+            )
+
     raw = RecordReplication()
     result = gepa.optimize(
-        seed_candidate={"program": "lambda x: 0"}, trainset=list(range(size)), valset=[10],
-        adapter=raw, max_metric_calls=100, skip_perfect_score=False, logger=Quiet(), run_dir=str(tmp_path),
+        seed_candidate={"program": "lambda x: 0"},
+        trainset=list(range(size)),
+        valset=[10],
+        adapter=raw,
+        max_metric_calls=100,
+        skip_perfect_score=False,
+        logger=Quiet(),
+        run_dir=str(tmp_path),
         sequential_evidence=SequentialEvidenceConfig("padded-v1", 6, assumption="heuristic", unresolved="explore"),
-        candidate_selection_strategy="current_best", cache_evaluation=cache,
+        candidate_selection_strategy="current_best",
+        cache_evaluation=cache,
         stop_callbacks=lambda state: state.i >= 3,
     )
     records = result.sequential_evidence["comparisons"]
@@ -380,10 +390,18 @@ def test_native_default_sampler_padding_preserves_mass_and_exact_attempt_count(t
         assert len(batch) == len(set(batch))
         assert len(context.example_ids) == len(batch)
     resumed = gepa.optimize(
-        {"program": "lambda x: 0"}, list(range(size)), [10], ScriptedAdapter(),
-        max_metric_calls=100, skip_perfect_score=False, logger=Quiet(), run_dir=str(tmp_path),
+        {"program": "lambda x: 0"},
+        list(range(size)),
+        [10],
+        ScriptedAdapter(),
+        max_metric_calls=100,
+        skip_perfect_score=False,
+        logger=Quiet(),
+        run_dir=str(tmp_path),
         sequential_evidence=SequentialEvidenceConfig("padded-v1", 6, assumption="heuristic", unresolved="explore"),
-        candidate_selection_strategy="current_best", cache_evaluation=cache, stop_callbacks=lambda state: True,
+        candidate_selection_strategy="current_best",
+        cache_evaluation=cache,
+        stop_callbacks=lambda state: True,
     )
     assert resumed.total_metric_calls == result.total_metric_calls
     assert resumed.sequential_evidence["comparisons"] == records
@@ -393,8 +411,46 @@ def test_native_weight_shape_is_validated_before_seed_work(tmp_path):
     raw = ScriptedAdapter()
     with pytest.raises(ValueError, match="weights"):
         gepa.optimize(
-            {"program": "lambda x: 0"}, [0, 1, 2, 3], [10], raw,
-            max_metric_calls=100, logger=Quiet(), run_dir=str(tmp_path),
+            {"program": "lambda x: 0"},
+            [0, 1, 2, 3],
+            [10],
+            raw,
+            max_metric_calls=100,
+            logger=Quiet(),
+            run_dir=str(tmp_path),
             sequential_evidence=SequentialEvidenceConfig("weight-shape", 20, stratum_weights=(0.5, 0.5)),
         )
     assert raw.executions == 0
+
+
+def test_padded_native_batch_can_support_a_fresh_bounded_improvement(tmp_path):
+    class SecondProposalImproves(ScriptedAdapter):
+        def __init__(self):
+            super().__init__()
+            self.proposals = 0
+
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            self.proposals += 1
+            return dict.fromkeys(components_to_update, "lambda x: 0" if self.proposals == 1 else "lambda x: 1")
+
+    raw = SecondProposalImproves()
+    result = gepa.optimize(
+        {"program": "lambda x: 0"},
+        list(range(4)),
+        [10],
+        raw,
+        max_metric_calls=600,
+        skip_perfect_score=False,
+        logger=Quiet(),
+        run_dir=str(tmp_path),
+        sequential_evidence=SequentialEvidenceConfig("padded-supported", 250),
+        candidate_selection_strategy="current_best",
+        stop_callbacks=lambda state: len(state.program_candidates) > 1,
+    )
+    records = result.sequential_evidence["comparisons"]
+    assert len(records) == 2 and records[0]["status"] == "budget_exhausted"
+    promoted = records[1]
+    assert len(promoted["proposal_example_ids"]) == 3 and len(promoted["example_ids"]) == 2
+    assert promoted["status"] == "promoted" and promoted["lower"] > 0
+    assert promoted["observation_counts"]["completed"] == 4 * promoted["completed_rounds"]
+    assert result.total_metric_calls == raw.executions <= 600

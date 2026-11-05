@@ -203,3 +203,58 @@ EvidenceController.select = select""",
     assert len(records) == 2
     assert records[0]["validation_candidate_idx"] == 1
     assert records[1]["validation_candidate_idx"] is None
+
+
+@pytest.mark.parametrize("drift_side", ["both", "child"])
+def test_interval_conflict_rolls_back_the_full_round_and_resumes_inconclusive(tmp_path, drift_side):
+    from gepa.core.adapter import EvaluationBatch
+    from gepa.core.data_loader import ensure_loader
+    from gepa.evidence.config import SequentialEvidenceConfig
+    from gepa.evidence.controller import EvidenceController
+    from gepa.proposer.base import CandidateProposal
+
+    class Drift:
+        propose_new_texts = None
+
+        def __init__(self):
+            self.calls = 0
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            self.calls += 1
+            return EvaluationBatch(
+                list(batch),
+                [float(self.calls > 200 and (drift_side == "both" or candidate["p"] == "child"))] * len(batch),
+            )
+
+    config = SequentialEvidenceConfig("interval-conflict", 2000, alpha=0.5, assumption="heuristic")
+    loader = ensure_loader(["example"])
+    raw = Drift()
+    control = EvidenceController(config, raw, loader, loader, max_metric_calls=2000, run_dir=str(tmp_path), seed=0)
+    candidate = CandidateProposal({"p": "child"}, [0], [0], [0], [0])
+    record = control.compare(candidate, {"p": "parent"})
+    assert record.status == "inconclusive"
+    assert "inconsistent simultaneous intervals" in record.reason
+    assert record.completed_rounds == 177
+    assert [m.count for m in record.moments_parent + record.moments_child] == [177, 177]
+    assert record.metric_calls == control.guard.used == raw.calls == 356
+    assert len(record.observations) == 356
+    assert all(o.status == "completed" for o in record.observations.values())
+    restored_raw = Drift()
+    restored = EvidenceController(
+        config, restored_raw, loader, loader, max_metric_calls=2000, run_dir=str(tmp_path), seed=0
+    )
+    recovered = restored.compare(candidate, {"p": "parent"})
+    assert recovered.to_dict() == record.to_dict()
+    assert not recovered.eligible and restored_raw.calls == 0
+    assert restored.guard.used == 356
+
+
+def test_unique_evidence_records_without_position_metadata_remain_readable(tmp_path):
+    original = controller(tmp_path)
+    record = original.compare(proposal(), {"p": "parent"})
+    rewrite_payload(tmp_path, lambda payload: payload["comparisons"][0].pop("proposal_example_ids"))
+    restored = controller(tmp_path)
+    replay = restored.compare(proposal(), {"p": "parent"})
+    assert replay.comparison_id == record.comparison_id
+    assert replay.weights == record.weights and replay.completed_rounds == record.completed_rounds
+    assert restored.guard.used == original.guard.used

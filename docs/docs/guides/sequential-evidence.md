@@ -93,7 +93,10 @@ many repetitions or remain unresolved, especially for small effects.
 
 A scorer exception, absent score, invalid score, or interrupted round makes the
 comparison permanently `inconclusive`. Partial observations remain diagnostics;
-they never enter the learned moments. The controller does not discard failed
+they never enter the learned moments. If simultaneous intervals conflict, the
+entire round's inferential update is rolled back; actual returned observations
+and charged executions remain diagnostics in a resumable inconclusive record.
+The controller does not discard failed
 rounds and retry until a successful-only comparison appears significant. A
 numeric task-failure score is an ordinary outcome only when it is genuinely
 part of the declared bounded metric; infrastructure failures must be signaled.
