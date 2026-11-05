@@ -108,11 +108,13 @@ def find_common_ancestor_pair(
         if common_ancestors:
             # Select a random common ancestor
             weights = [agg_scores[ancestor] for ancestor in common_ancestors]
-            # If all scores are zero, each ancestor is still a valid merge base.
+            # Negative rewards cannot serve as sampling weights, but their ancestors
+            # remain valid merge bases. Keep weighted sampling for nonnegative scores.
+            use_weights = any(weights) and all(weight >= 0 for weight in weights)
             common_ancestor = rng.choices(
                 list(common_ancestors),
                 k=1,
-                weights=weights if any(weights) else None,
+                weights=weights if use_weights else None,
             )[0]
             return (i, j, common_ancestor)
 
