@@ -41,11 +41,15 @@ supported; scorer work belongs exclusively in evaluation methods.
 
 ## What the decision means
 
-Each proposal freezes its ordered minibatch IDs before observations. Each ID is
-a stratum. A complete round freshly evaluates both candidates on every stratum.
-Uniform weights are the default; `stratum_weights=(...)` can fix a different
-positive distribution in proposal order. Weights must sum to one and match the
-number of distinct IDs in every proposal batch.
+Each proposal freezes its ordered minibatch IDs before observations. Each distinct ID is
+a stratum. Native epoch padding can repeat an ID: those positions share one
+fresh observation per side and round, with their positional weights added.
+All original positions remain in the report. Padding never creates extra
+independent samples or silently removes its weight from the target mean.
+A complete round freshly evaluates both candidates on every distinct stratum.
+Uniform positional weights are the default; `stratum_weights=(...)` can fix a
+different positive distribution in proposal position order. Weights must sum to
+one and match the native positional minibatch size, checked before seed work.
 
 Ordinary proposal scores remain available to the existing criterion and
 reflection machinery. They do not become independent evidence. Repetitions

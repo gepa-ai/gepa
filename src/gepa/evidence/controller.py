@@ -7,7 +7,7 @@ from typing import Any, cast
 from gepa.evidence.adapter import GuardedAdapter
 from gepa.evidence.budget import MetricBudgetGuard
 from gepa.evidence.config import SequentialEvidenceConfig, digest, positive_integer
-from gepa.evidence.observations import Side, TrialContext, candidate_identity, example_identity
+from gepa.evidence.observations import Side, TrialContext, candidate_identity, example_identity, freeze_strata
 from gepa.evidence.persistence import EvidenceStore
 from gepa.evidence.recovery import audit_ledger
 from gepa.evidence.state import ComparisonState
@@ -137,23 +137,23 @@ class EvidenceController:
         self.save()
 
     def compare(self, proposal: CandidateProposal, parent: dict[str, str]) -> ComparisonState:
-        ids = proposal.subsample_indices
-        if not ids:
+        positions = proposal.subsample_indices
+        if not positions:
             raise ValueError("evidence comparisons require a frozen nonempty proposal batch")
-        keys = [example_identity(eid) for eid in ids]
-        if len(set(keys)) != len(keys):
-            raise ValueError("evidence proposal example IDs must be unique")
+        ids, keys, weights = freeze_strata(positions, self.config)
         if len(proposal.parent_program_ids) != 1:
             raise ValueError("initial evidence release requires exactly one reflective parent")
-        weights = self.config.weights_for(len(keys))
-        identity = digest(
-            {
-                "batch": self.batch_sequence,
-                "parent": candidate_identity(parent),
-                "child": candidate_identity(proposal.candidate),
-                "strata": keys,
-            }
-        )
+        identity_data: dict[str, Any] = {
+            "batch": self.batch_sequence,
+            "parent": candidate_identity(parent),
+            "child": candidate_identity(proposal.candidate),
+            "strata": keys,
+        }
+        if len(ids) != len(positions):
+            # Preserve existing unique-batch identities, while differing padded
+            # mass must never replay evidence for another target distribution.
+            identity_data["weights"] = weights
+        identity = digest(identity_data)
         existing = self.comparisons.get(identity)
         if existing is not None:
             proposal.metadata["sequential_evidence_id"] = identity
@@ -169,6 +169,7 @@ class EvidenceController:
             child=dict(proposal.candidate),
             parent_ids=list(proposal.parent_program_ids),
             example_ids=list(ids),
+            proposal_example_ids=list(positions),
             example_keys=keys,
             weights=weights,
             support=self.config.assumption if self.config.confidence_supported else "none",

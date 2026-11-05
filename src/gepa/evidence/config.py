@@ -94,7 +94,7 @@ class SequentialEvidenceConfig:
         if self.stratum_weights is None:
             return tuple(1.0 / count for _ in range(count))
         if len(self.stratum_weights) != count:
-            raise ValueError("stratum_weights must match the frozen proposal example IDs")
+            raise ValueError("stratum_weights must match the frozen proposal positions")
         return self.stratum_weights
 
     def validate_score(self, value: Any) -> float:

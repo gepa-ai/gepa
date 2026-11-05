@@ -342,3 +342,59 @@ def test_custom_stateful_reflection_path_rejected_before_seed(tmp_path):
     with pytest.raises(ValueError, match="stateless reflection"):
         run(tmp_path, raw, reflection_strategy=CustomReflection())
     assert raw.executions == 0
+
+
+@pytest.mark.parametrize("size", [1, 2, 4, 5])
+@pytest.mark.parametrize("cache", [False, True])
+def test_native_default_sampler_padding_preserves_mass_and_exact_attempt_count(tmp_path, size, cache):
+    from collections import Counter
+
+    class RecordReplication(ScriptedAdapter):
+        def __init__(self):
+            super().__init__()
+            self.evidence_batches = []
+        def evaluate_replication(self, batch, candidate, *, trial_context, capture_traces):
+            self.evidence_batches.append((tuple(batch), trial_context))
+            return super().evaluate_replication(batch, candidate, trial_context=trial_context,
+                                                capture_traces=capture_traces)
+    raw = RecordReplication()
+    result = gepa.optimize(
+        seed_candidate={"program": "lambda x: 0"}, trainset=list(range(size)), valset=[10],
+        adapter=raw, max_metric_calls=100, skip_perfect_score=False, logger=Quiet(), run_dir=str(tmp_path),
+        sequential_evidence=SequentialEvidenceConfig("padded-v1", 6, assumption="heuristic", unresolved="explore"),
+        candidate_selection_strategy="current_best", cache_evaluation=cache,
+        stop_callbacks=lambda state: state.i >= 3,
+    )
+    records = result.sequential_evidence["comparisons"]
+    assert len(records) == 4
+    assert result.total_metric_calls == raw.executions <= 100
+    for record in records:
+        positions = record["proposal_example_ids"]
+        frequencies = Counter(positions)
+        assert len(positions) == 3
+        assert record["example_ids"] == list(dict.fromkeys(positions))
+        assert record["weights"] == pytest.approx([frequencies[eid] / 3 for eid in record["example_ids"]])
+        assert record["observation_counts"]["completed"] == 2 * len(frequencies) * record["completed_rounds"]
+        assert record["status"] != "inconclusive"
+    for batch, context in raw.evidence_batches:
+        assert len(batch) == len(set(batch))
+        assert len(context.example_ids) == len(batch)
+    resumed = gepa.optimize(
+        {"program": "lambda x: 0"}, list(range(size)), [10], ScriptedAdapter(),
+        max_metric_calls=100, skip_perfect_score=False, logger=Quiet(), run_dir=str(tmp_path),
+        sequential_evidence=SequentialEvidenceConfig("padded-v1", 6, assumption="heuristic", unresolved="explore"),
+        candidate_selection_strategy="current_best", cache_evaluation=cache, stop_callbacks=lambda state: True,
+    )
+    assert resumed.total_metric_calls == result.total_metric_calls
+    assert resumed.sequential_evidence["comparisons"] == records
+
+
+def test_native_weight_shape_is_validated_before_seed_work(tmp_path):
+    raw = ScriptedAdapter()
+    with pytest.raises(ValueError, match="weights"):
+        gepa.optimize(
+            {"program": "lambda x: 0"}, [0, 1, 2, 3], [10], raw,
+            max_metric_calls=100, logger=Quiet(), run_dir=str(tmp_path),
+            sequential_evidence=SequentialEvidenceConfig("weight-shape", 20, stratum_weights=(0.5, 0.5)),
+        )
+    assert raw.executions == 0

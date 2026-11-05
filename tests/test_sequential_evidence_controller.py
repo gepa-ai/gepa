@@ -108,13 +108,50 @@ def test_heuristic_never_claims_statistical_support(tmp_path):
     assert not decision.eligible
 
 
-def test_duplicate_or_changed_strata_fail_before_execution(tmp_path):
-    control = controller(tmp_path)
+def test_padded_positions_share_evidence_strata_but_preserve_their_weight(tmp_path):
+    raw = Adapter()
+    control = controller(tmp_path, raw, comparison_cap=4)
     p = proposal()
-    p.subsample_indices = [0, 0]
-    with pytest.raises(ValueError, match="unique"):
-        control.compare(p, {"p": "parent"})
-    assert control.guard.used == 0
+    p.subsample_indices = [1, 0, 1]
+    record = control.compare(p, {"p": "parent"})
+    assert record.proposal_example_ids == [1, 0, 1]
+    assert record.example_ids == [1, 0]
+    assert record.weights == pytest.approx((2 / 3, 1 / 3))
+    assert record.completed_rounds == 1 and record.metric_calls == 4
+    assert raw.calls == [("parent", ("b", "a")), ("child", ("b", "a"))]
+    assert len(record.observations) == 4
+    assert all(m.count == 1 for m in record.moments_parent + record.moments_child)
+    count = len(raw.calls)
+    assert control.compare(p, {"p": "parent"}) is record
+    assert len(raw.calls) == count
+    restored = controller(tmp_path, comparison_cap=4)
+    saved = next(iter(restored.comparisons.values()))
+    assert saved.to_dict() == record.to_dict()
+
+
+def test_custom_position_weights_are_summed_for_matching_padded_ids(tmp_path):
+    control = controller(tmp_path, comparison_cap=4, stratum_weights=(0.2, 0.3, 0.5))
+    p = proposal()
+    p.subsample_indices = [1, 0, 1]
+    record = control.compare(p, {"p": "parent"})
+    assert record.example_ids == [1, 0]
+    assert record.weights == pytest.approx((0.7, 0.3))
+    restored = controller(tmp_path, comparison_cap=4, stratum_weights=(0.2, 0.3, 0.5))
+    assert next(iter(restored.comparisons.values())).weights == record.weights
+
+
+def test_distinct_padding_mass_cannot_replay_another_comparisons_evidence(tmp_path):
+    control = controller(tmp_path, comparison_cap=4)
+    first = proposal()
+    first.subsample_indices = [0, 1, 0]
+    second = proposal()
+    second.subsample_indices = [0, 1, 1]
+    a = control.compare(first, {"p": "parent"})
+    b = control.compare(second, {"p": "parent"})
+    assert a.comparison_id != b.comparison_id
+    assert a.weights == pytest.approx((2 / 3, 1 / 3))
+    assert b.weights == pytest.approx((1 / 3, 2 / 3))
+    assert control.guard.used == 8
 
 
 @pytest.mark.parametrize("bad_score", [float("nan"), float("inf"), -0.01, 1.01])

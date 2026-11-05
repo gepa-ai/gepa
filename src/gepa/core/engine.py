@@ -179,6 +179,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             validate_native_support(
                 reflective_proposer, merge_proposer, val_evaluation_policy, evidence_max_metric_calls
             )
+            # The supported sampler has a fixed positional batch size, even
+            # when padding repeats IDs. Reject incompatible weights before seed
+            # or proposal scoring can consume the shared metric budget.
+            sequential_evidence.weights_for(proposer_signature(reflective_proposer)["minibatch_size"])
             if valset is None:
                 raise ValueError("sequential evidence requires full validation data")
             assert evidence_max_metric_calls is not None

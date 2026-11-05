@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-from gepa.evidence.config import digest
+from gepa.evidence.config import SequentialEvidenceConfig, digest
 
 Side = Literal["parent", "child"]
 ObservationStatus = Literal["reserved", "completed", "failed", "abandoned"]
@@ -22,6 +23,24 @@ def example_identity(example_id: Any) -> str:
     if type(example_id) not in (str, int):
         raise ValueError("initial evidence release requires string or integer example IDs")
     return digest([type(example_id).__name__, example_id])
+
+
+def freeze_strata(
+    example_ids: list[Any], config: SequentialEvidenceConfig
+) -> tuple[list[Any], list[str], tuple[float, ...]]:
+    """Combine native padded positions without inventing independent strata."""
+    if not example_ids:
+        raise ValueError("evidence comparisons require a frozen nonempty proposal batch")
+    position_weights = config.weights_for(len(example_ids))
+    ids: list[Any] = []
+    weights_by_key: dict[str, list[float]] = {}
+    for example_id, weight in zip(example_ids, position_weights, strict=True):
+        key = example_identity(example_id)
+        if key not in weights_by_key:
+            ids.append(example_id)
+            weights_by_key[key] = []
+        weights_by_key[key].append(weight)
+    return ids, list(weights_by_key), tuple(math.fsum(weights) for weights in weights_by_key.values())
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from gepa.evidence.config import SequentialEvidenceConfig, finite_number
-from gepa.evidence.observations import Observation, ObservationId, Side, candidate_identity
+from gepa.evidence.observations import Observation, ObservationId, Side, candidate_identity, freeze_strata
 from gepa.evidence.statistics import (
     RunningMoments,
     intersect_interval,
@@ -59,6 +59,7 @@ class ComparisonState:
     diagnostics_after: list[float] | None = None
     iteration_id: str | None = None
     replication_context_supplied: bool = False
+    proposal_example_ids: list[Any] | None = None
 
     @property
     def eligible(self) -> bool:
@@ -165,6 +166,7 @@ class ComparisonState:
             "child_identity": candidate_identity(self.child),
             "parent_ids": self.parent_ids,
             "example_ids": self.example_ids,
+            "proposal_example_ids": self.proposal_example_ids or self.example_ids,
             "weights": list(self.weights),
             "status": self.status,
             "reason": self.reason,
@@ -223,8 +225,10 @@ class ComparisonState:
             )
         ):
             raise ValueError("corrupt saved stratum coverage")
-        if result.weights != config.weights_for(count):
-            raise ValueError("saved stratum weights differ from fixed configuration")
+        positions = result.proposal_example_ids if result.proposal_example_ids is not None else result.example_ids
+        ids, keys, weights = freeze_strata(positions, config)
+        if ids != result.example_ids or keys != result.example_keys or weights != result.weights:
+            raise ValueError("saved stratum identities or weights differ from the fixed proposal positions")
         for observation in observations:
             if observation.identity.evaluator != config.evaluator_fingerprint:
                 raise ValueError("saved evaluator fingerprint mismatch")
