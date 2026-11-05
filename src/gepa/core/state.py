@@ -227,7 +227,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 7
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
-    _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
+    _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks", "_evidence_budget_guard"})
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
@@ -375,12 +375,29 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         Args:
             count: Number of evaluations to add.
         """
+        evidence_guard = getattr(self, "_evidence_budget_guard", None)
+        if evidence_guard is not None:
+            # Guarded dispatch already charged actual attempts, even before the
+            # seed's native state existed. Native post-dispatch calls reconcile
+            # rather than counting that work a second time.
+            self.synchronize_evidence_budget(evidence_guard.used)
+            return
         self.total_num_evals += count
         # Lazy init handles states loaded from disk (which won't have _budget_hooks)
         hooks = getattr(self, "_budget_hooks", None)
         if hooks:
             for hook in hooks:
                 hook(self.total_num_evals, count)
+
+    def synchronize_evidence_budget(self, total: int) -> None:
+        delta = total - self.total_num_evals
+        if delta < 0:
+            raise ValueError("evidence budget cannot move backwards")
+        if delta == 0:
+            return
+        self.total_num_evals = total
+        for hook in getattr(self, "_budget_hooks", []):
+            hook(total, delta)
 
     def _atomic_write_json(self, run_dir: str, rel_path: str, data: Any) -> None:
         target_path = os.path.join(run_dir, rel_path)

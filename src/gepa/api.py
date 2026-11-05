@@ -26,6 +26,7 @@ from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
+from gepa.evidence.config import SequentialEvidenceConfig
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -111,6 +112,7 @@ def optimize(
     # Added after the positional parameters so existing positional calls keep their meaning.
     write_agent_state: bool = False,
     reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
+    sequential_evidence: SequentialEvidenceConfig | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -504,6 +506,8 @@ def optimize(
         use_cloudpickle=use_cloudpickle,
         write_agent_state=write_agent_state,
         evaluation_cache=evaluation_cache,
+        sequential_evidence=sequential_evidence,
+        evidence_max_metric_calls=max_metric_calls,
     )
 
     with experiment_tracker:

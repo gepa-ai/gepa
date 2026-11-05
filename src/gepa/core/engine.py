@@ -44,6 +44,10 @@ from gepa.core.state import (
     initialize_gepa_state,
     new_iteration_id,
 )
+from gepa.evidence.budget import BudgetExhaustedError
+from gepa.evidence.config import SequentialEvidenceConfig
+from gepa.evidence.controller import EvidenceAcceptance, EvidenceController
+from gepa.evidence.native import validate_native_support
 from gepa.gepa_utils import json_default, try_json_serialize
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
@@ -155,6 +159,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        sequential_evidence: SequentialEvidenceConfig | None = None,
+        evidence_max_metric_calls: int | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -165,6 +171,27 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Set up stopping mechanism
         self.stop_callback = stop_callback
+        self.evidence: EvidenceController | None = None
+        if sequential_evidence is not None:
+            validate_native_support(
+                reflective_proposer, merge_proposer, val_evaluation_policy, evidence_max_metric_calls
+            )
+            if valset is None:
+                raise ValueError("sequential evidence requires full validation data")
+            assert evidence_max_metric_calls is not None
+            self.evidence = EvidenceController(
+                sequential_evidence,
+                adapter,
+                reflective_proposer.trainset,
+                ensure_loader(valset),
+                max_metric_calls=evidence_max_metric_calls,
+                run_dir=run_dir,
+                seed=seed,
+            )
+            adapter = self.evidence.adapter
+            reflective_proposer.adapter = adapter
+        elif run_dir is not None and os.path.exists(os.path.join(run_dir, "sequential_evidence.json")):
+            raise ValueError("cannot disable sequential evidence when resuming an evidence run")
         self.adapter = adapter
 
         # Store cache reference for state initialization (actual cache lives in GEPAState)
@@ -606,7 +633,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         #    memoized so each proposal is judged exactly once per batch even
         #    though both the strategy and the rejection classification below
         #    consult it — stateful/stochastic criteria stay coherent.
-        criterion = _MemoizedAcceptance(self.acceptance_criterion)
+        evidence_gate = None
+        if self.evidence is not None:
+            self.evidence.start_batch()
+            for proposal in proposals:
+                parent = state.program_candidates[proposal.parent_program_ids[0]]
+                record = self.evidence.compare(proposal, parent)
+                self._notify_evidence(record.summary(), state)
+            evidence_gate = EvidenceAcceptance(self.evidence, self.acceptance_criterion)
+        criterion = _MemoizedAcceptance(evidence_gate or self.acceptance_criterion)
         selected = self.selection_strategy.select(list(proposals), state, criterion)
 
         # Defensive: strategies must return proposals FROM the input list.
@@ -658,6 +693,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 trace_entry["proposal_accepted"] = False
             return False
 
+        if self.evidence is not None:
+            for k, proposal in enumerate(selected):
+                criterion.should_accept(proposal, state)
+                assert evidence_gate is not None
+                self.evidence.select(
+                    proposal,
+                    supported=evidence_gate.confidence_supported(proposal),
+                    iteration_id=iteration_id if k == 0 else f"{iteration_id}-{k}",
+                )
+            return self._run_evidence_validation(state)
+
         # 3) Full-valset eval of the selected candidates (one batched, read-only call).
         valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
 
@@ -705,6 +751,60 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.write_agent_state:
             trace_entry["proposal_accepted"] = any_accepted
 
+        return any_accepted
+
+    def _notify_evidence(self, decision: dict[str, Any], state: GEPAState) -> None:
+        notify_callbacks(self.callbacks, "on_sequential_evidence", {"iteration": state.i + 1, "decision": decision})
+
+    def _run_evidence_validation(self, state: GEPAState) -> bool:
+        assert self.evidence is not None and self.valset is not None
+        any_accepted = False
+        for record in self.evidence.pending_validation():
+            # FullEvaluationPolicy is enforced before seed dispatch. Reserve
+            # enough for the complete set even when a cache might save work.
+            required = len(self.valset) * self.evidence.config.max_calls_per_example
+            if not self.evidence.guard.can_fit(required):
+                self.evidence.defer_validation(record)
+                self._notify_evidence(record.summary(), state)
+                break
+            try:
+                evaluation, count = self._evaluate_programs_on_valset([record.child], state)[0]
+            except Exception as error:
+                record.status = "inconclusive"
+                record.selected = False
+                record.reason = f"final validation failed: {type(error).__name__}: {error}"
+                self.evidence.save()
+                self._notify_evidence(record.summary(), state)
+                self.evidence.stop_requested = True
+                break
+            if not state.full_program_trace:
+                state.full_program_trace.append({"i": state.i, "iteration_id": record.iteration_id})
+            idx, _ = self._add_evaluated_program(
+                record.child,
+                state,
+                record.parent_ids,
+                evaluation,
+                count,
+                iteration_id=record.iteration_id,
+            )
+            # Commit the complete native pool before marking the journal entry
+            # promoted. Resume reconciles content identity if the process stops
+            # between these writes.
+            self._sync_adapter_state_to_state(state)
+            state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle, write_agent_state=self.write_agent_state)
+            self.evidence.promoted(record, idx)
+            self._notify_evidence(record.summary(), state)
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_accepted",
+                CandidateAcceptedEvent(
+                    iteration=state.i + 1,
+                    new_candidate_idx=idx,
+                    new_score=sum(record.diagnostics_after or []),
+                    parent_ids=record.parent_ids,
+                ),
+            )
+            any_accepted = True
         return any_accepted
 
     # ------------------------------------------------------------------
@@ -827,6 +927,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             frontier_type=self.frontier_type,
             evaluation_cache=self._initial_evaluation_cache,
         )
+        if self.evidence is not None:
+            self.evidence.attach_state(state, resumed=resumed)
+            if resumed and self.seed_candidate not in state.program_candidates:
+                raise ValueError("evidence resume cannot bypass comparison with a different seed candidate")
+        elif getattr(state, "sequential_evidence_state", None) is not None:
+            raise ValueError("cannot disable sequential evidence for an evidence checkpoint")
         # Fresh runs: record the seed valset eval in the cache. On resume the seed scores already
         # live in state; writing the re-computed seed eval would desynchronize cache from
         # prog_candidate_val_subscores.
@@ -960,6 +1066,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     parent_ids=[0],
                 ),
             )
+
+        if self.evidence is not None and self.evidence.pending_validation():
+            self._run_evidence_validation(state)
 
         # Main loop
         last_pbar_val = 0
@@ -1100,6 +1209,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                 proposal_accepted = self._run_reflective_batch(proposals, state)
 
+            except BudgetExhaustedError as e:
+                if self.evidence is None:
+                    raise
+                self.logger.log(f"Iteration {state.i + 1}: {e}; stopping at the last fully validated pool")
+                self.evidence.stop_requested = True
+                break
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
                 self.logger.log(traceback.format_exc())
@@ -1272,6 +1387,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
     def _should_stop(self, state: GEPAState[RolloutOutput, DataId]) -> bool:
         """Check if the optimization should stop."""
+        if self.evidence is not None and (
+            self.evidence.stop_requested or self.evidence.guard.available < self.evidence.config.max_calls_per_example
+        ):
+            return True
         if self._stop_requested:
             return True
         if self.stop_callback and self.stop_callback(state):
