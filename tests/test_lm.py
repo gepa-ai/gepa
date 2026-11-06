@@ -171,6 +171,19 @@ class TestLMBatchComplete:
         call_kwargs = mock_batch.call_args[1]
         assert call_kwargs["temperature"] == 0.9
 
+    @patch("litellm.batch_completion")
+    def test_batch_complete_raises_the_failed_request_error(self, mock_batch):
+        """litellm.batch_completion returns failures as exception objects; the original error must surface."""
+        ok = MagicMock()
+        ok.choices = [MagicMock()]
+        ok.choices[0].message.content = "ans"
+        ok.choices[0].finish_reason = "stop"
+        mock_batch.return_value = [ok, ValueError("context window exceeded")]
+
+        lm = LM("openai/gpt-4.1")
+        with pytest.raises(ValueError, match="context window exceeded"):
+            lm.batch_complete([[{"role": "user", "content": "q1"}], [{"role": "user", "content": "q2"}]])
+
 
 class TestLMRepr:
     def test_repr(self):

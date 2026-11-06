@@ -182,6 +182,9 @@ class LM:
         batch_tokens_out = 0
         results: list[str] = []
         for resp in responses:
+            if isinstance(resp, Exception):
+                # litellm.batch_completion returns failed requests as exception objects; surface the real error.
+                raise resp
             self._check_truncation(resp.choices)
             choice = resp.choices[0]
             results.append(

@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, NamedTuple, Protocol, TypedDict, cast
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
+from gepa.lm import LM
 
 
 # DataInst, Trajectory, RolloutOutput
@@ -87,15 +88,16 @@ class ContainsAnswerEvaluator:
 class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
     def __init__(
         self,
-        model: str | ChatCompletionCallable,
+        model: str | LM | ChatCompletionCallable,
         evaluator: Evaluator | None = None,
         max_litellm_workers: int = 10,
         litellm_batch_completion_kwargs: dict[str, Any] | None = None,
     ):
         if isinstance(model, str):
-            from gepa.lm import LM
-
             self._lm = LM(model)
+        elif isinstance(model, LM):
+            # An LM instance (e.g. one pointed at a local server) gets the same parallel batch path as a model string.
+            self._lm = model
         else:
             self._lm = None
         self.model = model
