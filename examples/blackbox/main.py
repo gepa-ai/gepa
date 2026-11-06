@@ -74,7 +74,7 @@ def main(problem_index: int = 46):
                 cache_evaluation=True,
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openai/gpt-5",
+                reflection_lm="openai/gpt-6.1-sol",
             ),
         ),
         objective="Evolve Python code that minimizes a blackbox objective function using the available evaluation budget efficiently.",

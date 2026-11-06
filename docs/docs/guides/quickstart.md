@@ -51,7 +51,7 @@ result = gepa.optimize(
     seed_candidate=seed_prompt,
     trainset=trainset,
     task_lm="openai/gpt-4o-mini",      # Model to optimize
-    reflection_lm="openai/gpt-4o",      # Model for reflection
+    reflection_lm="openai/gpt-6.1-sol",  # Model for reflection
     max_metric_calls=50,                # Budget
 )
 
@@ -143,7 +143,7 @@ trainset = [
 # Optimize with GEPA
 optimizer = dspy.GEPA(
     metric=metric_with_feedback,
-    reflection_lm=dspy.LM("openai/gpt-4o"),  # Strong model for reflection
+    reflection_lm=dspy.LM("openai/gpt-6.1-sol", temperature=1.0, max_tokens=32000),  # Strong model for reflection
     auto="light",  # Automatic budget configuration
     num_threads=8,
     track_stats=True,

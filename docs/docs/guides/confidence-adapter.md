@@ -97,7 +97,7 @@ result = gepa.optimize(
         {"input": "Steam purchase", "answer": "Shopping/Video Games", "additional_context": {}},
     ],
     adapter=adapter,
-    reflection_lm="openai/gpt-4.1",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=500,
 )
 ```

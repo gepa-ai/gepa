@@ -12,7 +12,7 @@ After optimization, read directly from the LM instance:
 import gepa
 from gepa.lm import LM
 
-reflection_lm = LM("openai/gpt-4.1")
+reflection_lm = LM("openai/gpt-6.1-sol")
 
 result = gepa.optimize(
     seed_candidate={"instructions": "..."},
@@ -32,7 +32,7 @@ The same works with `optimize_anything`:
 import gepa.optimize_anything as oa
 from gepa.lm import LM
 
-lm = LM("openai/gpt-5.1")
+lm = LM("openai/gpt-6.1-sol")
 
 result = oa.optimize_anything(
     seed_candidate="...",
@@ -51,14 +51,14 @@ print(f"Total cost: ${lm.total_cost:.4f}")
 
 | LM type | `total_cost` | `total_tokens_in` | `total_tokens_out` |
 |---|---|---|---|
-| String model name (e.g. `"openai/gpt-4.1"`) | Exact via `litellm.completion_cost` | Exact from API usage | Exact from API usage |
+| String model name (e.g. `"openai/gpt-6.1-sol"`) | Exact via `litellm.completion_cost` | Exact from API usage | Exact from API usage |
 | `LM` instance passed directly | Exact | Exact | Exact |
 | Plain callable (e.g. `lambda p: ...`) | `0.0` | Estimated (~4 chars/token) | Estimated (~4 chars/token) |
 
 When you pass a string model name, GEPA creates an `LM` instance internally. When you pass a plain callable, GEPA wraps it in a `TrackingLM` that estimates tokens from string length. In both cases, the tracking attributes are available on the object GEPA actually uses.
 
 !!! tip "Keep a reference to the LM"
-    If you pass a string like `reflection_lm="openai/gpt-4.1"`, GEPA creates the `LM` internally and you won't have a reference to read cost from. To access cost after optimization, create the `LM` yourself and pass the instance.
+    If you pass a string like `reflection_lm="openai/gpt-6.1-sol"`, GEPA creates the `LM` internally and you won't have a reference to read cost from. To access cost after optimization, create the `LM` yourself and pass the instance.
 
 ---
 
@@ -69,7 +69,7 @@ Use `max_reflection_cost` to stop optimization when the reflection LM's cumulati
 ```python
 result = gepa.optimize(
     ...,
-    reflection_lm="openai/gpt-4.1",
+    reflection_lm="openai/gpt-6.1-sol",
     max_reflection_cost=5.00,  # stop after $5 of reflection calls
 )
 ```

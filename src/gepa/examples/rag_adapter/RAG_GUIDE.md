@@ -70,7 +70,7 @@ This guide demonstrates how to use GEPA's Generic RAG Adapter with the new **uni
 
    # Pull models used in examples
    ollama pull qwen3:8b
-   ollama pull llama3.1:8b
+   ollama pull qwen3.5:9b
    ollama pull nomic-embed-text:latest
    ```
 
@@ -155,13 +155,13 @@ python rag_optimization.py --vector-store qdrant --max-iterations 15
 
 ```bash
 # Use different Ollama models
-python rag_optimization.py --vector-store chromadb --model ollama/llama3.1:8b
+python rag_optimization.py --vector-store chromadb --model ollama/qwen3.5:9b
 
 # Use cloud models (requires API key)
 python rag_optimization.py --vector-store lancedb --model gpt-4o-mini --max-iterations 10
 
 # Use Anthropic models
-python rag_optimization.py --vector-store qdrant --model claude-3-haiku-20240307
+python rag_optimization.py --vector-store qdrant --model claude-haiku-5-5
 ```
 
 
@@ -335,9 +335,9 @@ python rag_optimization.py --help
 | Model | Size | Speed | Quality | Use Case |
 |-------|------|-------|---------|----------|
 | `ollama/qwen3:8b` | Large | Medium | Excellent | Default for ChromaDB/Weaviate/Qdrant |
-| `ollama/llama3.1:8b` | Large | Medium | Excellent | Default for LanceDB/Milvus |
+| `ollama/qwen3.5:9b` | Large | Medium | Excellent | Newer, 256K context |
 | `gpt-4o-mini` | Cloud | Fast | Excellent | Production (cloud) |
-| `claude-3-haiku-20240307` | Cloud | Fast | Excellent | Production (cloud) |
+| `claude-haiku-5-5` | Cloud | Fast | Excellent | Production (cloud) |
 
 ### Embedding Models
 
@@ -402,12 +402,12 @@ ollama list
 
 # Pull required models
 ollama pull qwen3:8b
-ollama pull llama3.1:8b
+ollama pull qwen3.5:9b
 ollama pull nomic-embed-text:latest
 
 # Test models
 ollama run qwen3:8b "Hello"
-ollama run llama3.1:8b "Hello"
+ollama run qwen3.5:9b "Hello"
 ```
 
 #### Weaviate Issues

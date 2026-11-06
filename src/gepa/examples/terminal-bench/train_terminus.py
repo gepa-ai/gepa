@@ -92,7 +92,7 @@ One thing to be very careful about is handling interactive sessions like less, v
         if task.name != "chem-rf"
     ]
 
-    reflection_lm_name = "openai/gpt-5"
+    reflection_lm_name = "openai/gpt-6.1-sol"
     reflection_lm = (
         lambda prompt: litellm.completion(
             model=reflection_lm_name,

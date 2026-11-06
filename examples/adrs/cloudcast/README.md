@@ -51,11 +51,11 @@ Run the optimization:
 
 ```bash
 # From the repository root
-python examples/adrs/cloudcast/main.py --model gpt-4o-mini
+python examples/adrs/cloudcast/main.py --model gpt-6.1-sol
 
 # With custom settings
 python examples/adrs/cloudcast/main.py \
-    --model gpt-4o-mini \
+    --model gpt-6.1-sol \
     --max-metric-calls 50 \
     --minibatch-size 3 \
     --run-dir ./runs/cloudcast_test
@@ -63,7 +63,7 @@ python examples/adrs/cloudcast/main.py \
 
 ### Command Line Arguments
 
-- `--model`: (Required) LLM model for reflection (e.g., "gpt-4o-mini", "gemini-1.5-flash")
+- `--model`: (Required) LLM model for reflection (e.g., "gpt-6.1-sol", "gemini-1.5-flash")
 - `--max-metric-calls`: Maximum fitness evaluations (default: 100)
 - `--minibatch-size`: Samples per reflection batch (default: 3)
 - `--config-dir`: Path to configuration files directory

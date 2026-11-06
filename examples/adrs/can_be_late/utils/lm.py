@@ -7,7 +7,7 @@ def make_reflection_lm(model: str) -> LanguageModel:
     """Return a callable that sends prompts to the given LLM and returns text.
 
     Args:
-        model: Model name understood by litellm (e.g. "gpt-4o-mini") or a
+        model: Model name understood by litellm (e.g. "gpt-6.1-sol") or a
                Gemini model name (e.g. "gemini-1.5-flash").
     """
     import litellm  # type: ignore

@@ -322,7 +322,7 @@ pip install gepa
         valset=valset,
         task_lm="openai/gpt-4.1-mini",
         max_metric_calls=150,
-        reflection_lm="openai/gpt-5",
+        reflection_lm="openai/gpt-6.1-sol",
     )
 
     print(result.best_candidate['system_prompt'])
@@ -348,7 +348,7 @@ pip install gepa
     gepa = dspy.GEPA(
         metric=your_metric,
         max_metric_calls=150,
-        reflection_lm="openai/gpt-5"
+        reflection_lm="openai/gpt-6.1-sol"
     )
     optimized_rag = gepa.compile(student=RAG(), trainset=trainset, valset=valset)
     ```

@@ -127,7 +127,7 @@ result = gepa.optimize(
     seed_candidate={"component": "initial text"},
     trainset=your_training_data,
     adapter=YourCustomAdapter(),
-    reflection_lm="openai/gpt-4",
+    reflection_lm="openai/gpt-6.1-sol",
     max_metric_calls=100,
 )
 ```

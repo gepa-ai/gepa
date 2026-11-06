@@ -29,7 +29,7 @@ Usage:
     python rag_optimization.py --vector-store weaviate
 
     # With specific models
-    python rag_optimization.py --vector-store chromadb --model ollama/llama3.1:8b
+    python rag_optimization.py --vector-store chromadb --model ollama/qwen3.5:9b
 
     # Full optimization run
     python rag_optimization.py --vector-store qdrant --max-iterations 20
@@ -652,7 +652,7 @@ def parse_arguments():
         epilog="""
 Examples:
   python rag_optimization.py --vector-store chromadb
-  python rag_optimization.py --vector-store lancedb --model ollama/llama3.1:8b
+  python rag_optimization.py --vector-store lancedb --model ollama/qwen3.5:9b
   python rag_optimization.py --vector-store qdrant --max-iterations 10
   python rag_optimization.py --vector-store weaviate --model gpt-4o-mini
 

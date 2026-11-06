@@ -93,7 +93,7 @@ the `max_token_cost` → `engine.max_reflection_cost` cap.
 ```python
 engine_config={
     "reflection": {                     # -> ReflectionConfig
-        "reflection_lm": "anthropic/claude-sonnet-4-6",  # default "openai/gpt-5.1"; see "Proposer LM"
+        "reflection_lm": "anthropic/claude-sonnet-5-5",  # default "openai/gpt-5.1"; see "Proposer LM"
         "reflection_lm_kwargs": {"reasoning_effort": "high"},  # litellm kwargs (temperature, thinking, …)
         "reflection_minibatch_size": 5,  # default: 1 single-task, 3 otherwise
         # "custom_candidate_proposer": ClaudeCodeAgentProposer(...),  # replace the reflection LM with
@@ -170,7 +170,7 @@ optimizer, not as the optimizer. Stops on budget exhaustion, `stop_at_score`, or
 ## Proposer LM (not limited to LiteLLM)
 `reflection.reflection_lm` (gepa) accepts either:
 - a **model-id string** resolved through LiteLLM (`"openai/gpt-5.1"` — the default —
-  `"anthropic/claude-sonnet-4-6"`, a Bedrock inference-profile ARN, …); set the provider's
+  `"anthropic/claude-sonnet-5-5"`, a Bedrock inference-profile ARN, …); set the provider's
   credentials, and pass litellm kwargs via `reflection.reflection_lm_kwargs`; or
 - **any object/callable implementing GEPA's LM protocol** — `__call__(prompt) -> str` (a
   `str`-or-messages prompt in, completion text out). This is how you plug a **self-hosted or custom
