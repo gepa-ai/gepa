@@ -30,9 +30,9 @@ def _trajectory_field_grew(key: str, prev: Any, curr: Any) -> bool:
     """True when ReAct's ``trajectory`` input grew as a strict prefix extension.
 
     Other string fields are not treated as cumulative. Independent calls that append a
-    newline section to ``context`` or ``document`` must stay in the trace. History objects
-    are also left alone: an empty or shared-prefix History is a valid independent input,
-    and prefix matching cannot tell that apart from a later turn of the same conversation.
+    newline section to ``context`` or ``document`` must stay in the trace. History contents
+    are not prefix-matched either: an empty or shared-prefix History is a valid independent
+    input. History-based ReAct is handled by :func:`_history_records_previous_call`.
     """
     if key.lower() != "trajectory":
         return False
@@ -41,8 +41,32 @@ def _trajectory_field_grew(key: str, prev: Any, curr: Any) -> bool:
     return prev != curr and curr.startswith(prev)
 
 
+# Python may share instances of these between unrelated values, so identity says nothing about them.
+_SHAREABLE_TYPES = (str, int, float, bool, type(None))
+
+
+def _history_records_previous_call(prev: _TraceInstance, curr: _TraceInstance) -> bool:
+    """True when both calls got the same History object and it holds an output object of ``prev``.
+
+    History-based ReAct (``dspy.ReAct`` from DSPy 3.5, ``dspy.ReActV2`` before that) passes one
+    History to every turn and appends each turn's outputs to it, so the trace holds the same
+    object, already grown to the final conversation, on every call. Independent calls, even
+    with empty or shared-prefix histories, get distinct History objects and are kept.
+    """
+    if not hasattr(prev[2], "values"):
+        return False
+    for key, history in prev[1].items():
+        if not isinstance(history, History) or curr[1].get(key) is not history:
+            continue
+        outputs = [v for v in prev[2].values() if type(v) not in _SHAREABLE_TYPES]
+        for message in history.messages:
+            if isinstance(message, dict) and any(v is out for v in message.values() for out in outputs):
+                return True
+    return False
+
+
 def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:
-    """True when curr is the same predictor continuing a growing ReAct trajectory."""
+    """True when curr is the same predictor continuing a ReAct run (a growing trajectory or a shared History)."""
     if prev[0] is not curr[0]:
         return False
     if isinstance(prev[2], FailedPrediction) or isinstance(curr[2], FailedPrediction):
@@ -53,14 +77,15 @@ def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:
     for key in prev_inputs.keys() & curr_inputs.keys():
         if _trajectory_field_grew(key, prev_inputs[key], curr_inputs[key]):
             return True
-    return False
+    return _history_records_previous_call(prev, curr)
 
 
 def _select_trace_instances_for_reflection(trace_instances: list[_TraceInstance]) -> list[_TraceInstance]:
     """Choose which predictor calls to send to the reflection LM.
 
     Walk the trace in execution order. Consecutive calls to the same predictor are collapsed
-    to the last call only when ReAct's ``trajectory`` string grew as a prefix. Independent
+    to the last call only when ReAct's ``trajectory`` string grew as a prefix, or when both
+    calls share one History object that records the earlier call's outputs. Independent
     map calls, interleaved draft-critique-revise (A, B, A) calls, History inputs (including
     empty, shared-prefix, and growing conversations), and prefix-related ``context`` /
     ``document`` strings are kept.
@@ -209,9 +234,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         """Build reflection examples from captured DSPy traces.
 
         Each example includes program-level inputs and outputs plus a ``Program Trace``.
-        Consecutive ReAct calls whose ``trajectory`` string grew as a prefix are collapsed
-        to the last call of that run. Independent repeats, History inputs, and interleaved
-        calls are kept in execution order. A FailedPrediction stays in the trace and is
+        Consecutive ReAct calls (a ``trajectory`` string that grew as a prefix, or one shared
+        History that records each turn) are collapsed to the last call of that run.
+        Independent repeats, History inputs, and interleaved calls are kept in execution order. A FailedPrediction stays in the trace and is
         not merged into a neighboring call. Failed program outputs also retain the raw
         completion as parse-error feedback.
         """
