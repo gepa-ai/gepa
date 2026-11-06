@@ -420,6 +420,46 @@ class TestSelectTraceInstancesForReflection:
         assert selected == trace
         assert [t[2]["answer"] for t in selected] == ["keep-me", "other-session"]
 
+    def test_shared_history_that_records_each_turn_collapses_to_the_last_turn(self):
+        """History-based ReAct passes one History to every turn and appends each turn's outputs to it."""
+        react = object()
+        thoughts = [object(), object(), object()]
+        history = dspy.History(
+            messages=[{"next_thought": t, "tool_calls": f"call {i}"} for i, t in enumerate(thoughts)]
+        )
+        trace = [(react, {"question": "q", "history": history}, {"next_thought": t}) for t in thoughts]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == [trace[-1]]
+
+    def test_shared_history_object_without_the_previous_outputs_is_kept(self):
+        """Independent calls may reuse one constant History; nothing shows the second continues the first."""
+        talk = object()
+        constant = dspy.History(messages=[{"question": "example", "answer": "shown"}])
+        first, second = object(), object()
+        trace = [
+            (talk, {"question": "q1", "history": constant}, {"answer": first}),
+            (talk, {"question": "q2", "history": constant}, {"answer": second}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+
+    def test_shared_history_matching_only_plain_strings_is_kept(self):
+        """Equal short strings can be the same object in CPython, so they don't link two calls."""
+        talk = object()
+        constant = dspy.History(messages=[{"question": "2+2", "answer": "4"}])
+        trace = [
+            (talk, {"question": "q1", "history": constant}, {"answer": "4"}),
+            (talk, {"question": "q2", "history": constant}, {"answer": "5"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+
     def test_two_independent_react_runs_keep_each_final_step(self):
         react = object()
         trace = [
@@ -650,6 +690,61 @@ class CumulativeProgram(dspy.Module):
 program = CumulativeProgram()
 '''
 
+
+def _react_has_extract() -> bool:
+    """The trajectory-string ReAct (DSPy before 3.5) ends with an ``extract`` ChainOfThought."""
+    return hasattr(dspy.ReAct("question -> answer", tools=[]), "extract")
+
+
+# History-based ReAct: dspy.ReAct from DSPy 3.5, dspy.ReActV2 before that.
+HISTORY_REACT = "dspy.ReActV2" if _react_has_extract() else "dspy.ReAct"
+requires_trajectory_react = pytest.mark.skipif(
+    not _react_has_extract(), reason="this DSPy's ReAct passes a History, not a trajectory string"
+)
+
+HISTORY_REACT_CANDIDATE = """
+import dspy
+
+def calculator(x: str) -> str:
+    '''Evaluate a python arithmetic expression.'''
+    return str(eval(x, {"__builtins__": {}}, {}))
+
+class HistoryReActProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.react = REACT(signature="question -> answer", tools=[calculator], max_iters=4)
+
+    def forward(self, question):
+        return self.react(question=question)
+
+program = HistoryReActProgram()
+""".replace("REACT", HISTORY_REACT)
+
+TWO_HISTORY_REACT_RUNS_CANDIDATE = """
+import dspy
+
+def calculator(x: str) -> str:
+    '''Evaluate a python arithmetic expression.'''
+    return str(eval(x, {"__builtins__": {}}, {}))
+
+class TwoRunsProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.react = REACT(signature="question -> answer", tools=[calculator], max_iters=4)
+
+    def forward(self, question_a, question_b):
+        first = self.react(question=question_a)
+        second = self.react(question=question_b)
+        return dspy.Prediction(answer_a=first.answer, answer_b=second.answer)
+
+program = TwoRunsProgram()
+""".replace("REACT", HISTORY_REACT)
+
+
+def _tool_turn(thought, name, **args):
+    return {"next_thought": thought, "tool_calls": {"tool_calls": [{"name": name, "args": args}]}}
+
+
 MAP_CANDIDATE = """
 import dspy
 
@@ -739,6 +834,7 @@ program = HistoryChatProgram()
 
 
 class TestLiveDspyTraceSelection:
+    @requires_trajectory_react
     def test_live_react_collapses_repeated_react_calls(self):
         batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
         program_trace, eval_batch = _reflective_trace_from_live_program(
@@ -763,6 +859,7 @@ class TestLiveDspyTraceSelection:
         react_entries = [entry for entry in program_trace if entry["Called Module"] == "react.react"]
         assert len(react_entries) == 1
 
+    @requires_trajectory_react
     def test_live_react_collapses_three_tool_steps_to_the_final_react_call(self):
         batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
         program_trace, eval_batch = _reflective_trace_from_live_program(
@@ -786,6 +883,45 @@ class TestLiveDspyTraceSelection:
         assert "thought_1" in program_trace[0]["Inputs"]["trajectory"]
         assert "thought_2" in program_trace[1]["Inputs"]["trajectory"]
         assert program_trace[1]["Generated Outputs"]["answer"] == "4"
+
+    def test_live_history_react_collapses_to_the_final_turn(self):
+        batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            HISTORY_REACT_CANDIDATE,
+            batch,
+            [
+                _tool_turn("add", "calculator", x="2+2"),
+                _tool_turn("check", "calculator", x="4"),
+                _tool_turn("done", "submit", answer="4"),
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert len({id(entry[1]["history"]) for entry in raw_trace}) == 1
+        assert [entry["Called Module"] for entry in program_trace] == ["react.react"]
+        assert "submit" in program_trace[0]["Generated Outputs"]["tool_calls"]
+        context = program_trace[0]["Inputs"]["Context"]
+        assert all(thought in context for thought in ("add", "check", "done"))
+
+    def test_live_independent_history_react_runs_keep_each_final_turn(self):
+        batch = [Example(question_a="2+2?", question_b="3+3?").with_inputs("question_a", "question_b")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            TWO_HISTORY_REACT_RUNS_CANDIDATE,
+            batch,
+            [
+                _tool_turn("add", "calculator", x="2+2"),
+                _tool_turn("first done", "submit", answer="4"),
+                _tool_turn("second done", "submit", answer="6"),
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert [entry["Called Module"] for entry in program_trace] == ["react.react", "react.react"]
+        first_context, second_context = (entry["Inputs"]["Context"] for entry in program_trace)
+        assert "first done" in first_context and "second done" not in first_context
+        assert "second done" in second_context and "add" not in second_context
 
     def test_live_map_keeps_every_independent_classify_call(self):
         batch = [Example(items=["apple", "carrot", "salmon"]).with_inputs("items")]
