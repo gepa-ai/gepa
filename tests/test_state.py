@@ -186,9 +186,10 @@ def test_load_rejects_newer_validation_schema(run_dir, version_delta):
     checkpoint.write_bytes(pickle.dumps(saved))
     original = checkpoint.read_bytes()
 
-    with pytest.raises(ValueError, match=f"Unsupported GEPAState validation schema version {version}"):
+    with pytest.raises(ValueError, match=f"Unsupported GEPAState validation schema version {version}") as error:
         state_mod.GEPAState.load(str(run_dir))
 
+    assert "upgrade GEPA" in str(error.value)
     assert checkpoint.read_bytes() == original
 
 
