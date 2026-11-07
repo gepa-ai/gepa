@@ -92,6 +92,27 @@ config = GEPAConfig(
 
 Available stoppers: `MaxMetricCallsStopper`, `TimeoutStopCondition`, `NoImprovementStopper`, `ScoreThresholdStopper`, `SignalStopper`, `FileStopper`, `CompositeStopper`.
 
+### My GEPA run finished with only one proposal — what happened?
+
+A stopper fired too early. Either:
+
+- **You undersized `max_metric_calls`.** The baseline full validation alone costs `len(valset)` metric calls, and each proposal cycle costs another `reflection_minibatch_size + len(valset)`. If your budget is below `> 15 × len(valset)` (or precisely `len(valset) + 15 × (reflection_minibatch_size + len(valset))`), GEPA stops after only a handful of accepted proposals — what looks like a short "optimization curve" is actually `baseline → 1-2 accepted candidates → out of budget`.
+- **Or a `stop_callbacks` stopper triggered too aggressively.** `NoImprovementStopper(max_iterations_without_improvement=2)` will stop almost immediately; `ScoreThresholdStopper(threshold=0.0)` stops as soon as anything works. Loosen the threshold.
+
+For unattended runs, the cleanest fix is to skip `max_metric_calls` entirely and use `stop_callbacks=[NoImprovementStopper(max_iterations_without_improvement=10)]` — GEPA then runs until it has actually converged.
+
+GEPA emits a `gepa.GEPABudgetWarning` at the start of the run (when `max_metric_calls` is set below the ~15-attempt floor) and at the end of the run (when fewer than 3 candidates were accepted, regardless of which stopper fired). Treat both warnings as actionable.
+
+To diagnose retrospectively:
+
+```python
+result = gepa.optimize(...)
+print(f"Accepted proposals: {result.num_candidates - 1}")
+print(f"Total metric calls: {result.total_metric_calls}")
+```
+
+If `result.num_candidates - 1` is 0 or 1, the run was under-budgeted regardless of how the final score looks. See [Choosing `max_metric_calls`](budget.md) for the full formula.
+
 ### What does a single GEPA iteration cost?
 
 Each iteration involves:
