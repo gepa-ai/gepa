@@ -14,6 +14,11 @@ A proposer that combines successful candidates from the Pareto frontier.
 
 - [`MergeProposer`](MergeProposer.md) - Merge-based candidate proposer
 
+## Playbook Proposer
+
+[`PlaybookProposer`](PlaybookProposer.md) appends bounded rule additions through
+the `custom_candidate_proposer` hook, preserving existing component text.
+
 ## Base Classes and Protocols
 
 - [`CandidateProposal`](CandidateProposal.md) - Data class for candidate proposals

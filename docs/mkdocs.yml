@@ -125,6 +125,7 @@ nav:
             - ProposeNewCandidate: api/proposers/ProposeNewCandidate.md
             - ReflectiveMutationProposer: api/proposers/ReflectiveMutationProposer.md
             - MergeProposer: api/proposers/MergeProposer.md
+            - PlaybookProposer: api/proposers/PlaybookProposer.md
             - Signature: api/proposers/Signature.md
             - LanguageModel: api/proposers/LanguageModel.md
         - Logging:
