@@ -175,6 +175,7 @@ GEPA connects to your system via the [`GEPAAdapter`](src/gepa/core/adapter.py) i
 | [TerminalBench](src/gepa/adapters/terminal_bench_adapter/) | Optimize the [Terminus](https://www.tbench.ai/terminus) terminal-use agent |
 | [AnyMaths](src/gepa/adapters/anymaths_adapter/) | Mathematical problem-solving and reasoning tasks |
 | [LangChain](src/gepa/adapters/langchain_adapter/) | Optimize prompts for any LangChain pipeline — chat models, tool-using agents, LangGraph. `pip install "gepa[langchain]"` |
+| [Opik](src/gepa/adapters/opik_adapter/) | Native adapter for [Comet Opik](https://www.comet.com/docs/opik/) datasets and metrics. Metric's `reason` becomes GEPA's reflection feedback. `pip install "gepa[opik]"` |
 
 See the [adapters guide](https://gepa-ai.github.io/gepa/guides/adapters/) for how to build your own, and [DSPy's adapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) as a reference.
 
@@ -412,6 +413,7 @@ Finally:
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
     - [LangChain Adapter](src/gepa/adapters/langchain_adapter/) - Optimize prompts for any LangChain pipeline: single-turn chat models, tool-using agents built with `create_agent`, custom LangGraph graphs, RAG, and more. Provider-agnostic via LangChain's `init_chat_model`. Install with `pip install "gepa[langchain]"` plus a provider package (e.g. `langchain-openai`).
+    - [Opik Adapter](src/gepa/adapters/opik_adapter/) - Native adapter for [Comet Opik](https://www.comet.com/docs/opik/) datasets and metrics, with the metric's `reason` field routed into GEPA's reflection feedback. Install with `pip install "gepa[opik]"`. Based on the design proposed by [@vincentkoc](https://github.com/vincentkoc) ([#141](https://github.com/gepa-ai/gepa/pull/141)).
 - **GEPA uses**
     - [Microsoft AI: MAI-Thinking-1](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf) — GEPA / DSPy optimizes the Qwen3-30B LLM-judge prompt used to filter Code pages in the pre-training pipeline (~233B tokens curated from ~2,000 human labels).
     - [Nubank: Building Customer Support AI Agents at 100M-User Scale](https://arxiv.org/abs/2606.08867) — GEPA inside DSPy optimizes LLM-as-a-Judge prompts; lifts E2 eval accuracy 68.88% → 88.89%, drives Cohen's κ (GPT-4.1 vs GPT-4.1-mini) from 0.00 → 0.745; downstream production wins include +37pp AI transactional NPS and +29pp self-service rate across 5 deployed domains.
