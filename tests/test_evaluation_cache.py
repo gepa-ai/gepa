@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gepa.core.state import TRAINSET_CACHE_SPLIT, EvaluationCache
+from gepa.core.state import TRAINSET_CACHE_SPLIT, VALSET_CACHE_SPLIT, EvaluationCache
 
 # RECORDER_DIR paths for cached tests (imported lazily to avoid module conflicts)
 # Source: tests/test_aime_prompt_optimization/test_aime_prompt_optimize.py
@@ -75,13 +75,41 @@ class TestEvaluationCache:
         assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).score == 0.5
         assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).objective_scores == {"acc": 0.8}
 
-    def test_split_is_required(self):
-        """Omitting split must be a TypeError, not a silent trainset lookup."""
+    def test_omitting_split_uses_the_trainset_with_a_deprecation_warning(self):
+        """v0.1.4 callers had no ``split``; they keep working, warned, on the trainset split."""
         cache: EvaluationCache = EvaluationCache()
-        with pytest.raises(TypeError):
-            cache.get({"prompt": "test"}, "ex1")
-        with pytest.raises(TypeError):
-            cache.put({"prompt": "test"}, "ex1", "out", 0.5)
+        candidate = {"prompt": "test"}
+        with pytest.warns(DeprecationWarning, match="split=") as record:
+            cache.put(candidate, "ex1", "out", 0.5)
+            cache.put_batch(candidate, ["ex2"], ["out2"], [0.6])
+            hit = cache.get(candidate, "ex1")
+            cached, uncached = cache.get_batch(candidate, ["ex1", "ex2", "ex3"])
+            _, scores, _, num_evals = cache.evaluate_with_cache_full(
+                candidate, ["ex1", "ex3"], lambda ids: ids, lambda batch, c: (["out3"], [0.7], None)
+            )
+        assert len(record) == 5
+        assert {w.filename for w in record} == {__file__}
+        assert hit is not None and hit.score == 0.5
+        assert sorted(cached) == ["ex1", "ex2"] and uncached == ["ex3"]
+        assert scores == {"ex1": 0.5, "ex3": 0.7} and num_evals == 1
+        assert cache.get(candidate, "ex3", split=TRAINSET_CACHE_SPLIT).score == 0.7
+        assert cache.get(candidate, "ex1", split=VALSET_CACHE_SPLIT) is None
+
+    def test_gepa_state_cached_evaluate_without_split_warns(self):
+        from gepa.core.state import GEPAState
+
+        state = GEPAState.__new__(GEPAState)
+        state.evaluation_cache = EvaluationCache()
+        candidate = {"prompt": "test"}
+
+        def evaluator(batch, c):
+            return list(batch), [1.0] * len(batch), None
+
+        with pytest.warns(DeprecationWarning, match="split=") as record:
+            assert state.cached_evaluate(candidate, ["a"], lambda ids: ids, evaluator) == ([1.0], 1)
+            assert state.cached_evaluate_full(candidate, ["a"], lambda ids: ids, evaluator)[3] == 0
+        assert len(record) == 2
+        assert {w.filename for w in record} == {__file__}
 
     def test_unknown_split_is_rejected(self):
         cache: EvaluationCache = EvaluationCache()
