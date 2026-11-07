@@ -10,6 +10,7 @@ from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState
 from gepa.proposer.reflective_mutation.base import CandidateSelector
 from gepa.strategies.batch_sampler import BatchSampler
+from gepa.strategies.task_curator import TaskCuratorSampler
 
 
 @dataclass
@@ -20,6 +21,7 @@ class ProposalTask(Generic[DataId, DataInst]):
     parent_candidate: dict[str, str]
     minibatch_ids: list[DataId]
     minibatch: list[DataInst]
+    proposal_id: str | None = None
 
 
 class SamplingStrategy(Protocol[DataId, DataInst]):
@@ -46,6 +48,22 @@ class SamplingStrategy(Protocol[DataId, DataInst]):
     ) -> list[ProposalTask[DataId, DataInst]]: ...
 
 
+def _sample_task(
+    state: GEPAState, batch_sampler: BatchSampler, trainset: DataLoader, parent_idx: int, slot: int
+) -> ProposalTask:
+    proposal_id = None
+    if isinstance(batch_sampler, TaskCuratorSampler):
+        # Allocate identity before curation; filtering/reordering later must not
+        # change which sampling decisions, history, or anchor belong to this job.
+        proposal_id = f"{state.i + 1}-{slot}"
+        ids = batch_sampler.next_minibatch_ids_for_candidate(
+            trainset, state, candidate_idx=parent_idx, proposal_id=proposal_id
+        )
+    else:
+        ids = batch_sampler.next_minibatch_ids(trainset, state)
+    return ProposalTask(parent_idx, state.program_candidates[parent_idx], ids, trainset.fetch(ids), proposal_id)
+
+
 class SingleMutationSampling(SamplingStrategy):
     """1 parent, 1 mutation — default GEPA behavior."""
 
@@ -57,8 +75,7 @@ class SingleMutationSampling(SamplingStrategy):
         trainset: DataLoader,
     ) -> list[ProposalTask]:
         parent_idx = candidate_selector.select_candidate_idx(state)
-        mb_ids = batch_sampler.next_minibatch_ids(trainset, state)
-        return [ProposalTask(parent_idx, state.program_candidates[parent_idx], mb_ids, trainset.fetch(mb_ids))]
+        return [_sample_task(state, batch_sampler, trainset, parent_idx, 0)]
 
 
 class SameParentSampling(SamplingStrategy):
@@ -75,11 +92,9 @@ class SameParentSampling(SamplingStrategy):
         trainset: DataLoader,
     ) -> list[ProposalTask]:
         parent_idx = candidate_selector.select_candidate_idx(state)
-        parent = state.program_candidates[parent_idx]
         tasks = []
         for _ in range(self.n):
-            mb_ids = batch_sampler.next_minibatch_ids(trainset, state)
-            tasks.append(ProposalTask(parent_idx, parent, mb_ids, trainset.fetch(mb_ids)))
+            tasks.append(_sample_task(state, batch_sampler, trainset, parent_idx, len(tasks)))
         return tasks
 
 
@@ -99,8 +114,7 @@ class IndependentSampling(SamplingStrategy):
         tasks = []
         for _ in range(self.n):
             parent_idx = candidate_selector.select_candidate_idx(state)
-            mb_ids = batch_sampler.next_minibatch_ids(trainset, state)
-            tasks.append(ProposalTask(parent_idx, state.program_candidates[parent_idx], mb_ids, trainset.fetch(mb_ids)))
+            tasks.append(_sample_task(state, batch_sampler, trainset, parent_idx, len(tasks)))
         return tasks
 
 
@@ -121,8 +135,6 @@ class PxNSampling(SamplingStrategy):
         tasks = []
         for _ in range(self.p):
             parent_idx = candidate_selector.select_candidate_idx(state)
-            parent = state.program_candidates[parent_idx]
             for _ in range(self.n):
-                mb_ids = batch_sampler.next_minibatch_ids(trainset, state)
-                tasks.append(ProposalTask(parent_idx, parent, mb_ids, trainset.fetch(mb_ids)))
+                tasks.append(_sample_task(state, batch_sampler, trainset, parent_idx, len(tasks)))
         return tasks

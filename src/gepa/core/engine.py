@@ -54,6 +54,7 @@ from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMuta
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
+from gepa.strategies.task_curator import TaskCuratorError, TaskCuratorSampler
 from gepa.utils import StopperProtocol
 
 # Import tqdm for progress bar functionality
@@ -192,6 +193,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
+        if merge_proposer is not None and isinstance(reflective_proposer.batch_sampler, TaskCuratorSampler):
+            raise ValueError("Task curator supports single-parent mutations, not multi-parent merge")
         self.frontier_type: FrontierType = frontier_type
 
         # Merge scheduling flags (mirroring previous behavior)
@@ -390,6 +393,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
         num_actual_evals: int,
         iteration_id: str | None = None,
+        *,
+        proposal: CandidateProposal | None = None,
     ) -> tuple[int, int]:
         """Add an already-evaluated candidate to the pool. Must run sequentially.
 
@@ -510,6 +515,19 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Update candidate tree visualization
         self._log_candidate_tree(state)
+
+        # All registered children use the same lifecycle path. Mutation evidence
+        # and the child fork are observed together; externally supplied seeds
+        # carry only their parent/child identity.
+        if isinstance(self.reflective_proposer.batch_sampler, TaskCuratorSampler):
+            self.reflective_proposer.batch_sampler.observe_outcome(
+                iteration=state.i + 1,
+                parent_ids=parent_program_idx,
+                candidate_idx=new_program_idx,
+                proposal=proposal,
+                loader=self.reflective_proposer.trainset,
+                state=state,
+            )
 
         return new_program_idx, linear_pareto_front_program_idx
 
@@ -642,6 +660,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         for proposal in proposals:
             if id(proposal) in selected_ids:
                 continue
+            if isinstance(self.reflective_proposer.batch_sampler, TaskCuratorSampler):
+                self.reflective_proposer.batch_sampler.observe_outcome(
+                    iteration=iteration,
+                    parent_ids=proposal.parent_program_ids,
+                    candidate_idx=None,
+                    proposal=proposal,
+                    loader=self.reflective_proposer.trainset,
+                    state=state,
+                )
             if any(proposal is d for d in duplicates):
                 self._report_rejected_proposal(
                     proposal,
@@ -659,7 +686,23 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             return False
 
         # 3) Full-valset eval of the selected candidates (one batched, read-only call).
-        valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
+        try:
+            valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
+        except Exception:
+            # Minibatch evidence is complete even if validation fails. None of
+            # these candidates entered the pool; preserve their evaluated
+            # outcomes before the engine either continues or propagates the error.
+            if isinstance(self.reflective_proposer.batch_sampler, TaskCuratorSampler):
+                for proposal in selected:
+                    self.reflective_proposer.batch_sampler.observe_outcome(
+                        iteration=iteration,
+                        parent_ids=proposal.parent_program_ids,
+                        candidate_idx=None,
+                        proposal=proposal,
+                        loader=self.reflective_proposer.trainset,
+                        state=state,
+                    )
+            raise
 
         # 4) Add each selected candidate to the pool, in order.
         any_accepted = False
@@ -684,6 +727,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 valset_evaluation=valset_evaluation,
                 num_actual_evals=num_actual_evals,
                 iteration_id=candidate_iteration_id,
+                proposal=proposal,
             )
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
             notify_callbacks(
@@ -972,7 +1016,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             assert state.is_consistent()
             proposal_accepted = False
             iteration_started = False
+            proposals = None
+            iteration_error = None
             evals_before_iteration = state.total_num_evals
+            candidates_before_iteration = len(state.program_candidates)
             try:
                 self._sync_adapter_state_to_state(state)
                 state.save(
@@ -1101,6 +1148,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 proposal_accepted = self._run_reflective_batch(proposals, state)
 
             except Exception as e:
+                iteration_error = e
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
                 self.logger.log(traceback.format_exc())
                 made_progress = state.total_num_evals > evals_before_iteration
@@ -1111,10 +1159,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ErrorEvent(
                         iteration=state.i + 1,
                         exception=e,
-                        will_continue=not self.raise_on_exception and made_progress,
+                        will_continue=not self.raise_on_exception
+                        and made_progress
+                        and not isinstance(e, TaskCuratorError),
                     ),
                 )
-                if self.raise_on_exception or not made_progress:
+                if self.raise_on_exception or not made_progress or isinstance(e, TaskCuratorError):
                     raise e
                 else:
                     continue
@@ -1122,6 +1172,24 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 # Notify iteration end only if the iteration actually started
                 # (i.e., on_iteration_start was called successfully)
                 if iteration_started:
+                    sampler = self.reflective_proposer.batch_sampler
+                    # Preserve an already-fatal original error. Otherwise a
+                    # curator may veto continuing/saving an incomplete batch.
+                    propagating_error = iteration_error is not None and (
+                        self.raise_on_exception
+                        or state.total_num_evals <= evals_before_iteration
+                        or isinstance(iteration_error, TaskCuratorError)
+                    )
+                    if isinstance(sampler, TaskCuratorSampler) and not propagating_error:
+                        sampler.finish_iteration(
+                            iteration=state.i + 1,
+                            proposals=proposals,
+                            state=state,
+                            # Registration precedes trace writes and callbacks;
+                            # use the pool itself to guard single-proposal recovery.
+                            aborted_before_registration=iteration_error is not None
+                            and len(state.program_candidates) == candidates_before_iteration,
+                        )
                     notify_callbacks(
                         self.callbacks,
                         "on_iteration_end",
