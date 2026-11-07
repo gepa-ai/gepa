@@ -489,6 +489,7 @@ Everyone who has committed to this repository, written a post on the [GEPA blog]
 - [alex choi](https://github.com/heyalexchoi)
 - [Alexandros G. Dimakis](https://github.com/Alex-adim)
 - [Alvin Cheung](https://github.com/akcheung)
+- [Amir Gholami](https://github.com/amirgholami)
 - [Andrei Cojocaru](https://github.com/AndreiBerkeley)
 - [Andres Serrano](https://github.com/andressrg)
 - [Aobo Yang](https://github.com/aobo-y)
@@ -548,6 +549,7 @@ Everyone who has committed to this repository, written a post on the [GEPA blog]
 - [Michael Hahn](https://github.com/mwildehahn)
 - [Michael J Ryan](https://github.com/XenonMolecule)
 - [Michel Pavlukhin](https://github.com/Archelunch)
+- [Nicholas Lee](https://github.com/dragon18456)
 - [Noah Ziems](https://github.com/Ziems)
 - [Omar Khattab](https://github.com/okhat)
 - Oshri Naparstek
@@ -565,6 +567,7 @@ Everyone who has committed to this repository, written a post on the [GEPA blog]
 - [Sanjit A. Seshia](https://github.com/saseshia)
 - [Santiago](https://github.com/saocorley)
 - Satyam Mittal
+- [Sehoon Kim](https://github.com/kssteven418)
 - [Seth Kimmel](https://github.com/sethkimmel3)
 - [Shangyin Tan](https://github.com/Shangyint)
 - [Shashikant](https://github.com/Shashikant86)
@@ -579,6 +582,7 @@ Everyone who has committed to this repository, written a post on the [GEPA blog]
 - [Wenjie Ma](https://github.com/euclidgame)
 - Xiaokun Chen
 - [Yushu Li](https://github.com/Yushu-Li)
+- [Zack Yu](https://github.com/zack041)
 - [ZF](https://github.com/feizhuzheng)
 - [ZY Liu](https://github.com/liuzhengyang699)
 <!-- contributors:end -->

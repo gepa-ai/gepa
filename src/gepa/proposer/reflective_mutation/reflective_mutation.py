@@ -40,6 +40,7 @@ from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM, Statel
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy, SingleMutationSampling
+from gepa.strategies.task_curator import TaskCuratorContractError, TaskCuratorError, TaskCuratorSampler
 
 
 class ReflectiveMutationProposer:
@@ -300,6 +301,13 @@ class ReflectiveMutationProposer:
         tasks = self.sampling_strategy.sample_tasks(state, self.candidate_selector, self.batch_sampler, self.trainset)
         if not tasks:
             return []
+        is_curator = isinstance(self.batch_sampler, TaskCuratorSampler)
+        if is_curator:
+            for slot, task in enumerate(tasks):
+                if task.proposal_id is None:
+                    task.proposal_id = f"{i}-{slot}"
+            if len({task.proposal_id for task in tasks}) != len(tasks):
+                raise TaskCuratorContractError("Sampling returned duplicate proposal IDs")
 
         # Fire callbacks for each sampled task
         for task in tasks:
@@ -377,6 +385,17 @@ class ReflectiveMutationProposer:
             for idx, e in enumerate(parent_evals)
         )
         state.increment_evals(total_parent_evals)
+
+        if isinstance(self.batch_sampler, TaskCuratorSampler):
+            for task, key in zip(tasks, task_to_key, strict=True):
+                self.batch_sampler.observe_evaluation(
+                    iteration=i,
+                    task_ids=task.minibatch_ids,
+                    evaluation=key_to_eval[key],
+                    state=state,
+                    proposal_id=task.proposal_id,
+                    evaluation_id=f"{i}-eval-{key_list.index(key)}",
+                )
 
         # Update evaluation cache for parents
         if state.evaluation_cache is not None:
@@ -473,9 +492,20 @@ class ReflectiveMutationProposer:
             )
 
             try:
-                reflective_dataset = self.adapter.make_reflective_dataset(
-                    task.parent_candidate, eval_curr, predictor_names
-                )
+                if isinstance(self.batch_sampler, TaskCuratorSampler):
+                    reflective_dataset = self.batch_sampler.build_reflective_dataset(
+                        candidate=task.parent_candidate,
+                        task_ids=task.minibatch_ids,
+                        evaluation=eval_curr,
+                        components_to_update=predictor_names,
+                        make_reflective_dataset=self.adapter.make_reflective_dataset,
+                        state=state,
+                        proposal_id=task.proposal_id,
+                    )
+                else:
+                    reflective_dataset = self.adapter.make_reflective_dataset(
+                        task.parent_candidate, eval_curr, predictor_names
+                    )
                 if self.reflective_dataset_enricher is not None:
                     reflective_dataset = self.reflective_dataset_enricher(
                         candidate=task.parent_candidate,
@@ -497,6 +527,27 @@ class ReflectiveMutationProposer:
                         dataset=reflective_dataset_concrete,
                     ),
                 )
+                if isinstance(self.batch_sampler, TaskCuratorSampler):
+                    # A curator can omit tasks/components with no usable material.
+                    # Custom/adapter proposers must not receive empty reflection jobs.
+                    predictor_names = [name for name in predictor_names if reflective_dataset_concrete.get(name)]
+                    if not predictor_names:
+                        self.logger.log(
+                            f"Iteration {i}: No reflection material for parent {task.parent_idx}. Skipping."
+                        )
+                        notify_callbacks(
+                            self.callbacks,
+                            "on_evaluation_skipped",
+                            EvaluationSkippedEvent(
+                                iteration=i,
+                                candidate_idx=task.parent_idx,
+                                reason="no_reflection_material",
+                                scores=eval_curr.scores,
+                                is_seed_candidate=task.parent_idx == 0,
+                            ),
+                        )
+                        prepared.append(None)
+                        continue
                 notify_callbacks(
                     self.callbacks,
                     "on_proposal_start",
@@ -507,6 +558,8 @@ class ReflectiveMutationProposer:
                         reflective_dataset=reflective_dataset_concrete,
                     ),
                 )
+            except TaskCuratorError:
+                raise
             except Exception as e:
                 self.logger.log(f"Iteration {i}: Exception building reflective dataset: {e}")
                 self.logger.log(traceback.format_exc())
@@ -562,7 +615,7 @@ class ReflectiveMutationProposer:
             # Stable per-proposal identifier (iteration-taskindex): downstream
             # consumers (run manifests, #346's per-proposal state anchors) can
             # key on this instead of positional inference.
-            _lm_metadata["proposal_id"] = f"{i}-{len(children)}"
+            _lm_metadata["proposal_id"] = task.proposal_id if is_curator else f"{i}-{len(children)}"
             for comp in new_texts:
                 _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
                 _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
@@ -572,7 +625,7 @@ class ReflectiveMutationProposer:
             # reserved prompt:/raw_lm_output: namespaces are remapped so a
             # reflector cannot inject phantom components into proposal tables.
             for meta_key, meta_val in (reflection_metadata or {}).items():
-                if meta_key.startswith(("prompt:", "raw_lm_output:")):
+                if (is_curator and meta_key == "proposal_id") or meta_key.startswith(("prompt:", "raw_lm_output:")):
                     _lm_metadata[f"reflection_meta:{meta_key}"] = meta_val
                 else:
                     _lm_metadata[meta_key] = meta_val
