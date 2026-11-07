@@ -205,3 +205,39 @@ def test_none_seed_candidate():
             max_metric_calls=2,
             reflection_minibatch_size=1,
         )
+
+
+@pytest.mark.parametrize("proposer_reports_cost", [True, False])
+def test_reflection_cost_budget_with_custom_candidate_proposer(proposer_reports_cost):
+    cost_meter = Mock(total_cost=0.0)
+
+    class Proposer:
+        def __init__(self):
+            self.calls = 0
+
+        @property
+        def total_cost(self):
+            return cost_meter.total_cost
+
+        def propose(self, candidate, reflective_dataset, components):
+            self.calls += 1
+            cost_meter.total_cost += 0.25
+            return dict.fromkeys(components, f"revision {self.calls}")
+
+        __call__ = propose
+
+    proposer = Proposer()
+    optimize(
+        seed_candidate={"instructions": "seed"},
+        trainset=[{"input": "question", "answer": "correct", "additional_context": {}}],
+        task_lm=Mock(return_value="wrong"),
+        custom_candidate_proposer=proposer if proposer_reports_cost else proposer.propose,
+        reflection_lm=Mock(total_cost=0.0) if proposer_reports_cost else cost_meter,
+        max_reflection_cost=0.5,
+        max_metric_calls=20,
+        reflection_minibatch_size=1,
+        display_progress_bar=False,
+    )
+
+    assert proposer.calls == 2
+    assert cost_meter.total_cost == 0.5
