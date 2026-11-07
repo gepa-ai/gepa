@@ -1,7 +1,9 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from collections.abc import Mapping, Sequence
+import inspect
+import warnings
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
@@ -267,8 +269,30 @@ def invoke_batch_evaluate(
     *,
     capture_traces: bool = True,
 ) -> list[EvaluationBatch]:
-    """Use an adapter's optional trace-aware batch evaluator."""
+    """Use an adapter's optional trace-aware batch evaluator.
+
+    A ``batch_evaluate(self, items)`` without ``capture_traces`` (the v0.1.4
+    signature, which always returned traces) is still called, with a
+    ``DeprecationWarning``.
+    """
     batch_fn = getattr(adapter, "batch_evaluate", None)
-    if batch_fn is not None:
+    if batch_fn is None:
+        return default_batch_evaluate(adapter, items, capture_traces=capture_traces)
+    if _accepts_capture_traces(batch_fn):
         return batch_fn(items, capture_traces=capture_traces)
-    return default_batch_evaluate(adapter, items, capture_traces=capture_traces)
+    warnings.warn(
+        f"{type(adapter).__name__}.batch_evaluate(items) does not accept capture_traces; "
+        "add a keyword-only `capture_traces: bool = True` parameter. "
+        "The old signature is called as before, but support will be removed in a future release.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return batch_fn(items)
+
+
+def _accepts_capture_traces(fn: Callable[..., Any]) -> bool:
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return True  # can't introspect: assume the current contract
+    return any(p.name == "capture_traces" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params)
