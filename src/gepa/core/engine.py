@@ -62,6 +62,12 @@ try:
 except ImportError:
     tqdm = None
 
+# With raise_on_exception=False, a failed iteration is logged and the loop
+# continues, as in v0.1.4. A failure that spent no budget can repeat forever
+# (budget stoppers never fire), so the run re-raises once this many
+# consecutive iterations have failed without spending any evaluations.
+MAX_FAILED_ITERATIONS_WITHOUT_PROGRESS = 10
+
 
 def _record_proposal_evals(trace_entry: dict, proposal: "CandidateProposal") -> None:
     """Capture evaluation side_info from a proposal into the iteration trace.
@@ -963,6 +969,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Main loop
         last_pbar_val = 0
+        failures_without_progress = 0
         while not self._should_stop(state):
             if self.display_progress_bar and progress_bar is not None:
                 delta = state.total_num_evals - last_pbar_val
@@ -972,6 +979,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             assert state.is_consistent()
             proposal_accepted = False
             iteration_started = False
+            iteration_failed = False
             evals_before_iteration = state.total_num_evals
             try:
                 self._sync_adapter_state_to_state(state)
@@ -1103,7 +1111,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
                 self.logger.log(traceback.format_exc())
+                iteration_failed = True
                 made_progress = state.total_num_evals > evals_before_iteration
+                failures_without_progress = 0 if made_progress else failures_without_progress + 1
+                give_up = self.raise_on_exception or failures_without_progress >= MAX_FAILED_ITERATIONS_WITHOUT_PROGRESS
                 # Notify error callback
                 notify_callbacks(
                     self.callbacks,
@@ -1111,14 +1122,21 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     ErrorEvent(
                         iteration=state.i + 1,
                         exception=e,
-                        will_continue=not self.raise_on_exception and made_progress,
+                        will_continue=not give_up,
                     ),
                 )
-                if self.raise_on_exception or not made_progress:
+                if give_up:
+                    if not self.raise_on_exception:
+                        self.logger.log(
+                            f"Stopping: {failures_without_progress} consecutive iterations failed "
+                            "without spending any evaluations."
+                        )
                     raise e
                 else:
                     continue
             finally:
+                if not iteration_failed:
+                    failures_without_progress = 0
                 # Notify iteration end only if the iteration actually started
                 # (i.e., on_iteration_start was called successfully)
                 if iteration_started:
