@@ -756,7 +756,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if version is not None and version > GEPAState._VALIDATION_SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported GEPAState validation schema version {version}; "
-                f"max supported is {GEPAState._VALIDATION_SCHEMA_VERSION}"
+                f"max supported is {GEPAState._VALIDATION_SCHEMA_VERSION}. "
+                "This checkpoint was saved by a newer version of GEPA; upgrade GEPA "
+                "(`pip install -U gepa`) to load it."
             )
         if version is None or version < 2:
             GEPAState._migrate_from_legacy_state_v0(data)
