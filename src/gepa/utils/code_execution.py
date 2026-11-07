@@ -162,7 +162,8 @@ def execute_code(
         entry_point_args: Positional arguments to pass to entry_point function
         entry_point_kwargs: Keyword arguments to pass to entry_point function
         capture_variables: List of variable names to extract from the execution
-            context. If None, all non-private variables are captured.
+            context. If None, all non-private variables are captured. An empty
+            list captures none, except for an entry point's __return__ value.
         seed: Optional random seed to set before execution for reproducibility.
             Sets seeds for random, numpy.random, and torch if available.
         kill_child_processes: If True, attempt to kill any child processes spawned
@@ -351,14 +352,12 @@ def _execute_in_process(
     execution_time = time.time() - start_time
 
     # Extract variables
-    if capture_variables:
+    if capture_variables is not None:
         variables = {k: context.get(k) for k in capture_variables}
     else:
         # Capture all variables except Python dunder variables (e.g., __name__, __builtins__)
         # Note: User-defined private variables (single _) are preserved for backwards compatibility
-        variables = {
-            k: v for k, v in context.items() if not k.startswith("__")
-        }
+        variables = {k: v for k, v in context.items() if not k.startswith("__")}
 
     # Always include __return__ if it exists
     if "__return__" in context:
@@ -396,6 +395,7 @@ def _execute_subprocess(
         args_path = args_file.name
         if _USE_CLOUDPICKLE:
             import cloudpickle
+
             cloudpickle.dump(
                 {
                     "code": code,  # Pass code through pickle to avoid escaping issues
@@ -482,7 +482,7 @@ try:
     def _is_picklable(v):
         return not isinstance(v, (types.ModuleType, types.FunctionType, type))
 
-    if _capture_variables:
+    if _capture_variables is not None:
         _variables = {{k: _context.get(k) for k in _capture_variables if _is_picklable(_context.get(k))}}
     else:
         _variables = {{k: v for k, v in _context.items() if not k.startswith("__") and _is_picklable(v)}}
@@ -534,6 +534,7 @@ with open({results_path!r}, 'wb') as f:
                 try:
                     if _USE_CLOUDPICKLE:
                         import cloudpickle
+
                         with open(results_path, "rb") as f:
                             output = cloudpickle.load(f)
                     else:
