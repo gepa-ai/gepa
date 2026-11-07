@@ -20,6 +20,9 @@ from gepa.core.callbacks import (
     CandidateRejectedEvent,
     CandidateSelectedEvent,
     CompositeCallback,
+    CrossoverAcceptedEvent,
+    CrossoverAttemptedEvent,
+    CrossoverRejectedEvent,
     ErrorEvent,
     EvaluationEndEvent,
     EvaluationSkippedEvent,
@@ -115,6 +118,15 @@ class RecordingCallback:
 
     def on_merge_rejected(self, event):
         self._record("on_merge_rejected", event)
+
+    def on_crossover_attempted(self, event):
+        self._record("on_crossover_attempted", event)
+
+    def on_crossover_accepted(self, event):
+        self._record("on_crossover_accepted", event)
+
+    def on_crossover_rejected(self, event):
+        self._record("on_crossover_rejected", event)
 
     def on_pareto_front_updated(self, event):
         self._record("on_pareto_front_updated", event)
@@ -813,6 +825,72 @@ class TestMergeEvents:
         )
 
         calls = callback.get_calls("on_merge_rejected")
+        assert len(calls) == 1
+        assert "worse" in calls[0]["reason"]
+
+
+# =============================================================================
+# G2. Crossover Event Tests
+# =============================================================================
+
+
+class TestCrossoverEvents:
+    """Tests for crossover-related callbacks."""
+
+    def test_on_crossover_attempted_called_with_parents_and_component(self):
+        """Verify crossover attempted callback includes parents and component."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_crossover_attempted",
+            CrossoverAttemptedEvent(
+                iteration=10,
+                parent_ids=[1, 3],
+                component="instructions",
+                crossover_candidate={"instructions": "synthesized"},
+            ),
+        )
+
+        calls = callback.get_calls("on_crossover_attempted")
+        assert len(calls) == 1
+        assert calls[0]["parent_ids"] == [1, 3]
+        assert calls[0]["component"] == "instructions"
+
+    def test_on_crossover_accepted_called_on_improvement(self):
+        """Verify crossover acceptance callback includes new index."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_crossover_accepted",
+            CrossoverAcceptedEvent(
+                iteration=10,
+                new_candidate_idx=5,
+                parent_ids=[1, 3],
+            ),
+        )
+
+        calls = callback.get_calls("on_crossover_accepted")
+        assert len(calls) == 1
+        assert calls[0]["new_candidate_idx"] == 5
+        assert calls[0]["parent_ids"] == [1, 3]
+
+    def test_on_crossover_rejected_called_on_failure(self):
+        """Verify crossover rejection includes reason."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_crossover_rejected",
+            CrossoverRejectedEvent(
+                iteration=10,
+                parent_ids=[1, 3],
+                reason="Crossover score worse than both parents",
+            ),
+        )
+
+        calls = callback.get_calls("on_crossover_rejected")
         assert len(calls) == 1
         assert "worse" in calls[0]["reason"]
 

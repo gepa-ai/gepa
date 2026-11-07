@@ -94,6 +94,14 @@ GEPA fires 21 event types.  Each is a `TypedDict` — access fields with `event[
 | `on_merge_accepted` | Merged candidate passes acceptance test | `iteration`, `new_candidate_idx`, `parent_ids` |
 | `on_merge_rejected` | Merged candidate fails acceptance test | `iteration`, `parent_ids`, `reason` |
 
+### Crossover events
+
+| Method | When | Key fields |
+|--------|------|-----------|
+| `on_crossover_attempted` | Crossover proposer synthesizes a candidate from two parents | `iteration`, `parent_ids`, `component`, `crossover_candidate` |
+| `on_crossover_accepted` | Crossover child passes acceptance test | `iteration`, `new_candidate_idx`, `parent_ids` |
+| `on_crossover_rejected` | Crossover child fails acceptance test | `iteration`, `parent_ids`, `reason` |
+
 ### State / budget events
 
 | Method | When | Key fields |
