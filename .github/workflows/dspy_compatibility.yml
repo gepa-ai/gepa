@@ -1,0 +1,77 @@
+# Post-merge DSPy compatibility monitor. DSPy latest and DSPy main are moving
+# targets that a DSPy release can break without any GEPA change, so they do not
+# run on PRs (PR CI runs only the pinned leg, via run_tests.yml). They run here
+# after every push to main and daily, together with the pinned leg, and any
+# failure opens (or updates) an urgent tracking issue, which this workflow
+# closes again once every leg passes on main. A failing `latest` leg also
+# blocks tag releases (build_and_release.yml).
+name: DSPy Compatibility
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * *" # daily 07:00 UTC
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: Contract
+    uses: ./.github/workflows/dspy_contract.yml
+    with:
+      dspy-versions: '["3.3.1", "latest", "main"]'
+
+  tracking-issue:
+    name: Open, update, or close tracking issue
+    runs-on: ubuntu-latest
+    needs: contract
+    # Manual runs on other branches only report their result.
+    if: always() && github.ref == 'refs/heads/main' && (needs.contract.result == 'failure' || needs.contract.result == 'success')
+    # Serialize so near-simultaneous runs cannot each open a duplicate issue.
+    concurrency:
+      group: dspy-compatibility-tracking-issue
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update, or close tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ needs.contract.result }}
+        run: |
+          title="DSPy compatibility failing on main"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          # The label endpoint lists issues directly (no search-index lag).
+          num=$(gh issue list --label dspy-compat --state open --json number,title \
+            --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+
+          if [ "$RESULT" = "success" ]; then
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --body "All DSPy contract legs pass again at $GITHUB_SHA: $run_url"
+              gh issue close "$num"
+            fi
+            exit 0
+          fi
+
+          failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")')
+          body="DSPy consumer-contract tests failed on main ($GITHUB_EVENT_NAME at $GITHUB_SHA): $run_url
+          Failed legs: ${failed:-see run}
+
+          - Pinned leg: a change merged into GEPA broke the API DSPy relies on.
+          - latest leg: GEPA main breaks with the current DSPy release. Tag releases are blocked until this passes.
+          - main leg: an unreleased DSPy change breaks against GEPA. Not release-blocking, but coordinate with DSPy before their next release."
+
+          if [ -z "$num" ]; then
+            gh label create dspy-compat --color 5319e7 \
+              --description "DSPy consumer-contract compatibility" 2>/dev/null || true
+            gh label create "priority: urgent" --color b60205 \
+              --description "Needs attention immediately" 2>/dev/null || true
+            gh issue create --title "$title" --body "$body" --label dspy-compat --label "priority: urgent"
+          else
+            gh issue comment "$num" --body "$body"
+          fi

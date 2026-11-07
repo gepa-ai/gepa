@@ -29,9 +29,12 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
     - Shuffle ids each epoch
     - Pad to minibatch size with least frequent ids
     - Deterministic via state.rng1
+    - Refresh when available ids change; order-only changes retain the current shuffle
     """
 
     def __init__(self, minibatch_size: int, rng: random.Random | None = None):
+        if minibatch_size <= 0:
+            raise ValueError("minibatch_size must be positive.")
         self.minibatch_size = minibatch_size
         self.shuffled_ids: list[DataId] = []
         self.epoch = -1
@@ -44,9 +47,8 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
         else:
             self.rng = rng
 
-    def _update_shuffled(self, loader: DataLoader[DataId, DataInst]):
-        all_ids = list(loader.all_ids())
-        trainset_size = len(loader)
+    def _update_shuffled(self, all_ids: list[DataId]):
+        trainset_size = len(all_ids)
         self.last_trainset_size = trainset_size
 
         if trainset_size == 0:
@@ -67,7 +69,8 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
                 self.id_freqs[selected_id] += 1
 
     def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], state: GEPAState) -> list[DataId]:
-        trainset_size = len(loader)
+        all_ids = list(loader.all_ids())
+        trainset_size = len(all_ids)
         if trainset_size == 0:
             raise ValueError("Cannot sample a minibatch from an empty loader.")
 
@@ -86,10 +89,15 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
         base_idx = state.i * self.minibatch_size
         curr_epoch = 0 if self.epoch == -1 else base_idx // max(len(self.shuffled_ids), 1)
 
-        needs_refresh = not self.shuffled_ids or trainset_size != self.last_trainset_size or curr_epoch > self.epoch
+        needs_refresh = (
+            not self.shuffled_ids
+            or trainset_size != self.last_trainset_size
+            or curr_epoch > self.epoch
+            or set(all_ids) != set(self.shuffled_ids)
+        )
         if needs_refresh:
             self.epoch = curr_epoch
-            self._update_shuffled(loader)
+            self._update_shuffled(all_ids)
 
         assert len(self.shuffled_ids) >= self.minibatch_size
         assert len(self.shuffled_ids) % self.minibatch_size == 0

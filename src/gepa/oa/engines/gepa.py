@@ -160,7 +160,8 @@ class GepaEngine:
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         return
 
-    def _resolve_cost_source(self, gepa_config: Any) -> Any | None:
+    @staticmethod
+    def _resolve_cost_source(gepa_config: Any) -> Any | None:
         """Return the live LM/proposer whose ``total_cost`` we track and cap.
 
         A reflection strategy (e.g. ``ComBEEReflectionLM``) accumulates its own

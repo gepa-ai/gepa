@@ -1,9 +1,19 @@
 authors:
+  andrei:
+    name: Andrei Cojocaru
+    description: UC Berkeley
+    avatar: https://github.com/AndreiBerkeley.png
+    url: https://github.com/AndreiBerkeley
   lakshya:
     name: Lakshya A Agrawal
     description: PhD Student, UC Berkeley Sky Lab
     avatar: https://github.com/LakshyAAAgrawal.png
     url: https://x.com/LakshyAAAgrawal
+  mert:
+    name: Mert Cemri
+    description: UC Berkeley
+    avatar: https://github.com/mert-cemri.png
+    url: https://github.com/mert-cemri
   shangyin:
     name: Shangyin Tan
     description: PhD Student, UC Berkeley Sky Lab
@@ -179,3 +189,28 @@ authors:
     description: Undergraduate Researcher, UC Berkeley
     avatar: https://github.com/benzhang04.png
     url: https://x.com/benzhang04
+  seth:
+    name: Seth Kimmel, Sutro Team
+    description: Founder of Sutro
+    avatar: https://github.com/sethkimmel3.png
+    url: https://sutro.sh/
+  taloved:
+    name: Tal Oved
+    description: IBM Research
+    avatar: https://github.com/Tal-Oved.png
+    url: https://github.com/Tal-Oved
+  roipony:
+    name: Roi Pony
+    description: IBM Research
+    avatar: https://github.com/roipony.png
+    url: https://github.com/roipony
+  oshri:
+    name: Oshri Naparstek
+    description: IBM Research
+    avatar: https://research-website-prod-ibmers-images.s3.us-east.cloud-object-storage.appdomain.cloud/2857
+    url: https://oshrinaparstek.com/
+  udi:
+    name: Udi Barzelay
+    description: IBM Research
+    avatar: https://github.com/udibarzi.png
+    url: https://github.com/udibarzi

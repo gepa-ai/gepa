@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import http.server
 import json
+import socket
 import tempfile
 import threading
 import unittest
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +17,48 @@ from gepa.oa.task import Task
 
 
 class OptimizeAnythingEvalServerTests(unittest.TestCase):
+    def test_stop_releases_listener_while_http_evaluation_finishes(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+
+        def evaluate(candidate: str) -> tuple[float, dict[str, object]]:
+            entered.set()
+            if not release.wait(timeout=10):
+                raise TimeoutError("Evaluation was not released")
+            return 1.0, {}
+
+        server = EvalServer(Task(name="task", seed_candidate="seed"), evaluate, BudgetTracker(max_evals=1))
+        port = server.start()
+        http_server = server._server
+        assert http_server is not None
+
+        def request() -> dict[str, object]:
+            req = urllib.request.Request(
+                f"http://localhost:{port}/evaluate",
+                data=json.dumps({"candidate": "candidate"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as response:
+                return json.loads(response.read())
+
+        with ThreadPoolExecutor(max_workers=1) as client:
+            response = client.submit(request)
+            try:
+                self.assertTrue(entered.wait(timeout=5))
+                server.stop()
+                self.assertFalse(response.done())
+                self.assertEqual(http_server.socket.fileno(), -1)
+                # The accepted connection may finish, but the listening socket
+                # must no longer reserve the port after stop() returns.
+                with socket.socket() as listener:
+                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    listener.bind(("localhost", port))
+                server.stop()  # Closing remains idempotent.
+            finally:
+                release.set()
+                server.stop()
+            self.assertEqual(response.result(timeout=5)["score"], 1.0)
+
     def test_shared_output_dir_summary_writes_use_independent_temp_files(self) -> None:
         """Composition engines may create independent servers in one run dir."""
 
@@ -34,9 +79,15 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             )
             barrier = threading.Barrier(2)
             original_replace = Path.replace
+            attempted = threading.local()
 
             def delayed_replace(self: Path, target: Path) -> Path:
-                if self.name.startswith(".summary.") and target.name == "summary.json":
+                if (
+                    self.name.startswith(".summary.")
+                    and target.name == "summary.json"
+                    and not getattr(attempted, "seen", False)
+                ):
+                    attempted.seen = True
                     barrier.wait(timeout=5)
                 return original_replace(self, target)
 
@@ -55,6 +106,95 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
             self.assertTrue((output_dir / "summary.json").exists())
             self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
+
+    def test_summary_retries_only_windows_access_conflicts(self) -> None:
+        for winerror in (5, 32, 33, None):
+            with self.subTest(winerror=winerror), tempfile.TemporaryDirectory() as tmp:
+                output_dir = Path(tmp)
+                server = EvalServer(
+                    Task(name="task", seed_candidate="seed"),
+                    lambda candidate: (1.0, {}),
+                    BudgetTracker(max_evals=1),
+                    output_dir=output_dir,
+                )
+                error = PermissionError("access denied")
+                if winerror is not None:
+                    error.winerror = winerror
+                original_replace = Path.replace
+                calls = []
+
+                def replace_once(source, target):
+                    calls.append(source)
+                    if len(calls) == 1:
+                        raise error
+                    return original_replace(source, target)
+
+                try:
+                    with patch.object(Path, "replace", replace_once), patch("gepa.oa.eval_server.time.sleep") as sleep:
+                        if winerror is None:
+                            with self.assertRaises(PermissionError):
+                                server._write_summary({"best_score": 1.0})
+                            sleep.assert_not_called()
+                            self.assertEqual(len(calls), 1)
+                        else:
+                            server._write_summary({"best_score": 1.0})
+                            self.assertEqual(len(calls), 2)
+                            self.assertEqual(json.loads((output_dir / "summary.json").read_text()), {"best_score": 1.0})
+                            sleep.assert_called_once_with(0.01)
+                    self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
+                finally:
+                    server.stop()
+
+    def test_summary_persistent_access_error_is_bounded_and_preserves_previous_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = output_dir / "summary.json"
+            summary.write_text('{"best_score": 0.5}')
+            server = EvalServer(
+                Task(name="task", seed_candidate="seed"),
+                lambda candidate: (1.0, {}),
+                BudgetTracker(max_evals=1),
+                output_dir=output_dir,
+            )
+            error = PermissionError("access denied")
+            error.winerror = 5
+            try:
+                with (
+                    patch.object(Path, "replace", side_effect=error) as replace,
+                    patch("gepa.oa.eval_server.time.sleep") as sleep,
+                ):
+                    with self.assertRaises(PermissionError):
+                        server._write_summary({"best_score": 1.0})
+                    self.assertEqual(replace.call_count, 5)
+                    self.assertEqual(sleep.call_count, 4)
+                self.assertEqual(json.loads(summary.read_text()), {"best_score": 0.5})
+                self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
+            finally:
+                server.stop()
+
+    def test_summary_write_failure_warns_without_failing_the_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            server = EvalServer(
+                Task(name="task", seed_candidate="seed"),
+                lambda candidate: (1.0, {}),
+                BudgetTracker(max_evals=1),
+                output_dir=output_dir,
+            )
+            try:
+                with (
+                    patch.object(Path, "replace", side_effect=PermissionError("access denied")),
+                    self.assertWarnsRegex(RuntimeWarning, "Could not update summary.json"),
+                ):
+                    score, _ = server.evaluate("candidate")
+                self.assertEqual(score, 1.0)
+                self.assertEqual(server.best_score, 1.0)
+                self.assertEqual(server.budget.used, 1)
+                # The per-eval record is still written after the summary write fails.
+                self.assertTrue((output_dir / "evals" / "0.json").exists())
+                self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
+            finally:
+                server.stop()
 
     def test_http_evaluate_examples_logs_aggregate_progress(self) -> None:
         import urllib.request
@@ -116,6 +256,80 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
         self.assertEqual(payload["average_score"], 1.0)
         self.assertEqual(server.progress_log, [])
+
+    def test_in_process_gepa_run_never_binds_http_listener(self) -> None:
+        """A pure in-process ``optimize_anything`` run never opens the localhost
+        HTTP listener (#448, item 3a): any bind attempt goes through
+        ``ThreadingHTTPServer``, so patching it to raise turns a regression
+        back into a loud failure while the run itself must still succeed."""
+
+        class _FakeLM:
+            def __call__(self, *args, **kwargs):
+                return "IMPROVED CANDIDATE: a longer and better answer than before"
+
+        def _refuse_to_bind(*args, **kwargs):
+            raise AssertionError("HTTP listener must not be bound for in-process runs")
+
+        from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+        with patch.object(http.server, "ThreadingHTTPServer", _refuse_to_bind):
+            result = optimize_anything(
+                seed_candidate="short",
+                evaluator=lambda candidate, example=None: (float(len(candidate)) / 100.0, {}),
+                objective="maximize length",
+                config=GEPAConfig(
+                    engine=EngineConfig(max_metric_calls=4),
+                    reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+                ),
+            )
+
+        self.assertTrue(result.best_candidate)
+        self.assertGreaterEqual(result.total_evals, 1)
+
+    def test_url_access_binds_listener_lazily_and_endpoint_answers(self) -> None:
+        """Reading ``.url`` starts the listener on demand; the surfaced URL is
+        live, so external engines can rely on it without an explicit start."""
+        task = Task(name="task", seed_candidate="seed", train_set=["a", "b"])
+        server = EvalServer(
+            task,
+            lambda candidate, example: (1.0, {}),
+            BudgetTracker(max_evals=4),
+            max_concurrency=1,
+        )
+        try:
+            self.assertIsNone(server._server)
+            url = server.url
+            self.assertIsNotNone(server._server)
+            self.assertEqual(url, f"http://localhost:{server.port}")
+            with urllib.request.urlopen(f"{url}/status", timeout=5) as resp:
+                payload = json.loads(resp.read().decode())
+        finally:
+            server.stop()
+
+        self.assertIn("budget", payload)
+
+    def test_explicit_start_is_idempotent_and_stop_is_final(self) -> None:
+        """Callers owning the server (ensemble compositions) keep the explicit
+        contract: ``start()`` is idempotent and rebinds nothing; after
+        ``stop()`` the listener cannot silently come back."""
+        task = Task(name="task", seed_candidate="seed")
+        server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=2))
+        try:
+            self.assertIsNone(server._server)
+            port = server.start()
+            self.assertEqual(server.start(), port)
+            self.assertEqual(server.port, port)
+        finally:
+            server.stop()
+
+        self.assertIsNone(server._server)
+        with self.assertRaises(RuntimeError):
+            server.port  # noqa: B018
+        with self.assertRaises(RuntimeError):
+            # An explicit start must not silently rebind a listener whose
+            # worker pool ``stop()`` already shut down.
+            server.start()
+        self.assertIsNone(server._server)
 
 
 if __name__ == "__main__":
