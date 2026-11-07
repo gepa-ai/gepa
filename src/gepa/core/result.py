@@ -84,6 +84,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     # OA eval-server call count (``server.budget.used``). Distinct from
     # ``total_metric_calls``, which is GEPA core's own counter.
     eval_server_calls: int | None = None
+    sequential_evidence: dict[str, Any] | None = None
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
@@ -172,7 +173,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def to_dict(self) -> dict[str, Any]:
         cands = [dict(cand.items()) for cand in self.candidates]
 
-        return {
+        result = {
             "candidates": cands,
             "parents": self.parents,
             "val_aggregate_scores": self.val_aggregate_scores,
@@ -197,6 +198,10 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "best_idx": self.best_idx,
             "validation_schema_version": GEPAResult._VALIDATION_SCHEMA_VERSION,
         }
+
+        if self.sequential_evidence is not None:
+            result["sequential_evidence"] = self.sequential_evidence
+        return result
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
@@ -224,6 +229,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "run_dir": d.get("run_dir"),
             "seed": d.get("seed"),
             "_str_candidate_key": d.get("_str_candidate_key"),
+            "sequential_evidence": d.get("sequential_evidence"),
         }
 
     @staticmethod
@@ -322,4 +328,5 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             run_dir=run_dir,
             seed=seed,
             _str_candidate_key=str_candidate_key,
+            sequential_evidence=getattr(state, "sequential_evidence_report", None),
         )

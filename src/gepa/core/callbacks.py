@@ -260,6 +260,13 @@ class BudgetUpdatedEvent(TypedDict):
     metric_calls_remaining: int | None
 
 
+class SequentialEvidenceEvent(TypedDict):
+    """An evidence decision or validation transition, with raw scores unchanged."""
+
+    iteration: int
+    decision: dict[str, Any]
+
+
 class ErrorEvent(TypedDict):
     """Event for on_error callback."""
 
@@ -405,6 +412,15 @@ class GEPACallback(Protocol):
         ...
 
 
+@runtime_checkable
+class SequentialEvidenceCallback(Protocol):
+    """Optional evidence observer, separate from the legacy callback protocol."""
+
+    def on_sequential_evidence(self, event: SequentialEvidenceEvent) -> None:
+        """Observe a comparison, validation deferral or completed promotion."""
+        ...
+
+
 class CompositeCallback:
     """A callback that delegates to multiple child callbacks.
 
@@ -483,6 +499,9 @@ class CompositeCallback:
 
     def on_iteration_end(self, event: IterationEndEvent) -> None:
         self._notify("on_iteration_end", event)
+
+    def on_sequential_evidence(self, event: SequentialEvidenceEvent) -> None:
+        self._notify("on_sequential_evidence", event)
 
     def on_candidate_selected(self, event: CandidateSelectedEvent) -> None:
         self._notify("on_candidate_selected", event)
