@@ -84,8 +84,8 @@ config = oa.GEPAConfig(
 )
 ```
 
-This reads `lm.total_cost` at each iteration. When a `custom_candidate_proposer` in `gepa.optimize()` exposes a numeric
-`total_cost`, the budget uses the proposer's reported spend. For plain reflection callables (which report cost as
+This reads `lm.total_cost` at each iteration. When a `custom_candidate_proposer` in `gepa.optimize()` exposes a real-valued
+`total_cost` from the start, the budget uses the proposer's reported spend. For plain reflection callables (which report cost as
 `0.0`), the stopper never triggers — it only stops on costs the LM actually reports.
 
 `max_reflection_cost` can be combined with `max_metric_calls` — optimization stops when either budget is reached first.

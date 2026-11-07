@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 from unittest.mock import Mock
 
 import pytest
@@ -207,9 +208,10 @@ def test_none_seed_candidate():
         )
 
 
-@pytest.mark.parametrize("proposer_reports_cost", [True, False])
-def test_reflection_cost_budget_with_custom_candidate_proposer(proposer_reports_cost):
-    cost_meter = Mock(total_cost=0.0)
+@pytest.mark.parametrize("proposer_cost_mode", ["reported", "missing", "boolean"])
+@pytest.mark.parametrize("cost_increment", [0.25, Decimal("0.25")])
+def test_reflection_cost_budget_with_custom_candidate_proposer(proposer_cost_mode, cost_increment):
+    cost_meter = Mock(total_cost=cost_increment * 0)
 
     class Proposer:
         def __init__(self):
@@ -217,11 +219,11 @@ def test_reflection_cost_budget_with_custom_candidate_proposer(proposer_reports_
 
         @property
         def total_cost(self):
-            return cost_meter.total_cost
+            return False if proposer_cost_mode == "boolean" else cost_meter.total_cost
 
         def propose(self, candidate, reflective_dataset, components):
             self.calls += 1
-            cost_meter.total_cost += 0.25
+            cost_meter.total_cost += cost_increment
             return dict.fromkeys(components, f"revision {self.calls}")
 
         __call__ = propose
@@ -231,8 +233,8 @@ def test_reflection_cost_budget_with_custom_candidate_proposer(proposer_reports_
         seed_candidate={"instructions": "seed"},
         trainset=[{"input": "question", "answer": "correct", "additional_context": {}}],
         task_lm=Mock(return_value="wrong"),
-        custom_candidate_proposer=proposer if proposer_reports_cost else proposer.propose,
-        reflection_lm=Mock(total_cost=0.0) if proposer_reports_cost else cost_meter,
+        custom_candidate_proposer=proposer.propose if proposer_cost_mode == "missing" else proposer,
+        reflection_lm=Mock(total_cost=0.0) if proposer_cost_mode == "reported" else cost_meter,
         max_reflection_cost=0.5,
         max_metric_calls=20,
         reflection_minibatch_size=1,

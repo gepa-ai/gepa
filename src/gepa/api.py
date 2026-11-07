@@ -4,6 +4,8 @@
 import os
 import random
 from collections.abc import Sequence
+from decimal import Decimal
+from numbers import Real
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 if TYPE_CHECKING:
@@ -306,11 +308,12 @@ def optimize(
                     "pass gepa.lm.LM (or another callable with real total_cost), or remove max_reflection_cost."
                 )
             cost_source: object | None = reflection_strategy
-        elif isinstance(getattr(custom_candidate_proposer, "total_cost", None), (int, float)):
-            # The custom proposer makes the reflection calls, so prefer its reported spend.
-            cost_source = custom_candidate_proposer
         else:
             cost_source = reflection_lm_callable
+            proposer_cost = getattr(custom_candidate_proposer, "total_cost", None)
+            if isinstance(proposer_cost, (Real, Decimal)) and not isinstance(proposer_cost, bool):
+                # The custom proposer makes the reflection calls, so prefer its reported spend.
+                cost_source = custom_candidate_proposer
         stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=cost_source))
 
     if not stop_callbacks_list:
