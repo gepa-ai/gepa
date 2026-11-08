@@ -22,9 +22,20 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LMUsage:
+    """Usage for one completion. Unreported counters and prices stay ``None``."""
+
+    cost_usd: float | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    estimated: bool = False
 
 
 class LMOutput(str):
@@ -36,14 +47,16 @@ class LMOutput(str):
     """
 
     finish_reason: str | None
+    usage: LMUsage | None
 
-    def __new__(cls, value: str, *, finish_reason: str | None = None):
+    def __new__(cls, value: str, *, finish_reason: str | None = None, usage: LMUsage | None = None):
         instance = super().__new__(cls, value)
         instance.finish_reason = finish_reason
+        instance.usage = usage
         return instance
 
     def strip(self, chars: str | None = None) -> LMOutput:
-        return type(self)(super().strip(chars), finish_reason=self.finish_reason)
+        return type(self)(super().strip(chars), finish_reason=self.finish_reason, usage=self.usage)
 
 
 class LM:
@@ -112,6 +125,25 @@ class LM:
                 "Consider increasing max_tokens for better results."
             )
 
+    def _record_usage(self, response: Any) -> LMUsage:
+        import litellm
+
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+        except Exception:
+            cost = None
+        usage = getattr(response, "usage", None)
+        call_usage = LMUsage(
+            cost_usd=cost,
+            tokens_in=getattr(usage, "prompt_tokens", None),
+            tokens_out=getattr(usage, "completion_tokens", None),
+        )
+        with self._cost_lock:
+            self._total_cost += call_usage.cost_usd or 0.0
+            self._total_tokens_in += call_usage.tokens_in or 0
+            self._total_tokens_out += call_usage.tokens_out or 0
+        return call_usage
+
     def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
         import litellm
 
@@ -131,24 +163,9 @@ class LM:
         # Non-streaming calls always return ModelResponse (not CustomStreamWrapper)
         self._check_truncation(completion.choices)  # type: ignore[union-attr]
 
-        # Accumulate cost
-        try:
-            cost = litellm.completion_cost(completion_response=completion) or 0.0  # type: ignore[attr-defined]
-        except Exception:
-            cost = 0.0
-
-        # Accumulate token usage
-        usage = getattr(completion, "usage", None)
-        tokens_in = (getattr(usage, "prompt_tokens", 0) or 0) if usage is not None else 0
-        tokens_out = (getattr(usage, "completion_tokens", 0) or 0) if usage is not None else 0
-
-        with self._cost_lock:
-            self._total_cost += cost
-            self._total_tokens_in += tokens_in
-            self._total_tokens_out += tokens_out
-
+        usage = self._record_usage(completion)
         choice = completion.choices[0]  # type: ignore[union-attr]
-        return LMOutput(choice.message.content or "", finish_reason=getattr(choice, "finish_reason", None))
+        return LMOutput(choice.message.content or "", finish_reason=getattr(choice, "finish_reason", None), usage=usage)
 
     def batch_complete(
         self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10, **kwargs: Any
@@ -177,29 +194,17 @@ class LM:
             **merged,
         )
 
-        batch_cost = 0.0
-        batch_tokens_in = 0
-        batch_tokens_out = 0
         results: list[str] = []
         for resp in responses:
             self._check_truncation(resp.choices)
             choice = resp.choices[0]
             results.append(
-                LMOutput(choice.message.content or "", finish_reason=getattr(choice, "finish_reason", None)).strip()
+                LMOutput(
+                    choice.message.content or "",
+                    finish_reason=getattr(choice, "finish_reason", None),
+                    usage=self._record_usage(resp),
+                ).strip()
             )
-            try:
-                batch_cost += litellm.completion_cost(completion_response=resp) or 0.0  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            usage = getattr(resp, "usage", None)
-            if usage is not None:
-                batch_tokens_in += getattr(usage, "prompt_tokens", 0) or 0
-                batch_tokens_out += getattr(usage, "completion_tokens", 0) or 0
-
-        with self._cost_lock:
-            self._total_cost += batch_cost
-            self._total_tokens_in += batch_tokens_in
-            self._total_tokens_out += batch_tokens_out
 
         return results
 
@@ -245,6 +250,19 @@ class TrackingLM:
     def _estimate_tokens(self, text: str) -> int:
         return max(1, len(text) // self._CHARS_PER_TOKEN)
 
+    def _with_usage(self, prompt: Any, result: str) -> LMOutput:
+        if isinstance(result, LMOutput) and result.usage is not None:
+            return result
+        return LMOutput(
+            result,
+            finish_reason=getattr(result, "finish_reason", None),
+            usage=LMUsage(
+                tokens_in=self._estimate_tokens(prompt if isinstance(prompt, str) else str(prompt)),
+                tokens_out=self._estimate_tokens(result),
+                estimated=True,
+            ),
+        )
+
     def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
         if isinstance(prompt, str):
             self._total_tokens_in += self._estimate_tokens(prompt)
@@ -255,6 +273,7 @@ class TrackingLM:
 
         if isinstance(result, str):
             self._total_tokens_out += self._estimate_tokens(result)
+            return self._with_usage(prompt, result)
 
         return result
 
@@ -275,7 +294,10 @@ class TrackingLM:
                 for result in results:
                     if isinstance(result, str):
                         self._total_tokens_out += self._estimate_tokens(result)
-                return results
+                return [
+                    self._with_usage(messages, result) if isinstance(result, str) else result
+                    for messages, result in zip(messages_list, results, strict=True)
+                ]
 
             return tracked_batch_complete
         raise AttributeError(name)

@@ -62,6 +62,36 @@ When you pass a string model name, GEPA creates an `LM` instance internally. Whe
 
 ---
 
+## Per-proposal usage
+
+The default reflector and `ComBEEReflectionLM` include `reflection_usage` in
+`ReflectionProposal.metadata`. It contains `cost_usd`, `tokens_in`, `tokens_out`,
+`calls`, and `estimated`, plus a `components` dictionary with the same counters
+for each updated component. ComBEE includes its map and reduce calls. Outputs
+rejected during parsing are included in usage, and completed calls reused by a
+ComBEE retry are attributed once to the resulting proposal.
+
+GEPA forwards this metadata to `on_proposal_end`, candidate metadata, and the
+`proposal_reflection_metadata` experiment table. For example, a callback can read
+`event["metadata"]["reflection_usage"]["cost_usd"]` to compare reflection spend
+across proposals. A reflection with no text updates is skipped by the engine;
+its spend remains in the LM's cumulative counters.
+
+Usage is attached to individual `LMOutput` responses, so concurrent proposals
+sharing an LM and batched proposals retain separate accounting. A missing price
+or counter is `None`; if any call has an unknown field, the corresponding proposal
+total is also `None`. `TrackingLM` marks its token estimates with `estimated=True`
+and leaves cost unknown. Custom callables can report usage explicitly:
+
+```python
+from gepa.lm import LMOutput, LMUsage
+
+output = LMOutput(
+    "```\nUpdated instruction\n```",
+    usage=LMUsage(cost_usd=0.002, tokens_in=200, tokens_out=40),
+)
+```
+
 ## Stopping on cost budget
 
 Use `max_reflection_cost` to stop optimization when the reflection LM's cumulative cost reaches a USD budget:
