@@ -26,6 +26,7 @@ from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
+from gepa.evidence.config import SequentialEvidenceConfig
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -111,6 +112,7 @@ def optimize(
     # Added after the positional parameters so existing positional calls keep their meaning.
     write_agent_state: bool = False,
     reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
+    sequential_evidence: SequentialEvidenceConfig | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -199,6 +201,14 @@ def optimize(
     - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
     - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
+
+    - sequential_evidence: Optional keyword-only bounded-evaluator contract. Fresh,
+      matched parent/child repetitions gate reflective acceptance using simultaneous
+      Hoeffding bounds. Requires finite max_metric_calls, the native reflective
+      proposer and FullEvaluationPolicy; merge/custom proposer paths are rejected.
+      Budget includes seed, proposals, evidence and validation. Unsupported noise
+      assumptions may explicitly use heuristic mode without a confidence claim.
+      See docs/docs/guides/sequential-evidence.md for cost, recovery and data contracts.
 
     # Evaluation caching
     - cache_evaluation: Whether to cache the (score, output, objective_scores) of
@@ -504,6 +514,8 @@ def optimize(
         use_cloudpickle=use_cloudpickle,
         write_agent_state=write_agent_state,
         evaluation_cache=evaluation_cache,
+        sequential_evidence=sequential_evidence,
+        evidence_max_metric_calls=max_metric_calls,
     )
 
     with experiment_tracker:

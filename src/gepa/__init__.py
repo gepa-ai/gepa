@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from gepa.evidence import SequentialEvidenceConfig
+
 from . import (
     optimize_anything,  # expose submodule; use `from gepa.optimize_anything import optimize_anything` for the function
 )

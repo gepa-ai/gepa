@@ -1,0 +1,260 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from test_sequential_evidence_controller import controller, proposal
+from test_sequential_evidence_native import ScriptedAdapter, run
+
+from gepa.core.state import GEPAState
+from gepa.evidence.config import digest
+
+CRASH_SCRIPT = r"""
+import os, sys
+sys.path.insert(0, "tests")
+from pathlib import Path
+from test_sequential_evidence_native import ScriptedAdapter, run
+from gepa.evidence.controller import EvidenceController
+from gepa.core.state import GEPAState
+stage, directory = sys.argv[1:]
+if stage == "seed":
+    class CrashAdapter(ScriptedAdapter):
+        def evaluate(self, batch, candidate, capture_traces=False):
+            os._exit(72)
+    adapter = CrashAdapter()
+elif stage == "partial":
+    class CrashAdapter(ScriptedAdapter):
+        def evaluate_replication(self, batch, candidate, *, trial_context, capture_traces):
+            if trial_context.side == "child":
+                os._exit(72)
+            return super().evaluate_replication(batch, candidate, trial_context=trial_context, capture_traces=capture_traces)
+    adapter = CrashAdapter()
+else:
+    adapter = ScriptedAdapter()
+    if stage == "decision":
+        original = EvidenceController.compare
+        def compare(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            os._exit(72)
+        EvidenceController.compare = compare
+    elif stage == "selection":
+        original = EvidenceController.select
+        def select(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            os._exit(72)
+        EvidenceController.select = select
+    elif stage == "pool":
+        original = GEPAState.save
+        def save(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            if len(self.program_candidates) > 1:
+                os._exit(72)
+        GEPAState.save = save
+run(Path(directory), adapter, budget=300, stop_callbacks=lambda state: len(state.program_candidates) > 1)
+"""
+
+
+@pytest.mark.parametrize("stage", ["seed", "partial", "decision", "selection", "pool"])
+def test_actual_process_failure_reconciles_native_checkpoint_and_journal(tmp_path, stage):
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", CRASH_SCRIPT, stage, str(tmp_path)], cwd=root, capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 72, result.stdout + result.stderr
+    journal = json.loads((tmp_path / "sequential_evidence.json").read_text())["payload"]
+    before = sum(
+        r["actual_cost"] if r["actual_cost"] is not None else r["upper_cost"] for r in journal["guard"]["records"]
+    )
+    raw = ScriptedAdapter()
+    # Resume selected validation only; no new proposal should conceal recovery.
+    recovered = run(tmp_path, raw, budget=301, stop_callbacks=lambda state: True)
+    assert recovered.total_metric_calls == before + raw.executions
+    assert recovered.total_metric_calls <= 301
+    assert raw.replications == 0
+    if stage == "partial":
+        report = recovered.sequential_evidence["comparisons"][0]
+        assert report["status"] == "inconclusive"
+        assert report["completed_rounds"] == 0
+        assert report["metric_calls"] == 2
+        assert report["observation_counts"]["abandoned"] == 1
+    elif stage == "decision":
+        assert len(recovered.candidates) == 1
+    elif stage == "pool":
+        assert len(recovered.candidates) == 2 and raw.executions == 0
+        assert recovered.sequential_evidence["comparisons"][0]["status"] == "promoted"
+    elif stage == "seed":
+        assert len(recovered.candidates) == 1 and raw.executions == 1
+        assert any(
+            r["status"] == "abandoned"
+            for r in json.loads((tmp_path / "sequential_evidence.json").read_text())["payload"]["guard"]["records"]
+        )
+
+
+def rewrite_payload(tmp_path, mutate):
+    path = tmp_path / "sequential_evidence.json"
+    envelope = json.loads(path.read_text())
+    mutate(envelope["payload"])
+    envelope["checksum"] = digest(envelope["payload"])
+    path.write_text(json.dumps(envelope))
+
+
+@pytest.mark.parametrize("mutation", ["mean", "bound", "candidate", "round", "observation", "cost"])
+def test_semantically_corrupt_saved_evidence_fails_closed(tmp_path, mutation):
+    control = controller(tmp_path)
+    control.compare(proposal(), {"p": "parent"})
+
+    def mutate(payload):
+        comparison = payload["comparisons"][0]
+        if mutation == "mean":
+            comparison["moments_parent"][0]["mean"] = 0.75
+        if mutation == "bound":
+            comparison["lower"] = 0.99
+        if mutation == "candidate":
+            comparison["parent"] = {"p": "different"}
+        if mutation == "round":
+            comparison["completed_rounds"] = 0
+        if mutation == "observation":
+            comparison["observations"][0]["identity"]["candidate"] = "wrong"
+        if mutation == "cost":
+            comparison["metric_calls"] = 1
+
+    rewrite_payload(tmp_path, mutate)
+    with pytest.raises(ValueError):
+        controller(tmp_path)
+
+
+def test_legacy_checkpoint_enabling_evidence_starts_no_historical_replicates(tmp_path):
+    from test_sequential_evidence_native import Quiet
+
+    import gepa
+
+    ordinary = gepa.optimize(
+        {"program": "lambda x: 0"},
+        [1],
+        [2],
+        ScriptedAdapter(),
+        max_metric_calls=4,
+        reflection_minibatch_size=1,
+        skip_perfect_score=False,
+        logger=Quiet(),
+        run_dir=str(tmp_path),
+    )
+    result = run(tmp_path, budget=8, stop_callbacks=lambda state: True)
+    assert result.total_metric_calls == ordinary.total_metric_calls
+    assert result.sequential_evidence["comparisons"] == []
+
+
+def test_native_checkpoint_ahead_of_journal_rejected(tmp_path):
+    run(tmp_path, budget=3)
+    state = GEPAState.load(str(tmp_path))
+    state.total_num_evals += 1
+    state.save(str(tmp_path))
+    with pytest.raises(ValueError, match="ahead"):
+        run(tmp_path, budget=20)
+
+
+def test_promoted_journal_cannot_silently_outlive_its_native_pool_commit(tmp_path):
+    import shutil
+
+    backup = tmp_path / "seed-checkpoint.bin"
+
+    class SaveSeedCheckpoint:
+        def on_state_saved(self, event):
+            if not backup.exists():
+                shutil.copyfile(tmp_path / "gepa_state.bin", backup)
+
+    run(tmp_path, callbacks=[SaveSeedCheckpoint()], stop_callbacks=lambda state: len(state.program_candidates) > 1)
+    shutil.copyfile(backup, tmp_path / "gepa_state.bin")
+    with pytest.raises(ValueError, match="promotion.*checkpoint"):
+        run(tmp_path, budget=301, stop_callbacks=lambda state: True)
+
+
+def test_existing_candidate_content_cannot_complete_a_new_pending_validation(tmp_path):
+    script = CRASH_SCRIPT.replace('if stage == "seed":', 'if stage == "seed":')
+    # A second selection picks the already-pooled child as explicit exploration,
+    # then dies before that proposal's own complete validation is published.
+    script = script.replace(
+        "stage, directory = sys.argv[1:]",
+        """stage, directory = sys.argv[1:]
+from test_sequential_evidence_native import Explore
+original_select = EvidenceController.select
+selections = 0
+def select(self, *args, **kwargs):
+    global selections
+    original_select(self, *args, **kwargs)
+    selections += 1
+    if selections == 2:
+        os._exit(72)
+EvidenceController.select = select""",
+    )
+    script = script.replace(
+        "budget=300, stop_callbacks=lambda state: len(state.program_candidates) > 1",
+        "budget=500, selection_strategy=Explore()",
+    )
+    root = Path(__file__).resolve().parents[1]
+    process = subprocess.run(
+        [sys.executable, "-c", script, "duplicate", str(tmp_path)], cwd=root, capture_output=True, text=True, timeout=30
+    )
+    assert process.returncode == 72, process.stdout + process.stderr
+    result = run(tmp_path, budget=501, stop_callbacks=lambda state: True)
+    assert len(result.candidates) == 2
+    records = result.sequential_evidence["comparisons"]
+    assert len(records) == 2
+    assert records[0]["validation_candidate_idx"] == 1
+    assert records[1]["validation_candidate_idx"] is None
+
+
+@pytest.mark.parametrize("drift_side", ["both", "child"])
+def test_interval_conflict_rolls_back_the_full_round_and_resumes_inconclusive(tmp_path, drift_side):
+    from gepa.core.adapter import EvaluationBatch
+    from gepa.core.data_loader import ensure_loader
+    from gepa.evidence.config import SequentialEvidenceConfig
+    from gepa.evidence.controller import EvidenceController
+    from gepa.proposer.base import CandidateProposal
+
+    class Drift:
+        propose_new_texts = None
+
+        def __init__(self):
+            self.calls = 0
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            self.calls += 1
+            return EvaluationBatch(
+                list(batch),
+                [float(self.calls > 200 and (drift_side == "both" or candidate["p"] == "child"))] * len(batch),
+            )
+
+    config = SequentialEvidenceConfig("interval-conflict", 2000, alpha=0.5, assumption="heuristic")
+    loader = ensure_loader(["example"])
+    raw = Drift()
+    control = EvidenceController(config, raw, loader, loader, max_metric_calls=2000, run_dir=str(tmp_path), seed=0)
+    candidate = CandidateProposal({"p": "child"}, [0], [0], [0], [0])
+    record = control.compare(candidate, {"p": "parent"})
+    assert record.status == "inconclusive"
+    assert "inconsistent simultaneous intervals" in record.reason
+    assert record.completed_rounds == 177
+    assert [m.count for m in record.moments_parent + record.moments_child] == [177, 177]
+    assert record.metric_calls == control.guard.used == raw.calls == 356
+    assert len(record.observations) == 356
+    assert all(o.status == "completed" for o in record.observations.values())
+    restored_raw = Drift()
+    restored = EvidenceController(
+        config, restored_raw, loader, loader, max_metric_calls=2000, run_dir=str(tmp_path), seed=0
+    )
+    recovered = restored.compare(candidate, {"p": "parent"})
+    assert recovered.to_dict() == record.to_dict()
+    assert not recovered.eligible and restored_raw.calls == 0
+    assert restored.guard.used == 356
+
+
+def test_unique_evidence_records_without_position_metadata_remain_readable(tmp_path):
+    original = controller(tmp_path)
+    record = original.compare(proposal(), {"p": "parent"})
+    rewrite_payload(tmp_path, lambda payload: payload["comparisons"][0].pop("proposal_example_ids"))
+    restored = controller(tmp_path)
+    replay = restored.compare(proposal(), {"p": "parent"})
+    assert replay.comparison_id == record.comparison_id
+    assert replay.weights == record.weights and replay.completed_rounds == record.completed_rounds
+    assert restored.guard.used == original.guard.used
