@@ -589,17 +589,19 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             else:
                 targets = [(entry_iter_id, None)]
 
-            parent_candidate_idx = entry.get("selected_program_candidate")
-            parent_iter_ids = (
-                [cand_to_iter[parent_candidate_idx]]
-                if parent_candidate_idx is not None and parent_candidate_idx in cand_to_iter
-                else []
-            )
-
             for iter_id, candidate_idx in targets:
                 base = f"iterations/{iter_id}"
                 if os.path.exists(os.path.join(run_dir, base, "meta.json")):
                     continue
+
+                # Accepted candidates have their own lineage, even if they
+                # share a trace entry or were added without a reflective task.
+                parent_indices = (
+                    self.parent_program_for_candidate[candidate_idx]
+                    if candidate_idx is not None and 0 <= candidate_idx < len(self.parent_program_for_candidate)
+                    else [entry.get("selected_program_candidate")]
+                )
+                parent_iter_ids = [cand_to_iter[p] for p in parent_indices if p is not None and p in cand_to_iter]
 
                 # The candidate text to archive under components/: for accepted
                 # iterations this is the newly accepted program; for rejected
