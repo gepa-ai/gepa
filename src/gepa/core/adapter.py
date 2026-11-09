@@ -26,6 +26,10 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
       should be provided and align one-to-one with `outputs` and `scores`.
     - objective_scores: optional per-example maps of objective name -> score. Leave None when
       the evaluator does not expose multi-objective metrics.
+    - evaluated_candidates: optional per-example candidate actually scored, when it differs from
+      the candidate the adapter was given (e.g. a refiner replaced it). Leave None (default) when
+      the evaluated candidate matches the one passed in — this is the common case for every adapter
+      that doesn't do internal refinement.
     """
 
     outputs: list[RolloutOutput]
@@ -33,6 +37,7 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     trajectories: list[Trajectory] | None = None
     objective_scores: list[dict[str, float]] | None = None
     num_metric_calls: int | None = None
+    evaluated_candidates: list[Candidate] | None = None
 
 
 class BatchEvaluateFn(Protocol):
