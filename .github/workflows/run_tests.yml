@@ -116,6 +116,28 @@ jobs:
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
+  core_python315:
+    name: Python 3.15 Core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Create core-only environment
+        run: |
+          uv venv .venv --python 3.15
+          uv pip install -p .venv pip pytest
+      - name: Install core package and dependency-free DSPy extra
+        # The full/dev extras still depend on third-party Python 3.15 support.
+        # Use pip so the built distribution's Requires-Python is also checked.
+        run: uv run --no-sync -p .venv python -m pip install '.[dspy]'
+      - name: Check imports and core optimization with callable models
+        run: |
+          uv run --no-sync -p .venv python tests/ensure_gepa_dspy_dependency.py
+          uv run --no-sync -p .venv pytest -q tests/test_import.py tests/test_optimize.py tests/test_instruction_proposal.py tests/test_result.py
+
   dspy_compatibility:
     name: DSPy Compatibility (pinned)
     # Pinned DSPy only, so a failure here can only come from the GEPA change
