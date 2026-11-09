@@ -513,4 +513,4 @@ def optimize(
         else:
             state = engine.run()
 
-    return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
+    return GEPAResult.from_state(state, run_dir=run_dir, seed=seed, selected_best_idx=engine.best_candidate_idx)

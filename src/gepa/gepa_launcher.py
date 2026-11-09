@@ -1776,4 +1776,5 @@ def optimize_anything(
         run_dir=config.engine.run_dir,
         seed=config.engine.seed,
         str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
+        selected_best_idx=engine.best_candidate_idx,
     )

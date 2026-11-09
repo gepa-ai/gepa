@@ -2,6 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass, field
+from operator import index
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
@@ -19,8 +20,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     Key attributes:
         best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
             ``str`` when ``seed_candidate`` was a string.
-        best_idx: Index of the highest-scoring candidate.
-        best_score: Aggregate validation score of the best candidate.
+        best_idx: Index of the candidate selected by the evaluation policy, when available.
+        best_score: Aggregate validation score of the selected candidate.
         total_evals: Eval-server call count when this result came from
             :func:`~gepa.optimize_anything.optimize_anything` (``budget.used``).
             Falls back to ``total_metric_calls`` for launcher-only / deserialized
@@ -84,6 +85,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     # OA eval-server call count (``server.budget.used``). Distinct from
     # ``total_metric_calls``, which is GEPA core's own counter.
     eval_server_calls: int | None = None
+    _selected_best_idx: ProgramIdx | None = field(default=None, repr=False, compare=False, kw_only=True)
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
@@ -98,6 +100,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     @property
     def best_idx(self) -> int:
+        if self._selected_best_idx is not None:
+            return self._selected_best_idx
         scores = self.val_aggregate_scores
         return max(range(len(scores)), key=lambda i: scores[i])
 
@@ -248,6 +252,11 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def _from_dict_v2(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
         kwargs = GEPAResult._common_kwargs_from_dict(d)
         kwargs["val_subscores"] = [dict(scores) for scores in d.get("val_subscores", [])]
+        selected = d.get("best_idx")
+        if type(selected) is int and 0 <= selected < min(
+            len(kwargs["candidates"]), len(kwargs["val_aggregate_scores"])
+        ):
+            kwargs["_selected_best_idx"] = selected
         per_val_instance_best_candidates_data = d.get("per_val_instance_best_candidates", {})
         kwargs["per_val_instance_best_candidates"] = {
             val_id: set(candidates_on_front)
@@ -287,12 +296,15 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         run_dir: str | None = None,
         seed: int | None = None,
         str_candidate_key: str | None = None,
+        *,
+        selected_best_idx: ProgramIdx | None = None,
     ) -> "GEPAResult[RolloutOutput, DataId]":
         """Build a GEPAResult from a GEPAState.
 
         Args:
             str_candidate_key: When set, ``best_candidate`` unwraps the internal
                 dict to return the plain ``str`` value stored under this key.
+            selected_best_idx: Candidate selected by the final evaluation policy.
         """
         objective_scores_list = [dict(scores) for scores in state.prog_candidate_objective_scores]
         has_objective_scores = any(obj for obj in objective_scores_list)
@@ -303,6 +315,15 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         best_outputs_valset = getattr(state, "best_outputs_valset", None)
         if best_outputs_valset is not None:
             best_outputs_valset = {val_id: list(outputs) for val_id, outputs in best_outputs_valset.items()}
+
+        if selected_best_idx is not None:
+            try:
+                selected_best_idx = index(selected_best_idx)
+            except TypeError:
+                selected_best_idx = None
+            else:
+                if not 0 <= selected_best_idx < len(state.program_candidates):
+                    selected_best_idx = None
 
         return GEPAResult(
             candidates=[dict(candidate) for candidate in state.program_candidates],
@@ -322,4 +343,5 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             run_dir=run_dir,
             seed=seed,
             _str_candidate_key=str_candidate_key,
+            _selected_best_idx=selected_best_idx,
         )
