@@ -29,6 +29,7 @@ nav:
         - Candidate Selection Strategies: guides/candidate-selection.md
         - Acceptance Criterion: guides/acceptance-criterion.md
         - Batch Sampling: guides/batch-sampling.md
+        - Online Optimization: guides/online-optimization.md
         - Parallel Proposals: guides/parallel-proposals.md
         - ComBEE (Scalable Reflection): guides/combee.md
         - Using Callbacks: guides/callbacks.md

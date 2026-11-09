@@ -10,6 +10,7 @@ from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
 from .image import Image
+from .online import OnlineResult, OnlineWindowResult, optimize_online
 from .utils.stop_condition import (
     CompositeStopper,
     FileStopper,
