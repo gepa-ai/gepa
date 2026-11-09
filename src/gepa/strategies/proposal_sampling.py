@@ -65,6 +65,8 @@ class SameParentSampling(SamplingStrategy):
     """Best-of-N on the same parent with different minibatches."""
 
     def __init__(self, n: int):
+        if n <= 0:
+            raise ValueError("n must be positive.")
         self.n = n
 
     def sample_tasks(
@@ -87,6 +89,8 @@ class IndependentSampling(SamplingStrategy):
     """N different parents, each with their own minibatch."""
 
     def __init__(self, n: int):
+        if n <= 0:
+            raise ValueError("n must be positive.")
         self.n = n
 
     def sample_tasks(
@@ -108,6 +112,10 @@ class PxNSampling(SamplingStrategy):
     """P parents x N mutations each = P*N total tasks."""
 
     def __init__(self, p: int, n: int):
+        if p <= 0:
+            raise ValueError("p must be positive.")
+        if n <= 0:
+            raise ValueError("n must be positive.")
         self.p = p
         self.n = n
 
