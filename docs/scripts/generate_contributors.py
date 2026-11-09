@@ -10,6 +10,7 @@ Contributors are, merged into one alphabetical list:
 - commit authors and ``Co-authored-by`` trailers on gepa-ai/gepa's default branch,
 - authors of every post on the GEPA blog (docs/docs/blog),
 - authors of the GEPA and optimize_anything papers (fetched from arXiv).
+- explicitly acknowledged contributors listed in ADDITIONAL_CONTRIBUTORS.
 
 A name links to a GitHub account only when the handle is confirmed: the
 account authored commits here, its GitHub profile name matches the person's
@@ -34,6 +35,14 @@ README = ROOT / "README.md"
 BLOG = ROOT / "docs" / "docs" / "blog"
 PAPERS = ("2507.19457", "2605.19633")  # GEPA, optimize_anything
 START, END = "<!-- contributors:start -->", "<!-- contributors:end -->"
+
+# Contributors acknowledged before their work appears in the upstream sources.
+ADDITIONAL_CONTRIBUTORS = {
+    "Amir Gholami": "amirgholami",
+    "Nicholas Lee": "dragon18456",
+    "Sehoon Kim": "kssteven418",
+    "Zack Yu": "zack041",
+}
 
 # Handles checked by hand, for people with no commits here whose GitHub
 # profile name differs from the name they publish under (or is empty).
@@ -152,6 +161,7 @@ def contributors() -> list[tuple[str, str | None]]:
     git = commit_records()
     blog, blog_handles = blog_records()
     records = [*git, *blog, *paper_records()]
+    records.extend((name, login, GIT) for name, login in ADDITIONAL_CONTRIBUTORS.items())
     committers = {login for _, login, _ in git if login}
 
     # Resolve a login for records that lack one: hand-checked handles first,
