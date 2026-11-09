@@ -107,6 +107,52 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
             self.assertTrue((output_dir / "summary.json").exists())
             self.assertFalse(list(output_dir.glob(".summary.*.tmp")))
 
+    def test_delayed_summary_writer_cannot_replace_newer_state(self) -> None:
+        waiting_to_write = threading.Event()
+        release_first_writer = threading.Event()
+        write_lock = threading.Lock()
+
+        class PauseFirstWriter:
+            def __enter__(self) -> None:
+                if not waiting_to_write.is_set():
+                    waiting_to_write.set()
+                    if not release_first_writer.wait(timeout=5):
+                        raise TimeoutError("First writer was not released")
+                write_lock.acquire()
+
+            def __exit__(self, *args: object) -> None:
+                write_lock.release()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            server = EvalServer(
+                Task(name="task", seed_candidate="seed"),
+                lambda candidate: (float(candidate), {"cost": float(candidate)}),
+                BudgetTracker(max_evals=2),
+                max_concurrency=2,
+                output_dir=output_dir,
+            )
+            try:
+                with patch.object(server, "_io_lock", PauseFirstWriter()), ThreadPoolExecutor(max_workers=2) as pool:
+                    first = pool.submit(server.evaluate, "1")
+                    try:
+                        self.assertTrue(waiting_to_write.wait(timeout=5))
+                        self.assertEqual(pool.submit(server.evaluate, "2").result(timeout=5)[0], 2.0)
+                    finally:
+                        release_first_writer.set()
+                    self.assertEqual(first.result(timeout=5)[0], 1.0)
+
+                summary = json.loads((output_dir / "summary.json").read_text())
+                self.assertEqual(summary["best_score"], 2.0)
+                self.assertEqual(summary["total_evals"], 2)
+                self.assertEqual(summary["total_cost"], 3.0)
+                self.assertEqual(summary["budget"]["used"], 2)
+                for index, candidate in enumerate(("1", "2")):
+                    record = json.loads((output_dir / "evals" / f"{index}.json").read_text())
+                    self.assertEqual(record["candidate"], candidate)
+            finally:
+                server.stop()
+
     def test_summary_retries_only_windows_access_conflicts(self) -> None:
         for winerror in (5, 32, 33, None):
             with self.subTest(winerror=winerror), tempfile.TemporaryDirectory() as tmp:

@@ -605,10 +605,13 @@ class EvalServer:
             if score > self.best_score:
                 self.best_score = score
                 self.best_candidate = candidate
-            snapshot = self._snapshot()
 
         if self.output_dir is not None:
             with self._io_lock:
+                # Sample state in write order so a delayed writer cannot
+                # overwrite a newer summary with its older snapshot.
+                with self._lock:
+                    snapshot = self._snapshot()
                 # summary.json is a best-effort snapshot: failing to refresh it
                 # must not fail an evaluation that has already been paid for.
                 try:
