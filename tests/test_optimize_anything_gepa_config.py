@@ -414,3 +414,52 @@ def test_full_config_passthrough_and_reflective_dataset_persistence(tmp_path):
     # not by a private optimize_anything callback.
     rds = glob.glob(os.path.join(tmp_path, "iterations", "*", "reflective_dataset.json"))
     assert rds, "core should persist reflective_dataset.json when write_agent_state is on"
+
+
+def test_gepa_engine_cap_crossed_mid_valset_keeps_the_iteration(tmp_path):
+    """Issue #448 on ``OptimizeAnythingConfig(engine="gepa")``: the iteration
+    that crosses ``max_evals`` finishes and keeps its child, as
+    ``gepa.optimize`` does (core's ``MaxMetricCallsStopper`` stops at the
+    iteration boundary). Before the fix the server-side tracker raised
+    ``BudgetExhausted`` mid-valset, the in-flight child (already scored on most
+    of the valset) was discarded, and the run returned the seed.
+
+    Also guards the companion leak: server bookkeeping (``_budget``) must not
+    ride along in per-example side info into the reflection prompt.
+    """
+    from gepa.optimize_anything import EngineConfig, ReflectionConfig, optimize_anything
+
+    calls: list[tuple[str, str]] = []
+
+    def evaluator(candidate, example):
+        calls.append((candidate, example))
+        return (1.0 if "improved" in candidate else 0.2), {"note": f"scored {example}"}
+
+    prompts: list[str] = []
+
+    def reflection_lm(prompt):
+        prompts.append(prompt)
+        return f"improved candidate v{len(prompts)}"
+
+    data = [f"ex{i}" for i in range(4)]
+    # Seed valset pass = 4 evals, child minibatch = 2, child valset = 4 → the
+    # child's valset pass crosses a cap of 7.
+    config = OptimizeAnythingConfig(
+        engine="gepa",
+        max_evals=7,
+        output_dir=tmp_path / "out",
+        engine_config={
+            "engine": EngineConfig(cache_evaluation=True, raise_on_exception=True, parallel=False, seed=0),
+            "reflection": ReflectionConfig(reflection_lm=reflection_lm, reflection_minibatch_size=2),
+        },
+    )
+    result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+
+    assert len(result.candidates) == 2
+    assert result.val_aggregate_scores == [0.2, 1.0]
+    assert result.best_candidate == "improved candidate v1"
+    # The iteration in flight finishes: 8 real evaluator calls for a cap of 7,
+    # and the server ledger counts every one of them.
+    assert len(calls) == 8
+    assert result.total_evals == len(calls)
+    assert prompts and not any("_budget" in p for p in prompts)

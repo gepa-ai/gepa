@@ -1,8 +1,10 @@
 """GEPA engine: runs the archived GEPA optimizer against the optimize_anything eval server.
 
-In-process — calls ``server.evaluate(candidate, example)`` directly. Budget is
-enforced by the server. ``max_token_cost`` is enforced via the GEPA engine's
-``max_reflection_cost`` stopper.
+In-process — calls ``server.evaluate(candidate, example)`` directly. The eval
+budget is counted by the server but enforced by GEPA core's
+``MaxMetricCallsStopper`` at iteration boundaries (see ``run``).
+``max_token_cost`` is enforced via the GEPA engine's ``max_reflection_cost``
+stopper.
 
 ``OptimizeAnythingConfig.engine_config`` maps directly to a
 :class:`~gepa.gepa_launcher.GEPAConfig`; the OA layer only overlays the eval
@@ -22,6 +24,19 @@ if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
     from gepa.oa.task import Task
+
+
+def _fresh_dir(base: Path) -> Path:
+    """Create and return ``base``, or ``base_2``, ``base_3``, … if it already exists."""
+    base.parent.mkdir(parents=True, exist_ok=True)
+    candidate, n = base, 1
+    while True:
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            n += 1
+            candidate = base.with_name(f"{base.name}_{n}")
 
 
 class GepaEngine:
@@ -52,27 +67,36 @@ class GepaEngine:
         self.gepa_config = GEPAConfig(**config.engine_config)
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        from gepa.gepa_launcher import optimize_anything
+        from gepa.gepa_launcher import _copy_config, optimize_anything
 
         budget = server.budget
         objective = task.objective
         background = task.background
 
-        gepa_config = self.gepa_config
+        # Overlay on a copy: the nested configs may be the caller's own objects
+        # (GEPAConfig(**engine_config) keeps them), so writing into them would
+        # leak this run's budget and run_dir into the next run that reuses them.
+        gepa_config = _copy_config(self.gepa_config)
 
         # OA owns the eval budget, workspace, and the top-level convenience
         # limits — set them as EngineConfig fields; GEPA core installs the
         # matching stoppers. The eval-call cap must win over any user value.
-        gepa_config.engine.max_metric_calls = budget.max_evals
+        # Core counts this run's evals from zero, so it gets what is left of
+        # the server's budget: a scheduler slice (``optimize_adaptive_sequential``)
+        # starts with part of the budget already used.
+        remaining = budget.remaining
+        gepa_config.engine.max_metric_calls = remaining
         if self.run_dir is not None:
             gepa_config.engine.run_dir = self.run_dir
         if gepa_config.engine.run_dir is None:
             # Always persist GEPA state (gepa_state.bin, saved by core at each
-            # iteration boundary): on BudgetExhausted the val-aggregate/Pareto
-            # best is reloaded from it instead of falling back to the server's
-            # per-example argmax.
+            # iteration boundary): should a BudgetExhausted still escape, the
+            # val-aggregate/Pareto best is reloaded from it instead of falling
+            # back to the server's per-example argmax.
+            # Each run gets its own directory: engines that share a server
+            # (adaptive slices) would otherwise resume each other's state.
             if server.output_dir is not None:
-                gepa_config.engine.run_dir = str(server.output_dir / "gepa_state")
+                gepa_config.engine.run_dir = str(_fresh_dir(server.output_dir / "gepa_state"))
             else:
                 gepa_config.engine.run_dir = tempfile.mkdtemp(prefix="gepa-state-")
         run_dir = gepa_config.engine.run_dir
@@ -123,14 +147,30 @@ class GepaEngine:
         if background:
             oa_kwargs["background"] = background
 
+        # Core's MaxMetricCallsStopper enforces that cap at iteration
+        # boundaries (the launcher's semantics: the iteration that crosses the
+        # cap finishes and its child is recorded). The server-side tracker
+        # therefore only keeps the ledger during this run; a hard mid-iteration
+        # stop would abort a partially-scored candidate and discard evals the
+        # user already paid for. With nothing left, enforcement stays on so
+        # the run stops before evaluating anything. It is restored afterwards:
+        # the server is shared, and a later engine on it (an adaptive slice)
+        # relies on the hard cap.
+        enforce_before = budget.enforce
+        if remaining != 0:
+            budget.enforce = False
         try:
             gepa_result = optimize_anything(**oa_kwargs)
         except BudgetExhausted:
+            # The budget was already used up, or a caller-supplied
+            # stopper/evaluator raised it.
             gepa_result = self._load_result_from_state(
                 run_dir=run_dir,
                 seed=gepa_config.engine.seed,
                 str_candidate_mode=not isinstance(task.seed_candidate, dict),
             )
+        finally:
+            budget.enforce = enforce_before
 
         # Reflection/proposer spend for this run, read straight off the cost
         # source's cumulative total_cost (it started fresh).
