@@ -61,6 +61,13 @@ To install the latest from `main`:
 pip install git+https://github.com/gepa-ai/gepa.git
 ```
 
+Python 3.15 is supported by the core package and the dependency-free
+`gepa[dspy]` extra on `main`; a release containing this support is needed
+before installing from PyPI. Optional integrations have their own dependency
+requirements. Use Python 3.10–3.14 for `gepa[full]` and `gepa[confidence]`
+until their dependencies support Python 3.15. Callable models and evaluators
+do not require these extras.
+
 ---
 
 ## Quick Start
