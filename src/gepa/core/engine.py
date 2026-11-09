@@ -40,6 +40,7 @@ from gepa.core.state import (
     EvaluationCache,
     FrontierType,
     GEPAState,
+    ProgramIdx,
     ValsetEvaluation,
     initialize_gepa_state,
     new_iteration_id,
@@ -159,6 +160,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.logger = logger
         self.run_dir = run_dir
         self.callbacks = callbacks
+        self.best_candidate_idx: ProgramIdx | None = None
 
         # Graceful stopping mechanism
         self._stop_requested = False
@@ -1143,8 +1145,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             write_agent_state=self.write_agent_state,
         )
 
-        # Notify optimization end
+        # Use the same final selection for callbacks, logging, and the returned result.
         best_candidate_idx = self.val_evaluation_policy.get_best_program(state)
+        self.best_candidate_idx = best_candidate_idx
         notify_callbacks(
             self.callbacks,
             "on_optimization_end",

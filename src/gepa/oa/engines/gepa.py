@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engine import Result
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
@@ -130,6 +131,7 @@ class GepaEngine:
                 run_dir=run_dir,
                 seed=gepa_config.engine.seed,
                 str_candidate_mode=not isinstance(task.seed_candidate, dict),
+                val_evaluation_policy=gepa_config.engine.val_evaluation_policy,
             )
 
         # Reflection/proposer spend for this run, read straight off the cost
@@ -197,6 +199,7 @@ class GepaEngine:
         run_dir: str | Path | None,
         seed: int | None,
         str_candidate_mode: bool,
+        val_evaluation_policy: EvaluationPolicy | Literal["full_eval"],
     ) -> Any | None:
         if run_dir is None:
             return None
@@ -205,11 +208,18 @@ class GepaEngine:
             from gepa.core.state import GEPAState
 
             state = GEPAState.load(str(run_dir))
+            policy = FullEvaluationPolicy() if isinstance(val_evaluation_policy, str) else val_evaluation_policy
+            try:
+                selected_best_idx = policy.get_best_program(state)
+            except Exception:
+                # A policy may depend on runtime data that the checkpoint lacks.
+                selected_best_idx = None
             return GEPAResult.from_state(
                 state,
                 run_dir=str(run_dir),
                 seed=seed,
                 str_candidate_key="current_candidate" if str_candidate_mode else None,
+                selected_best_idx=selected_best_idx,
             )
         except Exception:
             return None
