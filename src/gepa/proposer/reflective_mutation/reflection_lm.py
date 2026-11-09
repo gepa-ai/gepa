@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from gepa.lm import LMOutput, LMUsage
 from gepa.proposer.reflective_mutation.base import LanguageModel
 from gepa.strategies.instruction_proposal import InstructionProposalSignature, parse_proposal
 
@@ -43,6 +44,25 @@ class ReflectionProposal:
     # reaches on_proposal_end consumers, experiment trackers, and the run
     # manifest without a future protocol break.
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def record_reflection_usage(proposal: ReflectionProposal, component: str, output: str) -> None:
+    """Attribute this completion to its proposal, including rejected outputs.
+
+    Usage travels with each response so batched or concurrent proposals never
+    read deltas from the LM's shared cumulative counters. Unknown fields make
+    the corresponding total unknown, rather than silently undercounting it.
+    """
+    usage = output.usage if isinstance(output, LMOutput) and output.usage is not None else LMUsage()
+    totals = proposal.metadata.setdefault("reflection_usage", {"components": {}})
+    component_totals = totals["components"].setdefault(component, {})
+    for counters in (totals, component_totals):
+        counters["calls"] = counters.get("calls", 0) + 1
+        counters["estimated"] = counters.get("estimated", False) or usage.estimated
+        for key in ("cost_usd", "tokens_in", "tokens_out"):
+            previous = counters.get(key, 0)
+            current = getattr(usage, key)
+            counters[key] = previous + current if previous is not None and current is not None else None
 
 
 @runtime_checkable
@@ -183,6 +203,7 @@ class StatelessReflectionLM:
 
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}) for _ in jobs]
         for (job_idx, name, prompt, _messages), raw_output in zip(rendered, raw_outputs, strict=True):
+            record_reflection_usage(proposals[job_idx], name, raw_output)
             parsed = parse_proposal(InstructionProposalSignature, raw_output.strip())
             if parsed.text is None:
                 self._log(f"Component '{name}' produced an incomplete reflection output; skipping it ({parsed.error}).")

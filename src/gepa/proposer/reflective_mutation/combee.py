@@ -50,7 +50,11 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
-from gepa.proposer.reflective_mutation.reflection_lm import ReflectionJob, ReflectionProposal
+from gepa.proposer.reflective_mutation.reflection_lm import (
+    ReflectionJob,
+    ReflectionProposal,
+    record_reflection_usage,
+)
 from gepa.strategies.instruction_proposal import InstructionProposalSignature, parse_proposal
 
 DEFAULT_AGGREGATION_PROMPT_TEMPLATE = """I provided an assistant with the following current instruction:
@@ -367,6 +371,7 @@ class ComBEEReflectionLM:
                 )
                 total_lm_calls += 1
                 component_lm_calls += 1
+                record_reflection_usage(proposal, comp, raw_output)
                 if new_text is None:
                     proposal.metadata[f"combee:{comp}:rejected_outputs"] = [raw_output]
                     proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
@@ -408,6 +413,7 @@ class ComBEEReflectionLM:
                 )
                 total_lm_calls += 1
                 component_lm_calls += 1
+                record_reflection_usage(proposal, comp, raw_output)
                 if new_text is None:
                     proposal.metadata.setdefault(f"combee:{comp}:rejected_outputs", []).append(raw_output)
                     continue
@@ -450,6 +456,7 @@ class ComBEEReflectionLM:
             )
             total_lm_calls += 1
             component_lm_calls += 1
+            record_reflection_usage(proposal, comp, agg_output)
             if final_text is None:
                 proposal.metadata.setdefault(f"combee:{comp}:rejected_outputs", []).append(agg_output)
                 proposal.metadata[f"combee:{comp}:num_lm_calls"] = component_lm_calls
@@ -672,6 +679,7 @@ class ComBEEReflectionLM:
         wave1_outputs = self._batch_complete([e[1] for e in wave1], [e[2] for e in wave1], [e[3] for e in wave1])
         for (plan, prompt, _messages, _completion_id), raw in zip(wave1, wave1_outputs, strict=True):
             raw = raw.strip()
+            record_reflection_usage(proposals[plan["job_idx"]], plan["comp"], raw)
             job_call_totals[plan["job_idx"]] += 1
             plan["num_lm_calls"] += 1
             new_instruction = self._extract_instruction(raw)
@@ -701,6 +709,7 @@ class ComBEEReflectionLM:
         wave2_outputs = self._batch_complete([e[1] for e in wave2], [e[2] for e in wave2], [e[3] for e in wave2])
         for (plan, prompt, _messages, _completion_id), raw in zip(wave2, wave2_outputs, strict=True):
             raw = raw.strip()
+            record_reflection_usage(proposals[plan["job_idx"]], plan["comp"], raw)
             plan["reduce_prompt"] = prompt
             plan["reduce_output"] = raw
             job_call_totals[plan["job_idx"]] += 1
