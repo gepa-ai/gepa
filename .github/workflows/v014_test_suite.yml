@@ -1,0 +1,44 @@
+name: v0.1.4 test suite against this tree
+permissions:
+  contents: read
+
+# Runs the test suite from the v0.1.4 tag against the current source tree, so
+# behaviour changes since the last release show up as failing v0.1.4 tests.
+# Each failure is either a regression or an intentional change that needs a
+# release note.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  v014_tests:
+    name: v0.1.4 tests (3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync -p .venv --locked --extra dev
+      - name: Replace tests/ with the v0.1.4 suite
+        run: |
+          rm -rf tests
+          git checkout v0.1.4 -- tests
+      - name: Run the v0.1.4 tests
+        run: uv run -p .venv pytest -rfE -m "not llm_live and not extra" --continue-on-collection-errors tests/
