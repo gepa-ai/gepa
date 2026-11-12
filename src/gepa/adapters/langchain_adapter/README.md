@@ -29,7 +29,7 @@ from gepa.adapters.langchain_adapter import (
 )
 
 task_llm = init_chat_model("openai:gpt-4o-mini")
-reflection_llm = init_chat_model("openai:gpt-5-mini")
+reflection_llm = init_chat_model("openai:gpt-6.1-sol")
 
 def rollout(candidate, example):
     messages = [
@@ -80,7 +80,7 @@ from gepa.adapters.langchain_adapter import (
 )
 
 task_llm = init_chat_model("openai:gpt-5-nano", reasoning_effort="minimal")
-reflection_llm = init_chat_model("openai:gpt-5", reasoning_effort="medium")
+reflection_llm = init_chat_model("openai:gpt-6.1-sol", reasoning_effort="medium")
 
 @tool
 def calculator(a: int, b: int, op: Literal["+", "-", "*"]) -> str:

@@ -53,7 +53,7 @@ python examples/adrs/can_be_late/main.py --model <model_name>
 
 | Argument | Description |
 |----------|-------------|
-| `--model` | LLM model name (e.g., `gpt-4o`, `gemini-1.5-pro`) |
+| `--model` | LLM model name (e.g., `gpt-6.1-sol`, `gemini-1.5-pro`) |
 
 ### Optional Arguments
 
@@ -70,7 +70,7 @@ python examples/adrs/can_be_late/main.py --model <model_name>
 Quick test run:
 ```bash
 python examples/adrs/can_be_late/main.py \
-    --model gpt-4o-mini \
+    --model gpt-6.1-sol \
     --max-traces 10 \
     --max-metric-calls 20
 ```
@@ -78,7 +78,7 @@ python examples/adrs/can_be_late/main.py \
 Full optimization:
 ```bash
 python examples/adrs/can_be_late/main.py \
-    --model gpt-4o \
+    --model gpt-6.1-sol \
     --max-metric-calls 100
 ```
 

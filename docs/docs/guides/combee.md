@@ -56,7 +56,7 @@ result = gepa.optimize(
     trainset=trainset,
     valset=valset,
     task_lm="openai/gpt-4.1-mini",
-    reflection_strategy=ComBEEReflectionLM("openai/gpt-5.1"),
+    reflection_strategy=ComBEEReflectionLM("openai/gpt-6.1-sol"),
     reflection_minibatch_size=40,  # n — ComBEE forms k=6 groups automatically
     max_metric_calls=600,
 )
@@ -80,7 +80,7 @@ result = optimize_anything(
         max_evals=600,
         engine_config={
             "reflection": ReflectionConfig(
-                reflection_strategy=ComBEEReflectionLM("openai/gpt-5.1"),
+                reflection_strategy=ComBEEReflectionLM("openai/gpt-6.1-sol"),
                 reflection_minibatch_size=40,
             ),
         },
@@ -100,7 +100,7 @@ result = optimize_anything(
     dataset=dataset,
     config=GEPAConfig(
         reflection=ReflectionConfig(
-            reflection_strategy=ComBEEReflectionLM("openai/gpt-5.1"),
+            reflection_strategy=ComBEEReflectionLM("openai/gpt-6.1-sol"),
             reflection_minibatch_size=40,
         ),
     ),

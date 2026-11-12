@@ -141,11 +141,11 @@ Concrete comparison on HotPotQA: GEPA achieves **20% better performance** than G
 
 We recommend using a **leading frontier model** for `reflection_lm`:
 
-- **Preferred**: GPT-5.2, Gemini-3, Claude Opus 4.5
+- **Preferred**: GPT-6.1 Sol, Gemini-3, Claude Opus 5.5
 - **Minimum recommended tier**: post‑GPT‑5 or Gemini‑2.5‑Pro class models
 - **Also works**: Models as small as Qwen3‑4B have been shown to work, but use the most capable model available for the reflection LM
 
-When passing a **string** as `reflection_lm`, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) by default, so use LiteLLM model IDs (e.g., `"openai/gpt-5.2"`, `"anthropic/claude-opus-4-5-20250514"`, `"bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"`). You can also pass a **callable** instead to use any custom model provider — see the [Bedrock FAQ entry](#why-am-i-getting-errors-with-amazon-bedrock-models) for an example.
+When passing a **string** as `reflection_lm`, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) by default, so use LiteLLM model IDs (e.g., `"openai/gpt-6.1-sol"`, `"anthropic/claude-opus-5-5"`, `"bedrock/us.anthropic.claude-sonnet-5-5"`). You can also pass a **callable** instead to use any custom model provider — see the [Bedrock FAQ entry](#why-am-i-getting-errors-with-amazon-bedrock-models) for an example.
 
 !!! tip "Recommendation"
     Use a large `reflection_lm` for proposing improved prompts, but use the same LM for `task_lm` that you'll deploy in production.
@@ -622,12 +622,14 @@ All values in `"scores"` must follow **higher is better**.  GEPA maintains a Par
 By default, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) to call the `reflection_lm`, so model IDs should follow **LiteLLM's naming conventions**. For Bedrock, this means using the `us.` prefix for cross-region inference:
 
 ```python
-# This will fail:
-reflection_lm = "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+# This will fail ("on-demand throughput isn't supported"):
+reflection_lm = "bedrock/anthropic.claude-sonnet-5-5"
 
 # Use the us. prefix instead:
-reflection_lm = "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"
+reflection_lm = "bedrock/us.anthropic.claude-sonnet-5-5"
 ```
+
+Outside the US, use the inference profile for your geography instead (for example `eu.`, `apac.`, `jp.` or `global.`), provided your IAM policy allows it.
 
 See the [LiteLLM Bedrock docs](https://docs.litellm.ai/docs/providers/bedrock) for the full list of supported model IDs.
 

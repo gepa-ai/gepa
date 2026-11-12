@@ -9,13 +9,13 @@
 #
 # **Datasets**: AG News (4-class), Emotion (6-class), Rotten Tomatoes (binary)
 # **Task model**: openai/gpt-4.1-mini (temperature=0, no reasoning)
-# **Reflection model**: anthropic/claude-sonnet-4-6 (thinking enabled, budget_tokens=1024)
+# **Reflection model**: anthropic/claude-sonnet-5-5 (adaptive thinking, on by default)
 #
 # ## Required environment variables
 #
 # By default this script calls the OpenAI and Anthropic APIs directly:
 #   OPENAI_API_KEY    — for the task model (gpt-4.1-mini)
-#   ANTHROPIC_API_KEY — for the reflection model (claude-sonnet-4-6)
+#   ANTHROPIC_API_KEY — for the reflection model (claude-sonnet-5-5)
 #
 # If you use an OpenAI-compatible proxy that routes all models (including
 # Anthropic) through a single endpoint, set OPENAI_API_BASE and change
@@ -54,7 +54,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 
 TASK_MODEL = "openai/gpt-4.1-mini"
-REFLECTION_MODEL = "anthropic/claude-sonnet-4-6"
+REFLECTION_MODEL = "anthropic/claude-sonnet-5-5"
 
 # Set to True if you use an OpenAI-compatible proxy (e.g. LiteLLM gateway)
 # that routes all models — including Anthropic — through OPENAI_API_BASE.
@@ -128,7 +128,9 @@ def make_evaluator():
 
 
 # %% Reflection LM
-# Claude Sonnet 4.6 with minimal thinking (budget_tokens=1024).
+# Claude Sonnet 5.5 thinks adaptively by default; it rejects disabled thinking and
+# budget_tokens, so the probe below settles on the no-payload request. The other
+# payloads are kept for gateways and older models.
 # GEPA uses this to analyze errors and propose improved prompts.
 
 _THINKING_PAYLOADS = [
@@ -158,7 +160,8 @@ else:
 
 def reflection_lm(prompt):
     messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-    kwargs = {"model": REFLECTION_MODEL, "messages": messages, "max_tokens": 4096, **PROVIDER_KWARGS}
+    # Leave room for thinking tokens as well as the proposed prompt.
+    kwargs = {"model": REFLECTION_MODEL, "messages": messages, "max_tokens": 16000, **PROVIDER_KWARGS}
     if _WORKING_THINKING_PAYLOAD is not None:
         kwargs["extra_body"] = _WORKING_THINKING_PAYLOAD
     for attempt in range(3):

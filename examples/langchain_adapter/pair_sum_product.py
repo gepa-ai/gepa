@@ -117,7 +117,7 @@ def parse_args() -> argparse.Namespace:
         default={},
         help="JSON dict of init_chat_model kwargs (base_url, api_key, default_headers, etc.)",
     )
-    p.add_argument("--reflection-model", default="openai:gpt-5-mini")
+    p.add_argument("--reflection-model", default="openai:gpt-6.1-sol")
     p.add_argument(
         "--reflection-model-kwargs",
         type=json.loads,

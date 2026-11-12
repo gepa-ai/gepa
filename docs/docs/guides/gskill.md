@@ -50,7 +50,7 @@ This runs 3 training tasks with a small budget so you can verify Docker, API key
 python -m gepa.gskill.train_optimize_anything \
   --repo pygments__pygments \
   --train-size 200 --val-size 50 --test-size 100 \
-  --model gpt-5-mini --reflection-model gpt-5.2-pro \
+  --model gpt-5-mini --reflection-model gpt-6.1-sol \
   --workers 6 --max-metric-calls 600 \
   --proposer loop --wandb
 ```
