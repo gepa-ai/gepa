@@ -271,6 +271,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     # Core GEPA never inspects this; adapters read/write via get_adapter_state()/set_adapter_state().
     adapter_state: dict[str, Any]
 
+    # Shuffle position of the batch sampler, if it supports saving one, so a
+    # resumed run continues the current epoch instead of starting a new shuffle.
+    batch_sampler_state: dict[str, Any] | None
+
     def __init__(
         self,
         seed_candidate: dict[str, str],
@@ -337,6 +341,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
         self.evaluation_cache = evaluation_cache
         self.adapter_state: dict[str, Any] = {}
+        self.batch_sampler_state = None
 
     def is_consistent(self) -> bool:
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
@@ -771,6 +776,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         cache = data.get("evaluation_cache")
         if cache is not None:
             cache.drop_unsplit_entries()
+
+        # Checkpoints saved before the sampler state was persisted resume with a fresh sampler.
+        data.setdefault("batch_sampler_state", None)
 
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(data)

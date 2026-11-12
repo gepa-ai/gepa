@@ -230,6 +230,26 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if setter is not None:
             setter(state.adapter_state)
 
+    def _sync_sampler_state_to_state(self, state: GEPAState) -> None:
+        """Snapshot the batch sampler's position into GEPAState before saving.
+
+        No-op if the sampler does not implement ``get_sampler_state``.
+        """
+        sampler = getattr(self.reflective_proposer, "batch_sampler", None)
+        getter = getattr(sampler, "get_sampler_state", None)
+        if getter is not None:
+            state.batch_sampler_state = getter()
+
+    def _sync_state_to_sampler(self, state: GEPAState) -> None:
+        """Restore the batch sampler's saved position after loading.
+
+        No-op if nothing was saved or the sampler does not implement ``set_sampler_state``.
+        """
+        sampler = getattr(self.reflective_proposer, "batch_sampler", None)
+        setter = getattr(sampler, "set_sampler_state", None)
+        if setter is not None and state.batch_sampler_state is not None:
+            setter(state.batch_sampler_state)
+
     def _write_agent_iteration_files(
         self,
         iteration_id: str,
@@ -854,6 +874,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Restore adapter state from persisted state (only has effect on resume)
         self._sync_state_to_adapter(state)
+        self._sync_state_to_sampler(state)
 
         # Log base program score
         # Log run configuration
@@ -975,6 +996,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             evals_before_iteration = state.total_num_evals
             try:
                 self._sync_adapter_state_to_state(state)
+                self._sync_sampler_state_to_state(state)
                 state.save(
                     self.run_dir,
                     use_cloudpickle=self.use_cloudpickle,
@@ -1137,6 +1159,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             progress_bar.close()
 
         self._sync_adapter_state_to_state(state)
+        self._sync_sampler_state_to_state(state)
         state.save(
             self.run_dir,
             use_cloudpickle=self.use_cloudpickle,

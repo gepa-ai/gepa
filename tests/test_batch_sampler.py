@@ -159,3 +159,86 @@ def test_extra_calls_do_not_perturb_later_iterations():
         assert multi.next_minibatch_ids(loader_multi, state) == expected
         for _ in range(4):
             multi.next_minibatch_ids(loader_multi, state)
+
+
+class _ConstantAdapter:
+    def evaluate(self, batch, candidate, capture_traces=False):
+        from gepa.core.adapter import EvaluationBatch
+
+        return EvaluationBatch(
+            outputs=[candidate["prompt"]] * len(batch),
+            scores=[0.25] * len(batch),
+            trajectories=[{"score": 0.25}] * len(batch) if capture_traces else None,
+        )
+
+    def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+        return {name: [{"score": 0.25}] for name in components_to_update}
+
+    def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+        return {name: candidate[name] for name in components_to_update}
+
+
+def _record_minibatches(run_dir, stop_at):
+    seen = []
+
+    class Recorder:
+        def on_minibatch_sampled(self, event):
+            seen.append(list(event["minibatch_ids"]))
+
+    gepa.optimize(
+        seed_candidate={"prompt": "seed"},
+        trainset=list(range(8)),
+        valset=[99],
+        adapter=_ConstantAdapter(),
+        seed=9,
+        reflection_minibatch_size=2,
+        skip_perfect_score=False,
+        stop_callbacks=[lambda state: state.i + 1 >= stop_at],
+        callbacks=[Recorder()],
+        display_progress_bar=False,
+        run_dir=str(run_dir),
+    )
+    return seen
+
+
+@pytest.mark.parametrize("split_at", [1, 2, 5, 6, 7])
+def test_resuming_mid_epoch_keeps_epoch_coverage(tmp_path, split_at):
+    continuous = _record_minibatches(tmp_path / "continuous", 12)
+    resumed = _record_minibatches(tmp_path / "split", split_at) + _record_minibatches(tmp_path / "split", 12)
+
+    # The interrupted epoch continues exactly where it left off, and every
+    # epoch (including the one split by the resume) covers each example.
+    epoch_end = -(-split_at // 4) * 4
+    assert len(resumed) == len(continuous) == 12
+    assert resumed[:epoch_end] == continuous[:epoch_end]
+    for epoch_start in (0, 4, 8):
+        epoch_ids = {i for batch in resumed[epoch_start : epoch_start + 4] for i in batch}
+        assert epoch_ids == set(range(8))
+
+
+def test_sampler_without_saved_state_uses_one_shuffle_for_rest_of_epoch():
+    # Checkpoints written before the sampler state was saved resume with a
+    # fresh sampler partway through an epoch. It should draw the remaining
+    # batches of that epoch from a single shuffle instead of reshuffling on
+    # every iteration.
+    loader = ListDataLoader(list("abcdefgh"))
+    sampler = EpochShuffledBatchSampler(minibatch_size=2, rng=random.Random(0))
+
+    sampler.next_minibatch_ids(loader, SimpleNamespace(i=5))
+    shuffle = list(sampler.shuffled_ids)
+    for i in (6, 7):
+        assert sampler.next_minibatch_ids(loader, SimpleNamespace(i=i)) == shuffle[2 * (i % 4) : 2 * (i % 4) + 2]
+    sampler.next_minibatch_ids(loader, SimpleNamespace(i=8))
+    assert sampler.epoch == 2
+
+
+def test_sampler_ignores_saved_state_from_different_minibatch_size():
+    loader = ListDataLoader(list("abcdef"))
+    saved = EpochShuffledBatchSampler(minibatch_size=4, rng=random.Random(0))
+    saved.next_minibatch_ids(loader, SimpleNamespace(i=0))
+
+    sampler = EpochShuffledBatchSampler(minibatch_size=3, rng=random.Random(0))
+    sampler.set_sampler_state(saved.get_sampler_state())
+
+    assert sampler.shuffled_ids == []
+    assert len(sampler.next_minibatch_ids(loader, SimpleNamespace(i=1))) == 3

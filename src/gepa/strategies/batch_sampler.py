@@ -3,7 +3,7 @@
 
 import random
 from collections import Counter
-from typing import Protocol
+from typing import Any, Protocol
 
 from gepa.core.adapter import DataInst
 from gepa.core.data_loader import DataId, DataLoader
@@ -30,6 +30,7 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
     - Pad to minibatch size with least frequent ids
     - Deterministic via state.rng1
     - Refresh when available ids change; order-only changes retain the current shuffle
+    - Shuffle position is saved with the run state so a resumed run finishes the current epoch
     """
 
     def __init__(self, minibatch_size: int, rng: random.Random | None = None):
@@ -46,6 +47,36 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
             self.rng = random.Random(0)
         else:
             self.rng = rng
+
+    def get_sampler_state(self) -> dict[str, Any]:
+        """Return the shuffle position to persist in a checkpoint.
+
+        The RNG is not included; it is shared with other strategies and is
+        recreated from ``seed`` on resume.
+        """
+        return {
+            "minibatch_size": self.minibatch_size,
+            "shuffled_ids": list(self.shuffled_ids),
+            "epoch": self.epoch,
+            "id_freqs": Counter(self.id_freqs),
+            "last_trainset_size": self.last_trainset_size,
+        }
+
+    def set_sampler_state(self, sampler_state: dict[str, Any]) -> None:
+        """Restore a shuffle position saved by :meth:`get_sampler_state`.
+
+        State saved with a different ``minibatch_size`` is ignored and the
+        sampler starts a fresh shuffle. If the loader's IDs changed since the
+        save, the next call refreshes the shuffle as usual.
+        """
+        if sampler_state.get("minibatch_size") != self.minibatch_size:
+            return
+        self.shuffled_ids = list(sampler_state["shuffled_ids"])
+        self.epoch = sampler_state["epoch"]
+        self.id_freqs = Counter(sampler_state["id_freqs"])
+        self.last_trainset_size = sampler_state["last_trainset_size"]
+        self._current_iteration = None
+        self._calls_in_iteration = 0
 
     def _update_shuffled(self, all_ids: list[DataId]):
         trainset_size = len(all_ids)
@@ -96,8 +127,12 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
             or set(all_ids) != set(self.shuffled_ids)
         )
         if needs_refresh:
-            self.epoch = curr_epoch
             self._update_shuffled(all_ids)
+            # Derive the epoch from the new shuffle. A sampler created partway
+            # through a run (e.g. resuming an older checkpoint without saved
+            # sampler state) would otherwise record epoch 0 and reshuffle on
+            # every following iteration of the current epoch.
+            self.epoch = base_idx // len(self.shuffled_ids)
 
         assert len(self.shuffled_ids) >= self.minibatch_size
         assert len(self.shuffled_ids) % self.minibatch_size == 0
