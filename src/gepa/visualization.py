@@ -22,8 +22,10 @@ if TYPE_CHECKING:
 
 
 def _escape(text: str) -> str:
-    """Escape text for safe inclusion in DOT labels and HTML tooltips."""
-    return html.escape(text, quote=True)
+    """Escape literal text for a quoted DOT tooltip."""
+    # Tooltips pass through Graphviz's escString handling twice when rendered.
+    # Protect both passes so paths, regexes and escapes such as \N stay literal.
+    return html.escape(text, quote=True).replace("\\", "\\\\\\\\")
 
 
 # ---------------------------------------------------------------------------
