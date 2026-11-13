@@ -67,6 +67,23 @@ class CachedEvaluation(Generic[RolloutOutput]):
     output: RolloutOutput
     score: float
     objective_scores: ObjectiveScores | None
+    # Per-example trajectory, populated only by evaluations that requested
+    # traces. Reflection needs these to rebuild a reflective dataset without
+    # re-running the rollout (see #357); entries without one are treated as
+    # misses by callers that require trajectories.
+    trajectory: Any = None
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Drop the trajectory from persisted state.
+
+        Trajectories can contain arbitrary adapter objects that standard
+        pickle cannot serialize, and they are only useful while the proposer
+        is running. Keeping them out of ``gepa_state.bin`` preserves both
+        resumability and the existing on-disk cache format.
+        """
+        state = self.__dict__.copy()
+        state["trajectory"] = None
+        return state
 
 
 @dataclass
@@ -126,19 +143,31 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         objective_scores: ObjectiveScores | None = None,
         *,
         split: str,
+        trajectory: Any = None,
     ) -> None:
         """Store an evaluation result in the cache."""
         key = self._key(_candidate_hash(candidate), example_id, split)
-        self._cache[key] = CachedEvaluation(output, score, objective_scores)
+        self._cache[key] = CachedEvaluation(output, score, objective_scores, trajectory)
 
     def get_batch(
-        self, candidate: dict[str, str], example_ids: list[DataId], *, split: str
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        *,
+        split: str,
+        require_trajectories: bool = False,
     ) -> tuple[dict[DataId, CachedEvaluation[RolloutOutput]], list[DataId]]:
-        """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
+        """Look up cached results for a batch. Returns (cached_results, uncached_ids).
+
+        With ``require_trajectories=True``, entries without a stored trajectory
+        are returned as uncached so the caller re-runs them with traces instead
+        of silently passing a trajectory-less evaluation to reflection.
+        """
         h = _candidate_hash(candidate)
         cached, uncached = {}, []
         for eid in example_ids:
-            if entry := self._cache.get(self._key(h, eid, split)):
+            entry = self._cache.get(self._key(h, eid, split))
+            if entry is not None and (not require_trajectories or getattr(entry, "trajectory", None) is not None):
                 cached[eid] = entry
             else:
                 uncached.append(eid)
@@ -153,12 +182,21 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         objective_scores_list: Sequence[ObjectiveScores] | None = None,
         *,
         split: str,
+        trajectories: Sequence[Any] | None = None,
     ) -> None:
-        """Store evaluation results for a batch of examples."""
+        """Store evaluation results for a batch of examples.
+
+        ``trajectories`` is index-aligned with ``example_ids`` when provided.
+        """
+        if trajectories is not None and len(trajectories) != len(example_ids):
+            raise ValueError(f"trajectories has {len(trajectories)} entries but example_ids has {len(example_ids)}")
         h = _candidate_hash(candidate)
         for i, eid in enumerate(example_ids):
             self._cache[self._key(h, eid, split)] = CachedEvaluation(
-                outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
+                outputs[i],
+                scores[i],
+                objective_scores_list[i] if objective_scores_list else None,
+                trajectories[i] if trajectories is not None else None,
             )
 
     def evaluate_with_cache_full(

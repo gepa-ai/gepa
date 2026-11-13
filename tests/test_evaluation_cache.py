@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gepa.core.state import TRAINSET_CACHE_SPLIT, EvaluationCache
+from gepa.core.state import TRAINSET_CACHE_SPLIT, CachedEvaluation, EvaluationCache
 
 # RECORDER_DIR paths for cached tests (imported lazily to avoid module conflicts)
 # Source: tests/test_aime_prompt_optimization/test_aime_prompt_optimize.py
@@ -74,6 +74,60 @@ class TestEvaluationCache:
         )
         assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).score == 0.5
         assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).objective_scores == {"acc": 0.8}
+
+    def test_trajectory_roundtrip(self):
+        """Cached entries can carry the trajectory reflection needs (#357)."""
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "test"}
+        cache.put(
+            candidate,
+            "ex1",
+            "out1",
+            0.5,
+            split=TRAINSET_CACHE_SPLIT,
+            trajectory={"steps": ["a", "b"]},
+        )
+        entry = cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT)
+        assert entry is not None and entry.trajectory == {"steps": ["a", "b"]}
+
+    def test_get_batch_require_trajectories_treats_plain_entries_as_misses(self):
+        """A score-only entry cannot serve a caller that needs traces."""
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "test"}
+        cache.put(candidate, "ex1", "out1", 0.5, split=TRAINSET_CACHE_SPLIT)
+        cache.put(candidate, "ex2", "out2", 0.6, split=TRAINSET_CACHE_SPLIT, trajectory={"step": 1})
+
+        cached, uncached = cache.get_batch(
+            candidate, ["ex1", "ex2"], split=TRAINSET_CACHE_SPLIT, require_trajectories=True
+        )
+        assert set(cached) == {"ex2"}
+        assert cached["ex2"].trajectory == {"step": 1}
+        assert uncached == ["ex1"]
+
+    def test_put_batch_stores_trajectories(self):
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "test"}
+        cache.put_batch(
+            candidate,
+            ["ex1", "ex2"],
+            ["out1", "out2"],
+            [0.5, 0.6],
+            split=TRAINSET_CACHE_SPLIT,
+            trajectories=[{"step": 1}, None],
+        )
+        assert cache.get(candidate, "ex1", split=TRAINSET_CACHE_SPLIT).trajectory == {"step": 1}
+        assert cache.get(candidate, "ex2", split=TRAINSET_CACHE_SPLIT).trajectory is None
+
+    def test_trajectories_are_not_persisted(self):
+        """Trajectories are runtime-only so state pickling stays compatible."""
+        import pickle
+
+        entry = CachedEvaluation("out", 0.5, {"acc": 1.0}, {"steps": ["a"]})
+        restored = pickle.loads(pickle.dumps(entry))
+        assert restored.output == "out"
+        assert restored.score == 0.5
+        assert restored.objective_scores == {"acc": 1.0}
+        assert restored.trajectory is None
 
     def test_split_is_required(self):
         """Omitting split must be a TypeError, not a silent trainset lookup."""

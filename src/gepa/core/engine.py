@@ -963,7 +963,21 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Main loop
         last_pbar_val = 0
+        # Cache hits are free, so an iteration that reuses every sampled parent
+        # rollout and proposes no child consumes no budget. A few such
+        # iterations are normal (e.g. a perfect-scoring parent is skipped), but
+        # the budget-based stop condition would never fire if it persists;
+        # stop instead of spinning forever.
+        max_zero_progress_iterations = 5
+        zero_progress_iterations = 0
         while not self._should_stop(state):
+            if state.evaluation_cache is not None and zero_progress_iterations >= max_zero_progress_iterations:
+                self.logger.log(
+                    f"Stopping: {zero_progress_iterations} consecutive iterations consumed no metric calls "
+                    "(all sampled parent rollouts were cached and no child was proposed)."
+                )
+                break
+
             if self.display_progress_bar and progress_bar is not None:
                 delta = state.total_num_evals - last_pbar_val
                 progress_bar.update(delta)
@@ -1131,6 +1145,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             proposal_accepted=proposal_accepted,
                         ),
                     )
+                if state.total_num_evals > evals_before_iteration:
+                    zero_progress_iterations = 0
+                else:
+                    zero_progress_iterations += 1
 
         # Close progress bar if it exists
         if self.display_progress_bar and progress_bar is not None:
