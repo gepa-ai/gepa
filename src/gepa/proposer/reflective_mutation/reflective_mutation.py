@@ -282,6 +282,103 @@ class ReflectiveMutationProposer:
         """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
         return invoke_batch_evaluate(self.adapter, items, capture_traces=True)
 
+    def _batch_evaluate_parents(
+        self,
+        items: list[tuple[tuple[str, tuple], dict[str, str], list]],
+        state: GEPAState,
+    ) -> dict[tuple[str, tuple], EvaluationBatch]:
+        """Batch-evaluate parent minibatches, reusing cached traced evaluations.
+
+        A parent is usually a child proposed in an earlier iteration, so its
+        ``(candidate, example)`` rollouts are already in the evaluation cache.
+        The cache historically stored only outputs/scores; reflection also
+        needs trajectories. Entries that carry trajectories are reused, and
+        only the remaining examples are evaluated fresh in one adapter call.
+        Cache hits do not consume metric-call budget (they are not rollouts).
+        """
+        if state.evaluation_cache is None:
+            evals = self._batch_evaluate([(candidate, minibatch) for _key, candidate, minibatch in items])
+            return dict(zip((key for key, _candidate, _minibatch in items), evals, strict=True))
+
+        cached_by_key: dict[tuple[str, tuple], dict[Any, Any]] = {}
+        miss_positions: list[int] = []
+        miss_items: list[tuple[dict[str, str], list]] = []
+        miss_ids: dict[tuple[str, tuple], list[Any]] = {}
+        for pos, (key, candidate, _minibatch) in enumerate(items):
+            cached, uncached = state.evaluation_cache.get_batch(
+                candidate,
+                list(key[1]),
+                split=TRAINSET_CACHE_SPLIT,
+                require_trajectories=True,
+            )
+            cached_by_key[key] = cached
+            if uncached:
+                miss_positions.append(pos)
+                miss_items.append((candidate, self.trainset.fetch(uncached)))
+                miss_ids[key] = uncached
+
+        fresh = self._batch_evaluate(miss_items) if miss_items else []
+        fresh_by_position = dict(zip(miss_positions, fresh, strict=True))
+
+        return {
+            key: self._merge_parent_eval(
+                list(key[1]),
+                cached_by_key[key],
+                miss_ids.get(key, []),
+                fresh_by_position.get(pos),
+            )
+            for pos, (key, _candidate, _minibatch) in enumerate(items)
+        }
+
+    @staticmethod
+    def _merge_parent_eval(
+        example_ids: list[Any],
+        cached: dict[Any, Any],
+        uncached_ids: list[Any],
+        fresh: EvaluationBatch | None,
+    ) -> EvaluationBatch:
+        """Merge cached and fresh per-example results, preserving id order."""
+        outputs: list[Any] = []
+        scores: list[float] = []
+        trajectories: list[Any] = []
+        objective_scores: list[dict[str, float]] = []
+        has_objective_scores = True
+        fresh_index = {eid: idx for idx, eid in enumerate(uncached_ids)}
+
+        for eid in example_ids:
+            entry = cached.get(eid)
+            if entry is not None:
+                outputs.append(entry.output)
+                scores.append(entry.score)
+                trajectories.append(getattr(entry, "trajectory", None))
+                if entry.objective_scores is None:
+                    has_objective_scores = False
+                else:
+                    objective_scores.append(entry.objective_scores)
+                continue
+
+            assert fresh is not None
+            idx = fresh_index[eid]
+            outputs.append(fresh.outputs[idx])
+            scores.append(fresh.scores[idx])
+            trajectories.append(fresh.trajectories[idx] if fresh.trajectories is not None else None)
+            if fresh.objective_scores is None:
+                has_objective_scores = False
+            else:
+                objective_scores.append(fresh.objective_scores[idx])
+
+        num_metric_calls = 0
+        if fresh is not None:
+            num_metric_calls = fresh.num_metric_calls if fresh.num_metric_calls is not None else len(uncached_ids)
+
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories if all(trajectory is not None for trajectory in trajectories) else None,
+            objective_scores=objective_scores if has_objective_scores and objective_scores else None,
+            num_metric_calls=num_metric_calls,
+        )
+
     # ------------------------------------------------------------------
     # Main proposal method
     # ------------------------------------------------------------------
@@ -332,7 +429,7 @@ class ReflectiveMutationProposer:
             task_to_key.append(key)
 
         key_list = list(unique_keys.keys())
-        items = [unique_keys[k] for k in key_list]
+        parent_items = [(key, unique_keys[key][0], unique_keys[key][1]) for key in key_list]
 
         # Fire evaluation start callbacks for each task
         for task in tasks:
@@ -350,8 +447,8 @@ class ReflectiveMutationProposer:
                 ),
             )
 
-        parent_evals = self._batch_evaluate(items)
-        key_to_eval: dict[tuple[str, tuple], EvaluationBatch] = dict(zip(key_list, parent_evals, strict=True))
+        key_to_eval = self._batch_evaluate_parents(parent_items, state)
+        parent_evals = [key_to_eval[key] for key in key_list]
 
         # Fire evaluation end callbacks for each task
         for task, key in zip(tasks, task_to_key, strict=True):
@@ -373,12 +470,14 @@ class ReflectiveMutationProposer:
             )
 
         total_parent_evals = sum(
-            e.num_metric_calls if e.num_metric_calls is not None else len(items[idx][1])
-            for idx, e in enumerate(parent_evals)
+            e.num_metric_calls if e.num_metric_calls is not None else len(unique_keys[key][1])
+            for key, e in zip(key_list, parent_evals, strict=True)
         )
         state.increment_evals(total_parent_evals)
 
-        # Update evaluation cache for parents
+        # Update evaluation cache for parents (including trajectories, so a
+        # future iteration can reuse this rollout when the candidate is
+        # selected as a parent instead of re-running it).
         if state.evaluation_cache is not None:
             for task, key in zip(tasks, task_to_key, strict=True):
                 eval_curr = key_to_eval[key]
@@ -390,6 +489,7 @@ class ReflectiveMutationProposer:
                     eval_curr.scores,
                     objective_scores_list,
                     split=TRAINSET_CACHE_SPLIT,
+                    trajectories=eval_curr.trajectories,
                 )
 
         # Trace: legacy first-task keys (pre-#329 tooling compatibility) plus
@@ -662,6 +762,7 @@ class ReflectiveMutationProposer:
                     child_eval.scores,
                     new_obj_scores,
                     split=TRAINSET_CACHE_SPLIT,
+                    trajectories=child_eval.trajectories,
                 )
 
         # Trace: per-task before/after scores (children is index-aligned with tasks)

@@ -78,10 +78,13 @@ def _record_cache_hits(monkeypatch, produced_by):
 
     def instrumented(self, candidate, example_ids, *args, **kwargs):
         cached, uncached = get_batch(self, candidate, example_ids, *args, **kwargs)
-        for slot, entry in cached.items():
-            parts = entry.output if isinstance(entry.output, tuple) else (entry.output,)
-            ran = next((part["ran"] for part in parts if isinstance(part, dict) and "ran" in part), "?")
-            produced_by[_candidate_tag(candidate)][slot] = ran
+        # The proposer also reads trainset rollouts to reuse a parent's
+        # minibatch evaluation; those ids are not valset slots.
+        if kwargs.get("split") == VALSET_CACHE_SPLIT:
+            for slot, entry in cached.items():
+                parts = entry.output if isinstance(entry.output, tuple) else (entry.output,)
+                ran = next((part["ran"] for part in parts if isinstance(part, dict) and "ran" in part), "?")
+                produced_by[_candidate_tag(candidate)][slot] = ran
         return cached, uncached
 
     monkeypatch.setattr(EvaluationCache, "get_batch", instrumented)
