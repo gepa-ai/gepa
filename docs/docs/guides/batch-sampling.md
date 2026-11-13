@@ -2,7 +2,7 @@
 
 Each iteration, GEPA samples a **minibatch** of training examples to evaluate the current candidate on. The **batch sampler** controls which examples are selected and in what order. This directly affects what feedback the reflection LM sees — and therefore what improvements it proposes.
 
-GEPA ships with one built-in strategy (`EpochShuffledBatchSampler`) and a `BatchSampler` protocol for writing your own.
+GEPA ships with `EpochShuffledBatchSampler`, the opt-in `DynamicBatchSampler`, and a `BatchSampler` protocol for writing your own.
 
 ---
 
@@ -63,6 +63,38 @@ result = optimize_anything(
     - **Smaller (1-3)**: Each iteration focuses on fewer examples, giving the reflection LM more detailed feedback per example. Better for tasks where individual failures are informative. More iterations needed to cover the full training set.
     - **Larger (5-20)**: The reflection LM sees a broader cross-section of failures each iteration. Better for tasks with many distinct failure modes. Fewer iterations needed per epoch, but the reflection prompt is longer.
     - The default (3) works well in most cases. Increase it if you notice the optimizer is slow to discover certain failure modes, or decrease it if the reflection LM is getting overwhelmed by too many examples.
+
+---
+
+## Built-in: adaptive batch sizes
+
+`DynamicBatchSampler` implements the runtime controller from [ComBEE §3.3](https://arxiv.org/abs/2604.04247). It profiles a set of batch sizes during ordinary optimization iterations, fits estimated epoch time as `T(bs) = A * bs**(-alpha)`, and selects the plateau where marginal time savings fall below 1.6% of the fitted peak slope. Set an explicit upper bound appropriate for your task's reflection context and learning quality.
+
+```python
+import random
+import gepa
+from gepa.strategies.batch_sampler import DynamicBatchSampler
+
+result = gepa.optimize(
+    ...,
+    batch_sampler=DynamicBatchSampler(
+        max_batch_size=32,
+        profile_batch_sizes=[1, 2, 4, 8, 16],
+        slope_threshold=0.016,
+        rng=random.Random(42),
+    ),
+)
+```
+
+Pass the instance through `ReflectionConfig(batch_sampler=...)` to use it with `optimize_anything()`. Leave `reflection_minibatch_size` unset when supplying a sampler instance. The default sampler remains `"epoch_shuffled"`; adaptive sizing is opt-in and works independently of the reflection strategy.
+
+The controller measures elapsed wall time between sampling calls in consecutive optimizer iterations. For a single proposal it estimates epoch time as `delay * len(trainset) / batch_size`. If a strategy requests several minibatches in one iteration, they retain the same trial size and the estimate uses the total sampled examples. It does not time consecutive sampling calls within one iteration as completed proposal work.
+
+Profiling adds no separate model or evaluator calls: trial steps contribute to the normal optimization run and use its existing budget. By default trial sizes double from `min_batch_size=1` through `max_batch_size`. Custom trial sizes must be nonempty positive integers within those bounds. Sizes are capped by the training set length. The selected integer size is rounded up at the plateau and capped by the configured upper bound.
+
+Size changes continue the current shuffle; its remaining IDs are not skipped. The final partial chunk is padded with the least frequent IDs not already in that batch. A changed loader or training set length restarts profiling. Zero/nonfinite timing estimates are discarded. Flat/increasing curves or fewer than two usable timings fall back to the smallest trial size.
+
+`sampler.profiled_epoch_times` returns a snapshot of the usable estimates in seconds. Measurements include the iteration's evaluation, reflection and validation work, so the chosen size depends on the actual optimizer workload. The upper bound is a user control; the controller does not measure learning-quality degradation.
 
 ---
 
@@ -171,3 +203,4 @@ It must return a list of data IDs. The engine will call `loader.fetch(ids)` to r
 
 - [`BatchSampler` protocol](../api/strategies/BatchSampler.md)
 - [`EpochShuffledBatchSampler`](../api/strategies/EpochShuffledBatchSampler.md)
+- [`DynamicBatchSampler`](../api/strategies/DynamicBatchSampler.md)
