@@ -18,6 +18,22 @@ import yaml
 # API documentation mapping
 # Maps category -> list of (module_path, class_or_function_name, display_name)
 API_MAPPING = {
+    "optimize_anything": [
+        ("gepa.optimize_anything", "optimize_anything", "optimize_anything"),
+        ("gepa.optimize_anything", "GEPAConfig", "GEPAConfig"),
+        ("gepa.optimize_anything", "EngineConfig", "EngineConfig"),
+        ("gepa.optimize_anything", "ReflectionConfig", "ReflectionConfig"),
+        ("gepa.optimize_anything", "MergeConfig", "MergeConfig"),
+        ("gepa.optimize_anything", "RefinerConfig", "RefinerConfig"),
+        ("gepa.optimize_anything", "TrackingConfig", "TrackingConfig"),
+        ("gepa.optimize_anything", "Evaluator", "Evaluator"),
+        ("gepa.optimize_anything", "OptimizationState", "OptimizationState"),
+        ("gepa.optimize_anything", "LogContext", "LogContext"),
+        ("gepa.optimize_anything", "log", "log"),
+        ("gepa.optimize_anything", "get_log_context", "get_log_context"),
+        ("gepa.optimize_anything", "set_log_context", "set_log_context"),
+        ("gepa.optimize_anything", "make_litellm_lm", "make_litellm_lm"),
+    ],
     "core": [
         ("gepa.api", "optimize", "optimize"),
         ("gepa.core.adapter", "GEPAAdapter", "GEPAAdapter"),
@@ -104,6 +120,10 @@ API_MAPPING = {
 
 # Category display names and descriptions for index page
 CATEGORY_INFO = {
+    "optimize_anything": {
+        "title": "optimize_anything",
+        "description": "The primary public API for GEPA. Optimize any text artifact with LLM-guided evolution — bring a seed candidate and an evaluator, and GEPA handles the rest.",
+    },
     "core": {
         "title": "Core",
         "description": "The core module contains the main optimization function and fundamental classes.",

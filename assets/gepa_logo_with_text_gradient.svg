@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Enhanced version with gradient background for landing page -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="7000px" height="1800px" viewBox="-0.5 -0.5 7000 1800">
+  <defs>
+    <style type="text/css">
+    </style>
+    <radialGradient id="greenGrad" cx="50%" cy="50%" r="60%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#e8f5e6"/>
+      <stop offset="100%" stop-color="#9cc097"/>
+    </radialGradient>
+    <radialGradient id="blueGrad" cx="50%" cy="50%" r="60%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#eef4ff"/>
+      <stop offset="100%" stop-color="#9cbfe0"/>
+    </radialGradient>
+    <!-- Enhanced gradient background -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:rgba(147, 197, 253, 0.08);stop-opacity:1" />
+      <stop offset="25%" style="stop-color:rgba(167, 139, 250, 0.06);stop-opacity:1" />
+      <stop offset="50%" style="stop-color:rgba(129, 140, 248, 0.08);stop-opacity:1" />
+      <stop offset="75%" style="stop-color:rgba(167, 139, 250, 0.06);stop-opacity:1" />
+      <stop offset="100%" style="stop-color:rgba(147, 197, 253, 0.08);stop-opacity:1" />
+    </linearGradient>
+    <!-- Radial gradient overlay for depth -->
+    <radialGradient id="radialOverlay" cx="50%" cy="30%" r="60%">
+      <stop offset="0%" style="stop-color:rgba(147, 197, 253, 0.12);stop-opacity:1" />
+      <stop offset="50%" style="stop-color:rgba(196, 181, 253, 0.08);stop-opacity:1" />
+      <stop offset="100%" style="stop-color:rgba(0, 0, 0, 0);stop-opacity:0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background with gradient -->
+  <rect fill="url(#bgGradient)" width="100%" height="100%" x="0" y="0"/>
+  <rect fill="url(#radialOverlay)" width="100%" height="100%" x="0" y="0"/>
+
+  <g>
+    <!-- Triangle 1 - Green -->
+    <g style="filter: drop-shadow(rgba(0, 0, 0, 0.15) 10px 15px 10px);">
+      <path d="M 393.31 553.31 L 393.31 253.31 Q 393.31 153.31 476.51 208.78 L 910.1 497.84 Q 993.31 553.31 910.1 608.78 L 476.51 897.84 Q 393.31 953.31 393.31 853.31 Z" fill="url(#greenGrad)" stroke="#82b366" stroke-width="30" stroke-miterlimit="10" transform="rotate(75,693.31,553.31)" pointer-events="all"/>
+    </g>
+    <!-- Triangle 2 - Green -->
+    <g style="filter: drop-shadow(rgba(0, 0, 0, 0.15) 10px 15px 10px);">
+      <path d="M 823.31 793.31 L 823.31 493.31 Q 823.31 393.31 906.51 448.78 L 1340.1 737.84 Q 1423.31 793.31 1340.1 848.78 L 906.51 1137.84 Q 823.31 1193.31 823.31 1093.31 Z" fill="url(#greenGrad)" stroke="#82b366" stroke-width="40" stroke-miterlimit="10" transform="rotate(165,1123.31,793.31)" pointer-events="all"/>
+    </g>
+    <!-- Triangle 3 - Blue -->
+    <g style="filter: drop-shadow(rgba(0, 0, 0, 0.15) 10px 15px 10px);">
+      <path d="M 583.31 1233.31 L 583.31 933.31 Q 583.31 833.31 666.51 888.78 L 1100.1 1177.84 Q 1183.31 1233.31 1100.1 1288.78 L 666.51 1577.84 Q 583.31 1633.31 583.31 1533.31 Z" fill="url(#blueGrad)" stroke="#6c8ebf" stroke-width="30" stroke-miterlimit="10" transform="rotate(-105,883.31,1233.31)" pointer-events="all"/>
+    </g>
+    <!-- Triangle 4 - Blue -->
+    <g style="filter: drop-shadow(rgba(0, 0, 0, 0.15) 10px 15px 10px);">
+      <path d="M 163.31 983.31 L 163.31 683.31 Q 163.31 583.31 246.51 638.78 L 680.1 927.84 Q 763.31 983.31 680.1 1038.78 L 246.51 1327.84 Q 163.31 1383.31 163.31 1283.31 Z" fill="url(#blueGrad)" stroke="#6c8ebf" stroke-width="30" stroke-miterlimit="10" transform="rotate(-15,463.31,983.31)" pointer-events="all"/>
+    </g>
+    <!-- GEPA Text -->
+    <text x="1850" y="900" fill="#2e4464" font-family="'Arial Rounded MT', Helvetica, Arial, sans-serif" font-size="1500" text-anchor="start" font-weight="500" dominant-baseline="central">GEPA</text>
+  </g>
+</svg>

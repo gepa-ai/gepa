@@ -1,0 +1,48 @@
+{% extends "main.html" %}
+
+{% block container %}
+<div class="md-content md-content--post" data-md-component="content">
+    <article class="md-content__inner md-typeset">
+
+        <header class="blog-post-header">
+            <h1 class="blog-post-title">{{ page.title | replace("optimize_anything", '<span class="gradient-code">optimize_anything</span>') | safe }}</h1>
+
+            <div class="blog-post-byline">
+                {% if page.meta.date and page.meta.date.created %}
+                    <span class="blog-post-date">
+                        <time datetime="{{ page.meta.date.created.isoformat() }}">
+                            {{ page.meta.date.created.strftime('%B %d, %Y') }}
+                        </time>
+                    </span>
+                {% endif %}
+
+                {% if page.authors %}
+                    <span class="blog-post-authors">
+                        {%- for author in page.authors %}
+                            {%- if author.url -%}
+                                <a href="{{ author.url }}">{{ author.name }}</a>
+                            {%- else -%}
+                                {{ author.name }}
+                            {%- endif -%}
+                            {%- if page.meta.equal_contribution and author.name in page.meta.equal_contribution -%}
+                                <sup>*</sup>
+                            {%- endif -%}
+                            {%- if not loop.last %}, {% endif -%}
+                        {%- endfor %}
+                    </span>
+                    {%- if page.meta.equal_contribution %}
+                    <br><span class="blog-post-equal-contrib"><sup>*</sup> Equal Contribution</span>
+                    {%- endif %}
+                {% endif %}
+            </div>
+        </header>
+
+        {# Post content (first h1 hidden via CSS to avoid duplication) #}
+        <div class="blog-post-body">
+            {% block content %}
+                {{ page.content }}
+            {% endblock %}
+        </div>
+    </article>
+</div>
+{% endblock %}

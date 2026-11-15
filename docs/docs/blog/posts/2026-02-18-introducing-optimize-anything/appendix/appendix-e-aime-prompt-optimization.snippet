@@ -1,0 +1,90 @@
+<span id="appendix-e-aime-prompt-optimization"></span>
+??? example "Prompt Optimization (AIME Mathematics)"
+
+    This is Generalization mode for prompt optimization on AIME 2025 math competition problems. GEPA improves accuracy from 46.67% to 60.00% through prompt refinement alone.
+
+    **Candidate** — The seed is a minimal, generic math instruction. GEPA will evolve this into a detailed problem-solving strategy with specific heuristics for competition-level mathematics.
+
+    ```
+    SEED_PROMPT = "Solve the math problem carefully. Break down the steps and provide the final answer as a single number."
+    ```
+
+    **Evaluator** — The evaluator runs the LLM with the candidate prompt on an AIME problem, checks whether the predicted answer matches the ground truth, and returns ASI including the problem statement, written solutions, the model's reasoning chain, and its final answer, helping the LLM generate a more systematic prompt.
+
+    ```python
+    from examples.aime_math.eval import run_llm, math_metric
+
+    def evaluate(candidate: str, example) -> tuple[float, SideInfo]:
+        """Evaluate a candidate on a single example."""
+        prediction = run_llm(example, candidate)
+        score, feedback = math_metric(example, prediction)
+
+        side_info = {
+            "score": score,
+            "input": example.input,
+            "prompt": candidate,
+            "output": prediction.answer,
+            "reasoning": getattr(prediction, "reasoning", ""),
+            "execution_feedback": feedback,
+        }
+
+        return score, side_info
+    ```
+
+    **Optimizer** — This is **Generalization** mode with both a `dataset` (training set) and `valset` (validation set), so the optimized prompt must generalize to unseen math problems, not just memorize solutions. `parallel=True` with `max_workers=32` enables concurrent evaluation across problems. `cache_evaluation=True` avoids re-evaluating the same prompt on the same problem.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+    from examples.aime_math.dataset import load_math_dataset()
+
+    trainset, valset, testset = load_math_dataset()
+
+    result = optimize_anything(
+        seed_candidate=SEED_PROMPT,
+        evaluator=evaluate,
+        dataset=trainset,
+        valset=valset,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=600, parallel=True, max_workers=32, cache_evaluation=True),
+        ),
+    )
+    ```
+
+    **Optimized artifact** — From a single generic sentence, GEPA evolved a structured reasoning framework with explicit heuristics for competition math: restating the problem, defining variables and constraints upfront, justifying each algebraic step, naming theorems before applying them, and backtracking cleanly from dead ends. The prompt also enforces discipline — preferring exact algebra over approximation, testing candidate values only after deriving tight constraints, and isolating the final answer on its own line.
+
+    ```
+    Solve the math problem carefully and thoroughly. Your goal is to produce a correct,
+    well‑structured solution that leads unambiguously to the requested final result.
+
+    Follow these rules:
+
+    1. Restate the problem briefly in your own words.
+
+    2. Set up notation and equations cleanly before manipulating them.
+       - Define variables explicitly.
+       - State all constraints (e.g., integrality, ranges, geometric conditions) before
+         using them.
+
+    3. Show clear, logically ordered reasoning.
+       - Justify each important algebraic or geometric step.
+       - When you split into cases, state why each case is necessary and what assumptions
+         define it.
+       - If you invoke a known theorem (e.g., Ptolemy, Power of a Point, similarity, Vieta),
+         name it and show exactly how it applies in this context.
+
+    4. Handle dead ends correctly.
+       - If you realize a line of reasoning leads to a contradiction or dead end, explicitly
+         say so.
+       - Then restart from the last correct point; do not guess or hand‑wave.
+
+    5. Keep the reasoning focused and minimal while still being rigorous.
+       - Avoid unnecessary numerical approximations if an exact approach is available.
+       - Do not approximate exact values unless the problem explicitly asks for a decimal.
+       - Prefer algebraic or structural arguments over trial‑and‑error or random guessing.
+       - You may test candidate values only after deriving strong constraints that sharply
+         limit the possibilities.
+
+    6. At the end, clearly isolate the answer:
+       - Provide the final answer as a single number or expression on its own line.
+       - Do not include any extra words, symbols, or explanation on that final line.
+    ```

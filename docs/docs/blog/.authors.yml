@@ -1,0 +1,76 @@
+authors:
+  lakshya:
+    name: Lakshya A Agrawal
+    description: PhD Student, UC Berkeley Sky Lab
+    avatar: https://github.com/LakshyAAAgrawal.png
+    url: https://x.com/LakshyAAAgrawal
+  shangyin:
+    name: Shangyin Tan
+    description: PhD Student, UC Berkeley Sky Lab
+    avatar: https://github.com/Shangyint.png
+    url: https://shangyit.me
+  rohit:
+    name: Rohit Sandadi
+    description: Undergraduate Researcher, UC Berkeley Sky Lab
+    avatar: https://github.com/rohitsandadi.png
+    url: https://rohitsandadi.github.io
+  alex:
+    name: Alexandros G. Dimakis
+    description: Professor, UC Berkeley EECS
+    avatar: https://github.com/Alex-adim.png
+    url: https://people.eecs.berkeley.edu/~alexdimakis/
+  donghyun:
+    name: Donghyun Lee
+    description: PhD Student, UC Berkeley
+    avatar: https://pbs.twimg.com/profile_images/1908160333199380480/2fX9J_BK_400x400.jpg
+    url: https://x.com/luke_lee_ai
+  wenjie:
+    name: Wenjie Ma
+    description: PhD Student, UC Berkeley
+    avatar: https://github.com/euclidgame.png
+    url: https://wenjiema.com
+  karim:
+    name: Karim Elmaaroufi
+    description: PhD Student, UC Berkeley Sky Lab
+    avatar: https://github.com/KE7.png
+    url: https://kael.tech.blog/
+  joey:
+    name: Joseph E. Gonzalez
+    description: Associate Professor, UC Berkeley EECS
+    avatar: https://github.com/jegonzal.png
+    url: https://people.eecs.berkeley.edu/~jegonzal/
+  ion:
+    name: Ion Stoica
+    description: Professor, UC Berkeley EECS
+    avatar: https://people.eecs.berkeley.edu/~istoica/ion_picture_small.jpg
+    url: https://people.eecs.berkeley.edu/~istoica/
+  omar:
+    name: Omar Khattab
+    description: Assistant Professor, MIT EECS
+    avatar: https://github.com/okhat.png
+    url: https://omarkhattab.com/
+  matei:
+    name: Matei Zaharia
+    description: Professor, UC Berkeley EECS
+    avatar: https://github.com/mateiz.png
+    url: https://people.eecs.berkeley.edu/~matei/
+  sewon:
+    name: Sewon Min
+    description: Assistant Professor, UC Berkeley
+    avatar: https://www.sewonmin.com/assets/sewon-2024.jpg
+    url: https://www.sewonmin.com/
+  koushik:
+    name: Koushik Sen
+    description: Professor, UC Berkeley
+    avatar: https://people.eecs.berkeley.edu/~ksen/ksen.jpeg
+    url: https://people.eecs.berkeley.edu/~ksen/?rnd=1771147393589
+  dan:
+    name: Dan Klein
+    description: Professor, UC Berkeley
+    avatar: https://bakarfellows.berkeley.edu/profile/dan-klein/
+    url: https://www2.eecs.berkeley.edu/Faculty/Homepages/klein.html
+  sanjit:
+    name: Sanjit A. Seshia
+    description: Professor, UC Berkeley
+    avatar: https://people.eecs.berkeley.edu/~sseshia/SanjitSeshia_webphoto.jpg
+    url: https://people.eecs.berkeley.edu/~sseshia/

@@ -1,6 +1,6 @@
 site_name: GEPA
 site_description: A framework for optimizing textual system components using LLM-based reflection and Pareto-efficient evolutionary search.
-site_url: https://gepa.ai/
+site_url: https://gepa-ai.github.io/gepa/
 
 repo_url: https://github.com/gepa-ai/gepa
 repo_name: gepa-ai/gepa
@@ -8,22 +8,51 @@ repo_name: gepa-ai/gepa
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
+hooks:
+    - hooks/scholarly_pdf.py
+
+watch:
+    - docs/blog/posts
+
 nav:
-    - Get Started: index.md
-    - GEPA in Action: guides/use-cases.md
+    - Showcase: guides/use-cases.md
+    - About: about.md
+    - Blog:
+        - blog/index.md
     - Guides:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
         - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
+        - Candidate Selection Strategies: guides/candidate-selection.md
+        - Acceptance Criterion: guides/acceptance-criterion.md
         - Using Callbacks: guides/callbacks.md
+        - Experiment Tracking: guides/experiment-tracking.md
+        - Using Claude Code as a Proposer: guides/claude-cli-as-proposer.md
+        - gskill: guides/gskill.md
         - Contributing: guides/contributing.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - DSPy Full Program Evolution: tutorials/dspy_full_program_evolution.ipynb
         - ARC AGI Example: tutorials/arc_agi.ipynb
+        - 3D Unicorn Optimization (Seedless): tutorials/3d_unicorn_optimization.ipynb
     - API Reference:
         - API Overview: api/index.md
+        - optimize_anything:
+            - optimize_anything: api/optimize_anything/optimize_anything.md
+            - GEPAConfig: api/optimize_anything/GEPAConfig.md
+            - EngineConfig: api/optimize_anything/EngineConfig.md
+            - ReflectionConfig: api/optimize_anything/ReflectionConfig.md
+            - MergeConfig: api/optimize_anything/MergeConfig.md
+            - RefinerConfig: api/optimize_anything/RefinerConfig.md
+            - TrackingConfig: api/optimize_anything/TrackingConfig.md
+            - Evaluator: api/optimize_anything/Evaluator.md
+            - OptimizationState: api/optimize_anything/OptimizationState.md
+            - LogContext: api/optimize_anything/LogContext.md
+            - log: api/optimize_anything/log.md
+            - get_log_context: api/optimize_anything/get_log_context.md
+            - set_log_context: api/optimize_anything/set_log_context.md
+            - make_litellm_lm: api/optimize_anything/make_litellm_lm.md
         - Core:
             - optimize: api/core/optimize.md
             - GEPAAdapter: api/core/GEPAAdapter.md
@@ -120,25 +149,65 @@ theme:
           toggle:
             icon: material/weather-night
             name: Switch to dark mode
-          primary: deep purple
-          accent: amber
+          primary: indigo
+          accent: blue
         - scheme: slate
           toggle:
             icon: material/weather-sunny
             name: Switch to light mode
-          primary: deep purple
-          accent: amber
+          primary: indigo
+          accent: blue
     icon:
         repo: fontawesome/brands/git-alt
         edit: material/pencil
         view: material/eye
-    logo: static/img/gepa_logo.svg
+    logo: static/img/gepa_logo_with_text_white.svg
     favicon: static/img/gepa_logo.svg
 
 plugins:
+    - redirects:
+        redirect_maps:
+            'blog/introducing-optimize-anything.md': 'blog/posts/2026-02-18-introducing-optimize-anything/index.md'
+            'blog/automatically-learning-skills-for-coding-agents.md': 'blog/posts/2026-02-18-automatically-learning-skills-for-coding-agents/index.md'
+    - social:
+        enabled: !ENV [CI, false]
+        cards_layout_dir: layouts
+        cards_layout: custom
+        cards_layout_options:
+          background_color: "#212C4D"
+          color: "#90E0EF"
+          logo: docs/static/img/gepa_logo_with_text_white.png
     - search:
         lang: en
         separator: '[\s\-\.]+'
+    - blog:
+        blog_dir: blog
+        post_date_format: long
+        post_url_format: "{date}/{slug}"
+        post_excerpt: optional
+        post_excerpt_separator: "<!-- more -->"
+        post_readtime: true
+        post_readtime_words_per_minute: 265
+        authors: true
+        authors_profiles: false
+        archive: true
+        archive_name: Archive
+        categories: false
+        pagination: true
+        pagination_per_page: 10
+        draft_if_future_date: true
+    - rss:
+        match_path: "blog/posts/.*"
+        date_from_meta:
+            as_creation: date.created
+        categories:
+            - categories
+        feeds_filenames:
+            rss_created: blog/feed.xml
+            rss_updated: blog/feed_updated.xml
+            json_created: blog/feed.json
+            json_updated: blog/feed_updated.json
+        enabled: true
     - mkdocstrings:
         handlers:
             python:
@@ -167,12 +236,18 @@ plugins:
 extra_css:
     - static/css/custom.css
 
+extra_javascript:
+    - javascripts/mathjax.js
+    - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+    - javascripts/details-anchor.js
+    - javascripts/toc-drawer.js
+
 extra:
     social:
         - icon: fontawesome/brands/github
           link: https://github.com/gepa-ai/gepa
         - icon: fontawesome/brands/discord
-          link: https://discord.gg/A7dABbtmFw
+          link: https://discord.gg/WXFSeVGdbW
         - icon: fontawesome/brands/slack
           link: https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w
         - icon: fontawesome/brands/x-twitter

@@ -1,0 +1,256 @@
+<span id="appendix-d2-cant-be-late"></span>
+??? example "Cloud Spot Scheduling (Can't Be Late)"
+
+    Generalization mode for cloud infrastructure optimization. Optimizes a Python program that implements a scheduling strategy, evaluated against real-world spot-availability traces. GEPA discovers scheduling policies that generalize across diverse job configurations and spot-availability patterns.
+
+    ---
+
+    **Can't Be Late** — cloud scheduling with SPOT vs ON_DEMAND instances.
+
+    **Artifact being evolved:** a Python scheduling policy (the `_step` method of a `Strategy` class) that is called at each time step and must return one of three actions: `ClusterType.SPOT` (~0.30/hr, cheap but preemptible), `ClusterType.ON_DEMAND` (~1.00/hr, reliable), or `ClusterType.NONE` (wait, no cost). The policy has access to remaining task time, deadline, restart overhead, and spot availability. GEPA evolves the entire strategy class, including any state variables it tracks.
+
+    **Seed Candidate** — A simple greedy heuristic: use ON_DEMAND only when the deadline is imminent, otherwise prefer SPOT when available, and wait when it's not:
+
+    ```python
+    SEED_PROGRAM = """
+    import math
+    from sky_spot.strategies.strategy import Strategy
+    from sky_spot.utils import ClusterType
+
+    class EvolveSingleRegionStrategy(Strategy):
+        NAME = 'evolve_single_region'
+
+        def __init__(self, args):
+            super().__init__(args)
+
+        def reset(self, env, task):
+            super().reset(env, task)
+
+        def _step(self, last_cluster_type: ClusterType, has_spot: bool) -> ClusterType:
+            env = self.env
+
+            # Task completion check
+            remaining_task_time = self.task_duration - sum(self.task_done_time)
+            if remaining_task_time <= 1e-3:
+                return ClusterType.NONE
+
+            # Calculate remaining time until deadline
+            remaining_time = self.deadline - env.elapsed_seconds
+
+            # If running out of time, use ON_DEMAND to guarantee completion
+            if remaining_task_time + self.restart_overhead >= remaining_time:
+                return ClusterType.ON_DEMAND
+
+            # Greedy: use SPOT if available, otherwise wait
+            if has_spot:
+                return ClusterType.SPOT
+            else:
+                return ClusterType.NONE
+
+        @classmethod
+        def _from_args(cls, parser):
+            args, _ = parser.parse_known_args()
+            return cls(args)
+    """
+    ```
+
+    **Evaluator** — The evaluator runs the candidate strategy through a scheduling simulator driven by real spot-availability traces. `get_program_path` caches the candidate to a temp file (keyed by content, so repeated calls are free). `run_simulation` handles subprocess execution of the simulator and cost extraction. Each trace is tested across multiple job configurations (varying task duration, deadline tightness, and restart overhead).
+
+    **ASI (Actionable Side Information):** The side information includes (1) the full spot-availability pattern for the trace (e.g., `"0.0-10.0:S | 10.0-15.0:X"` — spot available for 10h then unavailable), (2) a timeline of the strategy's instance usage decisions (e.g., `"0.0-5.0:S@R0[50%] | 5.0-8.0:OD@R0[100%]"`), and (3) segment counts (SPOT vs ON_DEMAND vs restarts). This lets the LLM proposer see *exactly when* the strategy made suboptimal decisions — for instance, switching to expensive ON_DEMAND too early when spot was about to become available again.
+
+    ```python
+    from utils.simulation import (
+        FAILED_SCORE,
+        get_program_path, syntax_is_valid, syntax_failure_info,
+        run_simulation, simulation_failure_info, simulation_success_info,
+    )
+
+    def evaluate(candidate: dict, example: dict, **kwargs):
+        program_path = get_program_path(candidate["program"])
+        if not syntax_is_valid(program_path):
+            return FAILED_SCORE, syntax_failure_info(example)
+        success, cost, error, details = run_simulation(
+            program_path, example["trace_file"], example["config"]
+        )
+        if not success:
+            return FAILED_SCORE, simulation_failure_info(error, example)
+        score = -cost
+        return score, simulation_success_info(score, example, details)
+    ```
+
+    **Optimizer** — Generalization mode with spot-availability traces split into training and validation sets. Each trace is evaluated across multiple deadline/overhead configurations, so the evolved strategy must handle both tight and relaxed deadlines. `parallel=True` with 128 workers enables fast evaluation across the large trace dataset.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from utils.dataset import load_trace_dataset
+    from utils.lm import make_reflection_lm
+
+    # Load spot-availability traces split into train/val/test
+    splits = load_trace_dataset()
+    train_set, val_set = splits["train"], splits["val"]
+
+    result = optimize_anything(
+        seed_candidate={"program": SEED_PROGRAM},
+        evaluator=evaluate,
+        dataset=train_set,
+        valset=val_set,
+        objective="Optimize a cloud scheduling strategy for the 'Can't Be Late' problem. "
+                  "Minimize cost while ensuring task completion before deadline.",
+        background="ClusterType.SPOT: ~$0.3/hr, cheap but preemptible at any time. "
+                   "ClusterType.ON_DEMAND: ~$1/hr, guaranteed availability. "
+                   "ClusterType.NONE: wait with no cost or progress. restart_overhead: "
+                   "time penalty when switching instance types. The strategy MUST "
+                   "ensure deadline completion (hard constraint).",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=100, parallel=True, max_workers=128),
+            reflection=ReflectionConfig(reflection_lm=make_reflection_lm("anthropic/claude-opus-4-5-20251101")),
+        ),
+    )
+    ```
+
+    **Optimized artifact** — The evolved strategy achieves **7.8% cost savings** over the baseline. GEPA transformed the simple greedy heuristic into an adaptive strategy with: (1) state tracking for spot unavailability patterns, (2) overhead-aware switching decisions with break-even cost analysis, (3) graduated decision thresholds based on slack ratio (remaining buffer / task time), and (4) multi-factor logic that considers absolute slack, persistent unavailability, and remaining work size.
+
+    <section class="scrollable-code" markdown>
+
+    ```python
+    import math
+    from sky_spot.strategies.strategy import Strategy
+    from sky_spot.utils import ClusterType
+
+    class EvolveSingleRegionStrategy(Strategy):
+        NAME = 'evolve_single_region'
+
+        def __init__(self, args):
+            super().__init__(args)
+            self.spot_unavailable_count = 0
+            self.consecutive_short_spot_windows = 0
+
+        def reset(self, env, task):
+            super().reset(env, task)
+            self.spot_unavailable_count = 0
+            self.consecutive_short_spot_windows = 0
+
+        def _step(self, last_cluster_type: ClusterType, has_spot: bool) -> ClusterType:
+            env = self.env
+
+            # Task completion check
+            remaining_task_time = self.task_duration - sum(self.task_done_time)
+            if remaining_task_time <= 1e-3:
+                return ClusterType.NONE
+
+            # Calculate remaining time until deadline
+            remaining_time = self.deadline - env.elapsed_seconds
+
+            # Calculate the overhead we might incur for switching
+            switch_to_od_overhead = self.restart_overhead if last_cluster_type == ClusterType.SPOT else 0
+            switch_to_spot_overhead = self.restart_overhead if last_cluster_type == ClusterType.ON_DEMAND else 0
+            start_overhead = self.restart_overhead if last_cluster_type == ClusterType.NONE else 0
+
+            # Cost rates
+            spot_cost_rate = 0.3
+            on_demand_cost_rate = 1.0
+
+            # Critical deadline check: if we absolutely need ON_DEMAND to finish on time
+            effective_remaining_for_od = remaining_task_time + switch_to_od_overhead
+            if effective_remaining_for_od >= remaining_time - 0.5:  # Small safety margin
+                return ClusterType.ON_DEMAND
+
+            # Calculate slack time (buffer we have beyond minimum required time)
+            min_time_needed = remaining_task_time + self.restart_overhead
+            slack = remaining_time - min_time_needed
+
+            # Track spot availability patterns
+            if not has_spot:
+                self.spot_unavailable_count += 1
+            else:
+                self.spot_unavailable_count = 0
+
+            if has_spot:
+                # Spot is available - but should we use it?
+
+                # If we're on ON_DEMAND and have tight deadline, consider staying to avoid restart
+                if last_cluster_type == ClusterType.ON_DEMAND:
+                    # Calculate cost of switching to spot vs staying on OD
+                    # Switching cost: overhead time at OD rate + potential future restart
+                    switch_cost = switch_to_spot_overhead * on_demand_cost_rate + self.restart_overhead * on_demand_cost_rate
+
+                    # Benefit of spot: savings per hour
+                    savings_per_hour = on_demand_cost_rate - spot_cost_rate
+
+                    # Need to run on spot long enough to recoup switch cost
+                    break_even_hours = switch_cost / savings_per_hour if savings_per_hour > 0 else float('inf')
+
+                    # If remaining work is less than break-even, stay on OD
+                    if remaining_task_time < break_even_hours * 1.5:
+                        return ClusterType.ON_DEMAND
+
+                    # If slack is very tight, stay on OD to be safe
+                    if slack < self.restart_overhead * 3:
+                        return ClusterType.ON_DEMAND
+
+                # Use SPOT - it's available and either we're not on OD or switch is worthwhile
+                self.consecutive_short_spot_windows = 0
+                return ClusterType.SPOT
+
+            else:
+                # Spot not available - decide whether to wait or use ON_DEMAND
+
+                # If we're already on ON_DEMAND, definitely stay to avoid wasting restart
+                if last_cluster_type == ClusterType.ON_DEMAND:
+                    return ClusterType.ON_DEMAND
+
+                # If we were on SPOT and it just became unavailable, we're now idle
+                # Decision: wait for spot or switch to ON_DEMAND?
+
+                # Calculate adaptive threshold based on multiple factors
+                slack_ratio = slack / max(remaining_task_time, 1e-6)
+
+                # Factor 1: Absolute slack threshold
+                # Need enough slack to handle potential wait + restart overhead
+                min_safe_slack = max(2.0, self.restart_overhead * 4)
+
+                # Factor 2: Consider how much work is left
+                # For small remaining tasks, ON_DEMAND cost isn't that high in absolute terms
+                od_cost_to_finish = remaining_task_time * on_demand_cost_rate
+
+                # Factor 3: Track persistent spot unavailability
+                # If spot has been unavailable for a while, less likely to come back soon
+                persistent_unavailable = self.spot_unavailable_count > 10
+
+                # Decision logic:
+
+                # Very tight deadline - must use ON_DEMAND
+                if slack < min_safe_slack or slack_ratio < 0.1:
+                    return ClusterType.ON_DEMAND
+
+                # Moderately tight deadline with persistent unavailability
+                if slack_ratio < 0.25 and persistent_unavailable:
+                    return ClusterType.ON_DEMAND
+
+                # Small remaining task where absolute cost difference is minimal
+                # But only if we have moderate slack pressure
+                if remaining_task_time < 3.0 and slack_ratio < 0.3:
+                    return ClusterType.ON_DEMAND
+
+                # Tight deadline cases (less than 20% buffer)
+                if slack_ratio < 0.2:
+                    # If we've been waiting and spot keeps not showing up, switch
+                    if self.spot_unavailable_count > 5:
+                        return ClusterType.ON_DEMAND
+
+                # Medium slack - be more patient but not infinitely
+                if slack_ratio < 0.4:
+                    # After significant waiting, consider switching
+                    if self.spot_unavailable_count > 20:
+                        return ClusterType.ON_DEMAND
+
+                # Good slack available - wait for spot to save costs
+                return ClusterType.NONE
+
+        @classmethod
+        def _from_args(cls, parser):
+            args, _ = parser.parse_known_args()
+            return cls(args)
+    ```
+
+    </section>

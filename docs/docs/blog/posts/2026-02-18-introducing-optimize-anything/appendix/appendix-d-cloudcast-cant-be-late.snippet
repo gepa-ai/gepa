@@ -1,0 +1,761 @@
+<span id="appendix-d-cloudcast--cant-be-late"></span>
+??? example "Cloud Scheduling (CloudCast & Can't Be Late)"
+
+    Generalization mode for cloud infrastructure optimization. Both examples optimize Python programs that implement routing/scheduling strategies, evaluated against real-world cloud simulations. GEPA discovers algorithms that generalize across diverse network configurations and spot-availability traces.
+
+    ---
+
+    **CloudCast** — broadcast routing for multi-cloud data transfer.
+
+    **Artifact being evolved:** a Python `search_algorithm` function (the full routing algorithm code) that receives a network graph of cloud regions and must return a `BroadCastTopology` — a set of routing paths from a source to multiple destinations across AWS, GCP, and Azure. The network is a directed graph where nodes are cloud regions and edges carry `cost` ($/GB) and `throughput` (Gbps) attributes. GEPA evolves the entire algorithm, including data structures it uses.
+
+    **Seed Candidate** — A baseline Dijkstra shortest-path router. It finds the single cheapest path to each destination and sends all data partitions along the same route:
+
+    ```python
+    SEED_PROGRAM = """
+    import networkx as nx
+    from typing import Dict, List
+
+    class BroadCastTopology:
+        def __init__(self, src, dsts, num_partitions=4, paths=None):
+            self.src = src
+            self.dsts = dsts
+            self.num_partitions = num_partitions
+            self.paths = paths or {dst: {str(i): None for i in range(num_partitions)} for dst in dsts}
+
+        def set_num_partitions(self, num_partitions):
+            self.num_partitions = num_partitions
+
+        def set_dst_partition_paths(self, dst, partition, paths):
+            self.paths[dst][str(partition)] = paths
+
+        def append_dst_partition_path(self, dst, partition, path):
+            partition = str(partition)
+            if self.paths[dst][partition] is None:
+                self.paths[dst][partition] = []
+            self.paths[dst][partition].append(path)
+
+    def search_algorithm(src, dsts, G, num_partitions):
+        \"\"\"Baseline: Dijkstra shortest-cost path, same route for all partitions.\"\"\"
+        h = G.copy()
+        h.remove_edges_from(list(h.in_edges(src)) + list(nx.selfloop_edges(h)))
+        bc_topology = BroadCastTopology(src, dsts, num_partitions)
+
+        for dst in dsts:
+            path = nx.dijkstra_path(h, src, dst, weight="cost")
+            for i in range(len(path) - 1):
+                s, t = path[i], path[i + 1]
+                for j in range(num_partitions):
+                    bc_topology.append_dst_partition_path(dst, j, [s, t, G[s][t]])
+
+        return bc_topology
+    """
+    ```
+
+    **Evaluator** — The evaluator runs the candidate's `search_algorithm` through a broadcast simulator that models real cloud egress costs and bandwidth constraints. `simulate_broadcast` handles writing the candidate code to a temp file, loading it as a module, executing it on the network graph, and running the simulator to compute cost and transfer time.
+
+    **ASI (Actionable Side Information):** The side information includes (1) per-destination route breakdowns with egress cost and transfer time, (2) cost decomposition into egress vs. instance components, and (3) bottleneck destination identification. This tells the LLM proposer *where* the algorithm is wasting money (e.g., expensive cross-provider hops) and *which* destinations are slowest, guiding targeted improvements.
+
+    ```python
+    from examples.adrs.cloudcast.helpers import simulate_broadcast
+
+    def evaluate(candidate, example):
+        # Run the candidate's search algorithm on this cloud network configuration
+        result = simulate_broadcast(candidate["program"], example["config_file"])
+
+        if result.error:
+            return -100000.0, {"Error": result.error}
+
+        # Score: inverse of cost (lower cost = higher score)
+        score = 1.0 / (1.0 + result.total_cost)
+
+        return score, {
+            "Input": {
+                "config": result.config_name,
+                "source": result.source,
+                "destinations": result.destinations,
+            },
+            "Output": {
+                "total_cost": f"${result.total_cost:.4f}",
+                "cost_breakdown": f"egress=${result.egress_cost:.2f} + instance=${result.instance_cost:.2f}",
+                "transfer_time": f"{result.transfer_time:.2f}s",
+                "bottleneck_destination": result.bottleneck,
+            },
+            "Per-Destination Breakdown": result.per_dest_summary,
+        }
+    ```
+
+    **Optimizer** — Generalization mode with 5 multi-cloud broadcast configurations as both the training and validation set (intra-AWS, intra-Azure, intra-GCP, and two cross-cloud scenarios). The evolved algorithm must generalize across intra- and inter-provider network topologies.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from examples.adrs.cloudcast.evaluator import load_config_dataset
+
+    # Load 5 multi-cloud broadcast configs: intra_aws, intra_azure, intra_gcp, inter_agz, inter_gaz2
+    dataset = load_config_dataset()
+
+    result = optimize_anything(
+        seed_candidate={"program": SEED_PROGRAM},
+        evaluator=evaluate,
+        dataset=dataset,
+        valset=dataset,
+        objective="Optimize a broadcast routing algorithm for multi-cloud data transfer. "
+                  "Minimize total cost (egress fees + instance costs) while maintaining "
+                  "good transfer times.",
+        background="Nodes are cloud regions (e.g. 'aws:us-east-1', 'gcp:europe-west1-a'). "
+                   "Edges have 'cost' ($/GB egress) and 'throughput' (Gbps). Data is split "
+                   "into num_partitions chunks routable independently. Total cost = egress "
+                   "cost + instance runtime cost. Intra-provider links are typically cheaper.",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=100),
+            reflection=ReflectionConfig(reflection_lm=llm_model),
+        ),
+    )
+    ```
+
+    **Optimized artifact** — The evolved algorithm achieves **40.2% cost savings** over the Dijkstra baseline. Starting from a simple single-path router, GEPA discovered a sophisticated provider-aware Steiner tree algorithm with Pareto-frontier candidate selection and greedy partition allocation. Key innovations: (1) provider-penalty weighting to prefer cheap intra-provider links, (2) diverse candidate generation via multiple Steiner tree strategies, (3) Pareto filtering on cost vs. time, and (4) incremental partition assignment that models bandwidth contention.
+
+    <section class="scrollable-code" markdown>
+
+    ```python
+    import networkx as nx
+    import random
+    import math
+    from typing import Dict, List, Set, Tuple, Any
+    from collections import defaultdict
+
+    class SingleDstPath(Dict):
+        partition: int
+        edges: List[List]  # [[src, dst, edge data]]
+
+    class BroadCastTopology:
+        def __init__(self, src: str, dsts: List[str], num_partitions: int = 4, paths: Dict[str, 'SingleDstPath'] = None):
+            self.src = src
+            self.dsts = dsts
+            self.num_partitions = num_partitions
+            if paths is not None:
+                self.paths = paths
+            else:
+                self.paths = {dst: {str(i): None for i in range(num_partitions)} for dst in dsts}
+
+        def get_paths(self):
+            return self.paths
+
+        def set_num_partitions(self, num_partitions: int):
+            self.num_partitions = num_partitions
+
+        def set_dst_partition_paths(self, dst: str, partition: int, paths: List[List]):
+            partition = str(partition)
+            if dst not in self.paths:
+                self.paths[dst] = {}
+            self.paths[dst][partition] = paths
+
+    def search_algorithm(src, dsts, G, num_partitions):
+        """
+        Optimized Broadcast Routing Algorithm v3.
+
+        Key Optimizations:
+        1. Provider-Aware Weighting: biases path finding towards intra-provider links to minimize egress.
+        2. Pareto-Frontier Candidate Selection: Explicitly keeps candidates that offer distinct
+           cost/time tradeoffs, preventing the greedy allocator from getting stuck in local optima.
+        3. Diverse Steiner Strategies: Includes MST-like approximations for cost and bottleneck-widest
+           paths for throughput.
+        4. Robust Greedy Allocation: Accurately models bandwidth contention across partitions.
+        """
+
+        # --- Constants & Configuration ---
+        EST_DATA_VOL_GB = 300.0
+        EST_INSTANCE_COST_PER_HR = 10.0
+        PARTITION_VOL_GB = EST_DATA_VOL_GB / max(1, num_partitions)
+        HOURLY_RATE_PER_SEC = EST_INSTANCE_COST_PER_HR / 3600.0
+
+        # Sweep parameters for Cost ($) vs Time (1/BW) tradeoff
+        # Low alpha = Cost optimized. High alpha = Time optimized.
+        # Alphas tuned around the expected exchange rate of $/Gbps (~0.002 to 0.1)
+        alphas = [0.0, 1e-5, 0.001, 0.01, 0.05, 0.1, 0.5, 2.0, 10.0]
+
+        # Prune edges below these bandwidths (Gbps) to avoid slow paths
+        # 0.0 includes all, higher values force backbone usage
+        bw_thresholds = [0.0, 0.5, 5.0, 20.0]
+
+        strategies = ['prim', 'prim', 'furthest', 'random'] # bias towards prim (usually better cost)
+
+        # --- Helper: Provider Extraction ---
+        def get_provider(node_name):
+            if ':' in node_name:
+                return node_name.split(':')[0]
+            return 'unknown'
+
+        src_provider = get_provider(src)
+
+        # --- Pre-process Graph ---
+        clean_G = G.copy()
+
+        # Remove incoming edges to source to enforce DAG flow from root
+        try:
+            clean_G.remove_edges_from(list(clean_G.in_edges(src)) + list(nx.selfloop_edges(clean_G)))
+        except:
+            pass
+
+        # Normalize weights & Cache bandwidths
+        # We create a 'base_weight' that includes a penalty for crossing providers
+        edge_bws = {}
+        for u, v, data in clean_G.edges(data=True):
+            if 'cost' not in data: data['cost'] = 0.0
+            if 'throughput' not in data: data['throughput'] = 1.0
+            # Ensure strictly positive BW
+            if data['throughput'] <= 1e-6: data['throughput'] = 1e-6
+            edge_bws[(u,v)] = data['throughput']
+
+            # Provider penalty logic for candidate generation weights
+            u_prov = get_provider(u)
+            v_prov = get_provider(v)
+
+            # Base penalty: small epsilon to prefer fewer hops
+            penalty = 1.0
+            if u_prov != v_prov:
+                 # Inter-provider is usually expensive, so we bias against it in search
+                 # (Note: real cost is in data['cost'], this is just heuristic guidance)
+                 penalty = 1.5
+
+            data['penalty_factor'] = penalty
+
+        candidates = []
+        seen_topologies = set()
+
+        # --- Helper: Build Steiner Tree ---
+        def build_steiner_tree(strategy, alpha, graph_base, targets, edge_penalty_map=None):
+            H = graph_base.copy()
+
+            # Initialize heuristic weights
+            # W = (Cost + Alpha/BW) * Penalty
+            for u, v, d in H.edges(data=True):
+                d['paid'] = False
+                # Core tradeoff
+                base_w = d['cost'] + (alpha / d['throughput'])
+                # Hops & Provider bias
+                base_w = max(1e-6, base_w) * d['penalty_factor']
+
+                if edge_penalty_map and (u,v) in edge_penalty_map:
+                    base_w *= edge_penalty_map[(u,v)]
+
+                d['weight'] = base_w
+
+            tree_paths = {} # node -> list of nodes
+            remaining_dsts = set(targets)
+
+            # Iteratively connect closest/furthest nodes to the growing tree
+            while remaining_dsts:
+                try:
+                    # Dijkstra from Source on current H
+                    # Note: H edges that are 'paid' have reduced weight, effectively
+                    # finding path from the existing tree structure.
+                    dists, paths = nx.single_source_dijkstra(H, src, weight='weight')
+                except nx.NetworkXNoPath:
+                    break
+
+                # Filter reachable remaining targets
+                reachable = [d for d in remaining_dsts if d in dists]
+                if not reachable:
+                    break
+
+                # Select target based on strategy
+                if strategy == 'prim':
+                    # Closest first (min cost expansion)
+                    reachable.sort(key=lambda x: dists[x])
+                    target = reachable[0]
+                elif strategy == 'furthest':
+                    # Furthest first (reduce diameter/bottlenecks)
+                    reachable.sort(key=lambda x: dists[x], reverse=True)
+                    target = reachable[0]
+                else:
+                    target = random.choice(reachable)
+
+                # Extract path
+                path_nodes = paths[target]
+
+                # Commit path to tree
+                # For every node in this path, if it's a target, record its path
+                for i, node in enumerate(path_nodes):
+                    if node in remaining_dsts:
+                        tree_paths[node] = path_nodes[:i+1]
+                        remaining_dsts.remove(node)
+
+                # 'Pay' for the edges: reduce weight for subsequent iterations
+                # This encourages edge sharing (multicast tree)
+                for i in range(len(path_nodes) - 1):
+                    u, v = path_nodes[i], path_nodes[i+1]
+                    if not H[u][v]['paid']:
+                        H[u][v]['paid'] = True
+                        # Set to very small positive weight to prefer reuse
+                        # We keep a tiny BW component to prefer wider pipes even when 'free'
+                        H[u][v]['weight'] = 1e-6 + (alpha / H[u][v]['throughput']) * 0.001
+
+            return tree_paths
+
+        # --- Phase 1: Candidate Generation ---
+
+        # A. Shortest Path Trees (Baselines)
+        for alpha in alphas:
+            H = clean_G.copy()
+            for u, v, d in H.edges(data=True):
+                d['weight'] = d['cost'] + (alpha / d['throughput'])
+            try:
+                dists, paths = nx.single_source_dijkstra(H, src, weight='weight')
+                spt_paths = {t: paths[t] for t in dsts if t in paths}
+                if len(spt_paths) == len(dsts):
+                    candidates.append({'type': 'spt', 'paths': spt_paths, 'alpha': alpha})
+            except:
+                pass
+
+        # B. Diverse Steiner Trees
+        for min_bw in bw_thresholds:
+            # Create sub-graph meeting BW requirements
+            H_base = clean_G.copy()
+            if min_bw > 0:
+                remove_edges = [(u, v) for u, v, d in H_base.edges(data=True) if d['throughput'] < min_bw]
+                H_base.remove_edges_from(remove_edges)
+
+            # Connectivity check
+            if H_base.out_degree(src) == 0 and len(dsts) > 0:
+                continue
+
+            for alpha in alphas:
+                penalty_map = defaultdict(lambda: 1.0)
+
+                # Generate variations
+                # 1st: Standard strategy choice
+                # 2nd/3rd: Penalize used edges to find disjoint/diverse paths
+                for _ in range(3):
+                    strat = random.choice(strategies)
+                    tree_paths = build_steiner_tree(strat, alpha, H_base, dsts, penalty_map)
+
+                    if len(tree_paths) == len(dsts):
+                        candidates.append({
+                            'type': 'steiner',
+                            'paths': tree_paths,
+                            'alpha': alpha,
+                            'min_bw': min_bw
+                        })
+
+                        # Update penalty map for diversity
+                        used_edges = set()
+                        for p in tree_paths.values():
+                            for k in range(len(p)-1):
+                                used_edges.add((p[k], p[k+1]))
+                        for e in used_edges:
+                            penalty_map[e] *= 1.2 # Increment penalty
+                    else:
+                        break
+
+        # --- Phase 2: Candidate Scoring & Filtering ---
+        # We map candidates to (Cost, Time) points and filter the Pareto frontier
+        unique_candidates = []
+
+        for cand in candidates:
+            tree_paths = cand['paths']
+
+            # Flatten to edges
+            tree_edges = set()
+            for nodes in tree_paths.values():
+                for i in range(len(nodes) - 1):
+                    tree_edges.add((nodes[i], nodes[i+1]))
+
+            topo_sig = frozenset(tree_edges)
+            if topo_sig in seen_topologies:
+                continue
+            seen_topologies.add(topo_sig)
+
+            # Calculate metrics for the specific candidate
+            # Unit Egress: Cost to send 1GB to all Dsts via this tree
+            unit_egress = sum(clean_G[u][v]['cost'] for u, v in tree_edges)
+
+            # Bottleneck: Slowest link in the tree
+            min_bw = min((clean_G[u][v]['throughput'] for u, v in tree_edges), default=1e-9)
+
+            # Est Time for full volume (heuristic for sorting)
+            est_time = (EST_DATA_VOL_GB * 8.0) / min_bw
+
+            # Total cost for full volume
+            total_cost = (unit_egress * EST_DATA_VOL_GB) + (est_time * HOURLY_RATE_PER_SEC)
+
+            unique_candidates.append({
+                'id': len(unique_candidates),
+                'unit_egress': unit_egress,
+                'min_bw': min_bw,
+                'est_time': est_time,
+                'score': total_cost,
+                'edges': list(tree_edges),
+                'paths': tree_paths
+            })
+
+        if not unique_candidates:
+            # Fallback: simple direct paths if everything failed
+            return BroadCastTopology(src, dsts, num_partitions)
+
+        # Pareto Filtering: Keep candidate C if no other candidate is strictly better in both Cost and Time
+        # Optimization: To reduce O(N^2), sort by cost first
+        unique_candidates.sort(key=lambda x: x['unit_egress'])
+        pareto_candidates = []
+
+        current_best_time = float('inf')
+        for cand in unique_candidates:
+            # Since we iterate from lowest cost, if this cand has lower time than any seen so far,
+            # it lies on the frontier.
+            # We accept equal time if cost is strictly lower (guaranteed by sort order/loop)
+            if cand['est_time'] < current_best_time:
+                pareto_candidates.append(cand)
+                current_best_time = cand['est_time']
+
+        # Also keep top raw score candidates (mix) just in case Pareto misses a balanced middle ground
+        unique_candidates.sort(key=lambda x: x['score'])
+        best_score_candidates = unique_candidates[:15]
+
+        # Combine and deduplicate
+        final_pool = {c['id']: c for c in pareto_candidates + best_score_candidates}.values()
+        final_pool = list(final_pool)
+
+        # --- Phase 3: Greedy Partition Allocation ---
+        partition_assignments = []
+        current_edge_load = defaultdict(float) # (u,v) -> GB volume
+        current_total_egress = 0.0 # Total egress dollars
+
+        # Cache global max time to avoid recomputing from scratch every inner loop
+        # But since max depends on specific edge bottlenecks, we compute incrementally.
+
+        for part_idx in range(num_partitions):
+            best_cand = None
+            best_objective = float('inf')
+
+            # Pre-calculate base max time from existing assignments
+            base_max_time = 0.0
+            if current_edge_load:
+                for (u,v), load in current_edge_load.items():
+                    t = (load * 8.0) / edge_bws.get((u,v), 1e-9)
+                    if t > base_max_time: base_max_time = t
+
+            for cand in final_pool:
+                # 1. Marginal Cost Calculation
+                # We pay egress for the tree edges.
+                # Egress = Sum(Edge Cost * Edge Vol).
+                # If we add this candidate, we add PARTITION_VOL_GB to all its edges.
+                # Since edges are independent in cost summation, marginal cost is exactly:
+                added_egress = cand['unit_egress'] * PARTITION_VOL_GB
+                proj_egress = current_total_egress + added_egress
+
+                # 2. Projected Time Calculation
+                # Calculate the new max time if we add load to this candidate's edges
+                cand_local_max_time = 0.0
+                for u, v in cand['edges']:
+                    current_load = current_edge_load.get((u,v), 0.0)
+                    new_load = current_load + PARTITION_VOL_GB
+                    t = (new_load * 8.0) / edge_bws.get((u,v), 1e-9)
+                    if t > cand_local_max_time:
+                        cand_local_max_time = t
+
+                # Global max time is max of (unchanged edges, changed edges)
+                proj_max_time = max(base_max_time, cand_local_max_time)
+
+                # 3. Total Objective
+                proj_instance_cost = proj_max_time * HOURLY_RATE_PER_SEC
+                proj_total_cost = proj_egress + proj_instance_cost
+
+                if proj_total_cost < best_objective:
+                    best_objective = proj_total_cost
+                    best_cand = cand
+
+            # Commit assignment
+            if best_cand:
+                partition_assignments.append(best_cand)
+                current_total_egress += best_cand['unit_egress'] * PARTITION_VOL_GB
+                for u, v in best_cand['edges']:
+                    current_edge_load[(u,v)] += PARTITION_VOL_GB
+            else:
+                # Should not happen given fallbacks, but safety measure
+                if final_pool:
+                    partition_assignments.append(final_pool[0])
+
+        # --- Phase 4: Construct Output ---
+        bc_topology = BroadCastTopology(src, dsts, num_partitions)
+
+        for part_id, cand in enumerate(partition_assignments):
+            for dst in dsts:
+                if dst in cand['paths']:
+                    nodes = cand['paths'][dst]
+                    path_edges = []
+                    for k in range(len(nodes) - 1):
+                        u, v = nodes[k], nodes[k+1]
+                        if G.has_edge(u, v):
+                            d = G[u][v]
+                        else:
+                            d = {'cost': 0.0, 'throughput': 1.0}
+                        path_edges.append([u, v, d])
+
+                    bc_topology.set_dst_partition_paths(dst, part_id, path_edges)
+
+        return bc_topology
+    ```
+
+    </section>
+
+    ---
+
+    **Can't Be Late** — cloud scheduling with SPOT vs ON_DEMAND instances.
+
+    **Artifact being evolved:** a Python scheduling policy (the `_step` method of a `Strategy` class) that is called at each time step and must return one of three actions: `ClusterType.SPOT` (~0.30/hr, cheap but preemptible), `ClusterType.ON_DEMAND` (~1.00/hr, reliable), or `ClusterType.NONE` (wait, no cost). The policy has access to remaining task time, deadline, restart overhead, and spot availability. GEPA evolves the entire strategy class, including any state variables it tracks.
+
+    **Seed Candidate** — A simple greedy heuristic: use ON_DEMAND only when the deadline is imminent, otherwise prefer SPOT when available, and wait when it's not:
+
+    ```python
+    SEED_PROGRAM = """
+    import math
+    from sky_spot.strategies.strategy import Strategy
+    from sky_spot.utils import ClusterType
+
+    class EvolveSingleRegionStrategy(Strategy):
+        NAME = 'evolve_single_region'
+
+        def __init__(self, args):
+            super().__init__(args)
+
+        def reset(self, env, task):
+            super().reset(env, task)
+
+        def _step(self, last_cluster_type: ClusterType, has_spot: bool) -> ClusterType:
+            env = self.env
+
+            # Task completion check
+            remaining_task_time = self.task_duration - sum(self.task_done_time)
+            if remaining_task_time <= 1e-3:
+                return ClusterType.NONE
+
+            # Calculate remaining time until deadline
+            remaining_time = self.deadline - env.elapsed_seconds
+
+            # If running out of time, use ON_DEMAND to guarantee completion
+            if remaining_task_time + self.restart_overhead >= remaining_time:
+                return ClusterType.ON_DEMAND
+
+            # Greedy: use SPOT if available, otherwise wait
+            if has_spot:
+                return ClusterType.SPOT
+            else:
+                return ClusterType.NONE
+
+        @classmethod
+        def _from_args(cls, parser):
+            args, _ = parser.parse_known_args()
+            return cls(args)
+    """
+    ```
+
+    **Evaluator** — The evaluator runs the candidate strategy through a scheduling simulator driven by real spot-availability traces. `simulate_scheduling` handles syntax validation, subprocess execution of the simulator, and cost extraction. Each trace is tested across multiple job configurations (varying task duration, deadline tightness, and restart overhead).
+
+    **ASI (Actionable Side Information):** The side information includes (1) the full spot-availability pattern for the trace (e.g., `"0.0-10.0:S | 10.0-15.0:X"` — spot available for 10h then unavailable), (2) a timeline of the strategy's instance usage decisions (e.g., `"0.0-5.0:S@R0[50%] | 5.0-8.0:OD@R0[100%]"`), and (3) segment counts (SPOT vs ON_DEMAND vs restarts). This lets the LLM proposer see *exactly when* the strategy made suboptimal decisions — for instance, switching to expensive ON_DEMAND too early when spot was about to become available again.
+
+    ```python
+    from examples.adrs.can_be_late.helpers import simulate_scheduling
+
+    def evaluate(candidate, example):
+        # Run the candidate's scheduling strategy on a spot-availability trace
+        result = simulate_scheduling(
+            candidate["program"], example["trace_file"], example["config"]
+        )
+
+        if result.error:
+            return -100000.0, {"Error": result.error}
+
+        # Score: negative cost (higher is better, i.e. lower cost)
+        score = -result.cost
+
+        return score, {
+            "Input": {
+                "trace": result.trace_name,
+                "duration": f"{result.config['duration']}h",
+                "deadline": f"{result.config['deadline']}h",
+                "overhead": f"{result.config['overhead']}h",
+                "spot_availability": result.spot_pattern,
+            },
+            "Output": {
+                "cost": f"${result.cost:.2f}",
+                "timeline": result.timeline,
+                "segments": f"SPOT={result.spot_count}, ON_DEMAND={result.od_count}",
+            },
+        }
+    ```
+
+    **Optimizer** — Generalization mode with spot-availability traces split into training and validation sets. Each trace is evaluated across multiple deadline/overhead configurations, so the evolved strategy must handle both tight and relaxed deadlines. `parallel=True` with 128 workers enables fast evaluation across the large trace dataset.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from examples.adrs.can_be_late.trace_dataset import load_trace_dataset
+
+    # Load spot-availability traces split into train/val/test
+    splits = load_trace_dataset()
+    train_set, val_set = splits["train"], splits["val"]
+
+    result = optimize_anything(
+        seed_candidate={"program": SEED_PROGRAM},
+        evaluator=evaluate,
+        dataset=train_set,
+        valset=val_set,
+        objective="Optimize a cloud scheduling strategy for the 'Can't Be Late' problem. "
+                  "Minimize cost while ensuring task completion before deadline.",
+        background="ClusterType.SPOT: ~$0.3/hr, cheap but preemptible at any time. "
+                   "ClusterType.ON_DEMAND: ~$1/hr, guaranteed availability. "
+                   "ClusterType.NONE: wait with no cost or progress. restart_overhead: "
+                   "time penalty when switching instance types. The strategy MUST "
+                   "ensure deadline completion (hard constraint).",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=100, parallel=True, max_workers=128),
+            reflection=ReflectionConfig(reflection_lm=llm_model),
+        ),
+    )
+    ```
+
+    **Optimized artifact** — The evolved strategy achieves **7.8% cost savings** over the baseline. GEPA transformed the simple greedy heuristic into an adaptive strategy with: (1) state tracking for spot unavailability patterns, (2) overhead-aware switching decisions with break-even cost analysis, (3) graduated decision thresholds based on slack ratio (remaining buffer / task time), and (4) multi-factor logic that considers absolute slack, persistent unavailability, and remaining work size.
+
+    <section class="scrollable-code" markdown>
+
+    ```python
+    import math
+    from sky_spot.strategies.strategy import Strategy
+    from sky_spot.utils import ClusterType
+
+    class EvolveSingleRegionStrategy(Strategy):
+        NAME = 'evolve_single_region'
+
+        def __init__(self, args):
+            super().__init__(args)
+            self.spot_unavailable_count = 0
+            self.consecutive_short_spot_windows = 0
+
+        def reset(self, env, task):
+            super().reset(env, task)
+            self.spot_unavailable_count = 0
+            self.consecutive_short_spot_windows = 0
+
+        def _step(self, last_cluster_type: ClusterType, has_spot: bool) -> ClusterType:
+            env = self.env
+
+            # Task completion check
+            remaining_task_time = self.task_duration - sum(self.task_done_time)
+            if remaining_task_time <= 1e-3:
+                return ClusterType.NONE
+
+            # Calculate remaining time until deadline
+            remaining_time = self.deadline - env.elapsed_seconds
+
+            # Calculate the overhead we might incur for switching
+            switch_to_od_overhead = self.restart_overhead if last_cluster_type == ClusterType.SPOT else 0
+            switch_to_spot_overhead = self.restart_overhead if last_cluster_type == ClusterType.ON_DEMAND else 0
+            start_overhead = self.restart_overhead if last_cluster_type == ClusterType.NONE else 0
+
+            # Cost rates
+            spot_cost_rate = 0.3
+            on_demand_cost_rate = 1.0
+
+            # Critical deadline check: if we absolutely need ON_DEMAND to finish on time
+            effective_remaining_for_od = remaining_task_time + switch_to_od_overhead
+            if effective_remaining_for_od >= remaining_time - 0.5:  # Small safety margin
+                return ClusterType.ON_DEMAND
+
+            # Calculate slack time (buffer we have beyond minimum required time)
+            min_time_needed = remaining_task_time + self.restart_overhead
+            slack = remaining_time - min_time_needed
+
+            # Track spot availability patterns
+            if not has_spot:
+                self.spot_unavailable_count += 1
+            else:
+                self.spot_unavailable_count = 0
+
+            if has_spot:
+                # Spot is available - but should we use it?
+
+                # If we're on ON_DEMAND and have tight deadline, consider staying to avoid restart
+                if last_cluster_type == ClusterType.ON_DEMAND:
+                    # Calculate cost of switching to spot vs staying on OD
+                    # Switching cost: overhead time at OD rate + potential future restart
+                    switch_cost = switch_to_spot_overhead * on_demand_cost_rate + self.restart_overhead * on_demand_cost_rate
+
+                    # Benefit of spot: savings per hour
+                    savings_per_hour = on_demand_cost_rate - spot_cost_rate
+
+                    # Need to run on spot long enough to recoup switch cost
+                    break_even_hours = switch_cost / savings_per_hour if savings_per_hour > 0 else float('inf')
+
+                    # If remaining work is less than break-even, stay on OD
+                    if remaining_task_time < break_even_hours * 1.5:
+                        return ClusterType.ON_DEMAND
+
+                    # If slack is very tight, stay on OD to be safe
+                    if slack < self.restart_overhead * 3:
+                        return ClusterType.ON_DEMAND
+
+                # Use SPOT - it's available and either we're not on OD or switch is worthwhile
+                self.consecutive_short_spot_windows = 0
+                return ClusterType.SPOT
+
+            else:
+                # Spot not available - decide whether to wait or use ON_DEMAND
+
+                # If we're already on ON_DEMAND, definitely stay to avoid wasting restart
+                if last_cluster_type == ClusterType.ON_DEMAND:
+                    return ClusterType.ON_DEMAND
+
+                # If we were on SPOT and it just became unavailable, we're now idle
+                # Decision: wait for spot or switch to ON_DEMAND?
+
+                # Calculate adaptive threshold based on multiple factors
+                slack_ratio = slack / max(remaining_task_time, 1e-6)
+
+                # Factor 1: Absolute slack threshold
+                # Need enough slack to handle potential wait + restart overhead
+                min_safe_slack = max(2.0, self.restart_overhead * 4)
+
+                # Factor 2: Consider how much work is left
+                # For small remaining tasks, ON_DEMAND cost isn't that high in absolute terms
+                od_cost_to_finish = remaining_task_time * on_demand_cost_rate
+
+                # Factor 3: Track persistent spot unavailability
+                # If spot has been unavailable for a while, less likely to come back soon
+                persistent_unavailable = self.spot_unavailable_count > 10
+
+                # Decision logic:
+
+                # Very tight deadline - must use ON_DEMAND
+                if slack < min_safe_slack or slack_ratio < 0.1:
+                    return ClusterType.ON_DEMAND
+
+                # Moderately tight deadline with persistent unavailability
+                if slack_ratio < 0.25 and persistent_unavailable:
+                    return ClusterType.ON_DEMAND
+
+                # Small remaining task where absolute cost difference is minimal
+                # But only if we have moderate slack pressure
+                if remaining_task_time < 3.0 and slack_ratio < 0.3:
+                    return ClusterType.ON_DEMAND
+
+                # Tight deadline cases (less than 20% buffer)
+                if slack_ratio < 0.2:
+                    # If we've been waiting and spot keeps not showing up, switch
+                    if self.spot_unavailable_count > 5:
+                        return ClusterType.ON_DEMAND
+
+                # Medium slack - be more patient but not infinitely
+                if slack_ratio < 0.4:
+                    # After significant waiting, consider switching
+                    if self.spot_unavailable_count > 20:
+                        return ClusterType.ON_DEMAND
+
+                # Good slack available - wait for spot to save costs
+                return ClusterType.NONE
+
+        @classmethod
+        def _from_args(cls, parser):
+            args, _ = parser.parse_known_args()
+            return cls(args)
+    ```
+
+    </section>

@@ -145,6 +145,6 @@ Be respectful and constructive. We're building something together!
 
 ## Questions?
 
-- [Discord](https://discord.gg/A7dABbtmFw)
+- [Discord](https://discord.gg/WXFSeVGdbW)
 - [Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 - [GitHub Issues](https://github.com/gepa-ai/gepa/issues)

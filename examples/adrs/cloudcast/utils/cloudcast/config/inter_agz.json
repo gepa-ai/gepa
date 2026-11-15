@@ -1,0 +1,23 @@
+{
+    "source_node": "gcp:asia-southeast1-a",
+    "dest_nodes": [
+        "azure:australiaeast",
+        "azure:eastasia",
+        "aws:ap-southeast-2",
+        "azure:brazilsouth",
+        "aws:sa-east-1",
+        "gcp:australia-southeast1-a"
+    ],
+    "data_vol": 300,
+    "num_partitions": 10,
+    "ingress_limit": {
+        "aws": 10, 
+        "gcp": 16, 
+        "azure": 16
+    }, 
+    "egress_limit": {
+        "aws": 5, 
+        "gcp": 7, 
+        "azure": 16
+    }
+}

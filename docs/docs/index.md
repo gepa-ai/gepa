@@ -1,15 +1,17 @@
 ---
+template: landing.html
+title: "Optimize Anything with LLMs"
+description: "Optimize any text — prompts, code, agent architectures, configurations — using LLM-based reflection and Pareto-efficient evolutionary search. If you can measure it, you can optimize it."
 hide:
   - navigation
   - toc
   - title
 ---
 
-<link rel="stylesheet" href="assets/index-styles.css">
-
 <div class="hero-section">
-  <div style="text-align: center; margin-bottom: 1rem;">
-    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
+  <div style="text-align: center; margin-bottom: 1rem; padding-top: 1.5rem; margin-right: 2rem;">
+    <img src="assets/gepa_logo_with_text.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 440px; width: 100%;">
+    <img src="static/img/gepa_logo_with_text_white.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 440px; width: 100%;">
   </div>
   <p class="hero-subtitle">Automatically optimize prompts for any AI system</p>
   <p class="hero-stats-line">
@@ -33,7 +35,7 @@ hide:
     </a>
   </div>
   <div class="hero-badges">
-    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=60a5fa&color=a78bfa" alt="Downloads" style="height: 28px;" loading="lazy"></a>
+    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=212C4D&color=90E0EF" alt="Downloads" style="height: 28px;" loading="lazy"></a>
   </div>
 </div>
 
@@ -58,10 +60,12 @@ hide:
       <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank">The Browser Company</a>
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
+      <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
       <span>NuBank</span>
       <span>Infosys</span>
+      <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
-      <span>Bespoke AI Labs</span>
+      <span>Bespoke Labs</span>
       <!-- duplicate set for seamless loop -->
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
@@ -79,10 +83,12 @@ hide:
       <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank">The Browser Company</a>
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
+      <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
       <span>NuBank</span>
       <span>Infosys</span>
+      <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
-      <span>Bespoke AI Labs</span>
+      <span>Bespoke Labs</span>
     </div>
   </div>
 </div>
@@ -140,107 +146,140 @@ hide:
   </div>
 </div>
 
-<div class="testimonials-section">
-  <button class="carousel-arrow carousel-prev" aria-label="Previous testimonial">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-  </button>
-  <button class="carousel-arrow carousel-next" aria-label="Next testimonial">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-  </button>
-  <div class="testimonials-carousel-wrapper">
-    <div class="testimonials-track">
-      <div class="testimonial-card">
-        <div class="testimonial-header">
-          <div class="testimonial-icon"><span>&#x1F6CD;&#xFE0F;</span></div>
-          <div>
-            <div class="testimonial-author">Chad Boyda</div>
-            <div class="testimonial-role">CTO, AppSumo</div>
-          </div>
-        </div>
-        <div class="testimonial-content">DSPy's GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art</div>
-        <a href="https://x.com/chadboyda/status/1955298177197764963" class="testimonial-link" target="_blank">
-          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></span>
-          View on X
-        </a>
-      </div>
-    </div>
-    <div class="testimonials-track">
-      <div class="testimonial-card">
-        <div class="testimonial-header">
-          <div class="testimonial-icon"><span>&#x1F9E0;</span></div>
-          <div>
-            <div class="testimonial-author">OpenAI</div>
-            <div class="testimonial-role">Official Cookbook</div>
-          </div>
-        </div>
-        <div class="testimonial-content">Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.</div>
-        <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" class="testimonial-link" target="_blank">
-          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
-          Read Cookbook
-        </a>
-      </div>
-    </div>
-    <div class="testimonials-track">
-      <div class="testimonial-card">
-        <div class="testimonial-header">
-          <div class="testimonial-icon">
-            <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" loading="lazy">
-          </div>
-          <div>
-            <div class="testimonial-author">Josh Clemm</div>
-            <div class="testimonial-role">VP of Engineering, Dropbox Dash</div>
-          </div>
-        </div>
-        <div class="testimonial-content">With DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly.</div>
-        <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" class="testimonial-link" target="_blank">
-          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
-          Read More
-        </a>
-      </div>
-    </div>
-  </div>
-  <div class="carousel-nav">
-    <button class="carousel-dot active" data-index="0" aria-label="Go to testimonial 1"></button>
-    <button class="carousel-dot" data-index="1" aria-label="Go to testimonial 2"></button>
-    <button class="carousel-dot" data-index="2" aria-label="Go to testimonial 3"></button>
-  </div>
-</div>
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const wrapper = document.querySelector('.testimonials-carousel-wrapper');
-  const dots = document.querySelectorAll('.carousel-dot');
-  const prevBtn = document.querySelector('.carousel-prev');
-  const nextBtn = document.querySelector('.carousel-next');
-  const totalSlides = document.querySelectorAll('.testimonials-track').length;
-  let currentSlide = 0;
-  let autoplayInterval;
+  const allTestimonials = [
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" loading="lazy">',
+      author: 'Tobi Lutke',
+      role: 'CEO, Shopify',
+      content: 'Both DSPy and (especially) <strong>GEPA are currently severely under hyped</strong> in the AI context engineering world',
+      linkUrl: 'https://x.com/tobi/status/1963434604741701909',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/databricks.svg" alt="Databricks" loading="lazy">',
+      author: 'Ivan Zhou',
+      role: 'Research Engineer, Databricks Mosaic',
+      content: 'GEPA can <strong>push open models beyond frontier performance;</strong> gpt-oss-120b + GEPA beats Claude Opus 4.1 while being <strong>90x cheaper</strong>',
+      linkUrl: 'https://x.com/ivanhzyy/status/1971066193747689521',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" loading="lazy">',
+      author: 'Drew Houston',
+      role: 'CEO, Dropbox',
+      content: 'Have heard great things about DSPy plus GEPA, which is an <strong>even stronger prompt optimizer than miprov2</strong> &mdash; repo and (fascinating) examples of generated prompts',
+      linkUrl: 'https://x.com/drewhouston/status/1974750621690728623',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 6h-2c0-2.21-1.79-4-4-4S8 3.79 8 6H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm6 14H6V8h2v2c0 .55.45 1 1 1s1-.45 1-1V8h4v2c0 .55.45 1 1 1s1-.45 1-1V8h2v10z"/></svg>',
+      author: 'Chad Boyda',
+      role: 'CTO, AppSumo',
+      content: 'DSPy\'s GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art',
+      linkUrl: 'https://x.com/chadboyda/status/1955298177197764963',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364l2.0201-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4092-.6813zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z"/></svg>',
+      author: 'OpenAI',
+      role: 'Official Cookbook',
+      content: 'Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.',
+      linkUrl: 'https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg>',
+      linkText: 'Read Cookbook'
+    },
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" loading="lazy">',
+      author: 'Josh Clemm',
+      role: 'VP of Engineering, Dropbox Dash',
+      content: 'With DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly.',
+      linkUrl: 'https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg>',
+      linkText: 'Read More'
+    }
+  ];
 
-  function goToSlide(index) {
-    currentSlide = (index + totalSlides) % totalSlides;
-    wrapper.style.animation = 'none';
-    wrapper.style.transform = `translateX(-${currentSlide * 100}%)`;
-    dots.forEach((dot, i) => dot.classList.toggle('active', i === currentSlide));
+  function renderCard(t) {
+    return `<div class="testimonial-header">
+      <div class="testimonial-icon">${t.icon}</div>
+      <div>
+        <div class="testimonial-author">${t.author}</div>
+        <div class="testimonial-role">${t.role}</div>
+      </div>
+    </div>
+    <div class="testimonial-content">${t.content}</div>
+    <a href="${t.linkUrl}" class="testimonial-link" target="_blank">
+      <span class="twemoji">${t.linkIcon}</span>
+      ${t.linkText}
+    </a>`;
   }
 
-  function startAutoplay() {
-    clearInterval(autoplayInterval);
-    autoplayInterval = setInterval(() => goToSlide(currentSlide + 1), 5000);
+  const grid = document.querySelector('.testimonials-grid');
+  if (!grid) return;
+  const cards = grid.querySelectorAll('.testimonial-card');
+
+  // Track which testimonials are currently visible (indices into allTestimonials)
+  let visible = [0, 1, 2];
+  // Queue of testimonials waiting to be shown
+  let queue = [3, 4, 5];
+  let swapInterval;
+
+  function swapOne() {
+    if (queue.length === 0) {
+      // Rebuild queue from all non-visible testimonials
+      queue = [];
+      for (let i = 0; i < allTestimonials.length; i++) {
+        if (!visible.includes(i)) queue.push(i);
+      }
+      // Shuffle the queue
+      for (let i = queue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [queue[i], queue[j]] = [queue[j], queue[i]];
+      }
+    }
+
+    // Pick a random slot (0, 1, or 2) to replace
+    const slotIndex = Math.floor(Math.random() * 3);
+    const card = cards[slotIndex];
+    const nextTestimonialIndex = queue.shift();
+
+    // Animate out
+    card.classList.add('testimonial-swap-out');
+
+    setTimeout(() => {
+      // Swap content
+      card.innerHTML = renderCard(allTestimonials[nextTestimonialIndex]);
+      visible[slotIndex] = nextTestimonialIndex;
+
+      // Animate in
+      card.classList.remove('testimonial-swap-out');
+      card.classList.add('testimonial-swap-in');
+
+      setTimeout(() => {
+        card.classList.remove('testimonial-swap-in');
+      }, 500);
+    }, 500);
   }
 
-  function stopAutoplay() {
-    clearInterval(autoplayInterval);
+  function startSwapping() {
+    clearInterval(swapInterval);
+    swapInterval = setInterval(swapOne, 3500);
   }
 
-  prevBtn.addEventListener('click', () => { stopAutoplay(); goToSlide(currentSlide - 1); startAutoplay(); });
-  nextBtn.addEventListener('click', () => { stopAutoplay(); goToSlide(currentSlide + 1); startAutoplay(); });
-  dots.forEach(dot => dot.addEventListener('click', () => { stopAutoplay(); goToSlide(parseInt(dot.dataset.index)); startAutoplay(); }));
+  function stopSwapping() {
+    clearInterval(swapInterval);
+  }
 
-  wrapper.addEventListener('mouseenter', stopAutoplay);
-  wrapper.addEventListener('mouseleave', startAutoplay);
+  grid.addEventListener('mouseenter', stopSwapping);
+  grid.addEventListener('mouseleave', startSwapping);
 
-  goToSlide(0);
-  startAutoplay();
+  startSwapping();
 });
 </script>
 
@@ -365,16 +404,16 @@ pip install gepa
     <span class="stat-label">Cost Reduction</span>
     <span class="stat-desc">Open-source models beat Claude Opus 4.1 at Databricks</span>
   </a>
-  <a href="https://arxiv.org/abs/2507.19457" target="_blank" class="stat-card">
-    <span class="stat-number">35x</span>
-    <span class="stat-label">More Efficient</span>
-    <span class="stat-desc">vs. Reinforcement Learning methods</span>
+  <a href="blog/introducing-optimize-anything/#6-agent-architecture-discovery-arc-agi" class="stat-card">
+    <span class="stat-number">32→89</span>
+    <span class="stat-label">Gains on ARC-AGI</span>
+    <span class="stat-desc">Agent architecture evolved from 10 lines to 300+</span>
   </a>
-  <div class="stat-card">
-    <span class="stat-number">+10%</span>
-    <span class="stat-label">On AIME 2025</span>
-    <span class="stat-desc">46.6% &rarr; 56.6% with GPT-4.1 Mini</span>
-  </div>
+  <a href="blog/introducing-optimize-anything/#4-ai-driven-systems-research-cloudcast-cant-be-late" class="stat-card">
+    <span class="stat-number">40.2%</span>
+    <span class="stat-label">Cost Savings</span>
+    <span class="stat-desc">Cloud scheduling policy discovered by GEPA</span>
+  </a>
   <a href="guides/use-cases/" class="stat-card">
     <span class="stat-number">50+</span>
     <span class="stat-label">Production Use Cases</span>
@@ -384,10 +423,12 @@ pip install gepa
 
 ## :material-cog: How It Works
 
+Traditional optimizers (RL, evolutionary strategies) collapse rich execution traces into a single scalar reward — they know *that* a candidate failed, but not *why*. GEPA takes a different approach: evaluators return **Actionable Side Information (ASI)** — error messages, profiling data, reasoning logs — and an LLM reads this feedback to diagnose failures and propose targeted fixes. Each mutation inherits accumulated lessons from all ancestors in the search tree. GEPA also supports <em>system-aware merge</em> — combining strengths of two pareto-optimal candidates excelling on different tasks.
+
 <div class="how-it-works-flow">
   <div class="flow-step">
     <div class="flow-step-num">1</div>
-    <div class="flow-step-icon" style="color: #a855f7;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
+    <div class="flow-step-icon" style="color: #212C4D;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
     <div class="flow-step-label">Select from<br>Pareto Front</div>
     <div class="flow-step-desc">Pick candidate excelling on <em>some</em> examples</div>
   </div>
@@ -426,10 +467,10 @@ pip install gepa
 </div>
 
 <div class="how-it-works-insight">
-  Uses <strong>natural language reasoning</strong> instead of gradients to diagnose failures and improve prompts. Each mutation inherits lessons from all ancestors.<br>Based on research from UC Berkeley, Stanford, MIT & Databricks.<br><a href="https://arxiv.org/abs/2507.19457" target="_blank">Read the paper &rarr;</a>
+  <span class="insight-links">Based on research from UC Berkeley, Stanford, MIT & Databricks. <a href="guides/">Learn how it works &rarr;</a> | <a href="https://arxiv.org/abs/2507.19457" target="_blank">Read the paper &rarr;</a></span>
 </div>
 
-## :material-application: When to Use GEPA
+## :material-application: GEPA Case Studies
 
 <div class="use-cases-grid">
   <a href="guides/use-cases/#enterprise-production" class="use-case-card">
@@ -463,8 +504,10 @@ pip install gepa
     <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></div>
     <div class="use-case-title">Research & Advanced</div>
     <ul class="use-case-list">
-      <li>Multi-objective optimization</li>
+      <li>AI safety &amp; misalignment detection</li>
+      <li>Clinical NLP &amp; medical error detection</li>
       <li>Agent architecture discovery</li>
+      <li>Multi-objective optimization</li>
       <li>Adversarial prompt search</li>
     </ul>
   </a>
@@ -474,17 +517,49 @@ pip install gepa
   <a href="guides/use-cases/" class="cta-secondary" style="font-size: 0.95rem;">View all 50+ use cases &rarr;</a>
 </div>
 
-## :material-compare: Why Choose GEPA?
+## :material-target: GEPA Shines When
 
-| Feature | GEPA | Reinforcement Learning | Manual Prompting |
-|---------|------|----------------------|------------------|
-| **Cost** | :material-check-circle:{ .check } Low | :material-close-circle:{ .cross } Very High | :material-check-circle:{ .check } Low |
-| **Sample Efficiency** | :material-check-circle:{ .check } High (150 calls) | :material-close-circle:{ .cross } Low (10K+ calls) | :material-minus-circle:{ .neutral } N/A |
-| **Performance** | :material-check-circle:{ .check } SOTA | :material-check-circle:{ .check } SOTA | :material-close-circle:{ .cross } Suboptimal |
-| **Interpretability** | :material-check-circle:{ .check } Natural Language | :material-close-circle:{ .cross } Black Box | :material-check-circle:{ .check } Clear |
-| **Setup Time** | :material-check-circle:{ .check } Minutes | :material-close-circle:{ .cross } Days/Weeks | :material-check-circle:{ .check } Minutes |
-| **Framework Support** | :material-check-circle:{ .check } Any System | :material-minus-circle:{ .neutral } Framework Specific | :material-check-circle:{ .check } Any System |
-| **Multi-Objective** | :material-check-circle:{ .check } Native | :material-minus-circle:{ .neutral } Complex | :material-close-circle:{ .cross } Manual |
+<div class="use-cases-grid">
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></div>
+    <div class="use-case-title">Rollouts Are Expensive</div>
+    <ul class="use-case-list">
+      <li>Scientific simulations, slow compilation</li>
+      <li>Complex agents with long tool calls</li>
+      <li>100&ndash;500 evals vs. 10K+ for RL</li>
+    </ul>
+  </div>
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10H6v-2h8v2zm4-4H6v-2h12v2z"/></svg></div>
+    <div class="use-case-title">Data Is Scarce</div>
+    <ul class="use-case-list">
+      <li>New hardware with zero training data</li>
+      <li>Works with as few as 3 examples</li>
+      <li>Rapid prototyping on novel domains</li>
+    </ul>
+  </div>
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg></div>
+    <div class="use-case-title">API-Only Models</div>
+    <ul class="use-case-list">
+      <li>No weights access needed</li>
+      <li>Optimize GPT-5, Claude, Gemini directly</li>
+      <li>No custom infra or fine-tuning pipeline</li>
+    </ul>
+  </div>
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></div>
+    <div class="use-case-title">You Need Interpretability</div>
+    <ul class="use-case-list">
+      <li>Human-readable optimization traces</li>
+      <li>See <em>why</em> each prompt changed</li>
+      <li>Debug complex agent behaviors</li>
+    </ul>
+  </div>
+</div>
+
+!!! note "GEPA complements RL and fine-tuning"
+    These approaches are not mutually exclusive. Use GEPA for rapid initial optimization (minutes to hours, API-only access), then apply RL or fine-tuning for additional gains as demonstrated in [BetterTogether](https://arxiv.org/abs/2407.10930) / [mmGRPO](https://arxiv.org/abs/2508.04660) recipe. For scenarios with abundant data and 100,000+ cheap rollouts, gradient-based methods remain effective — GEPA works best when rollouts are expensive, data is scarce, or you need interpretable optimization traces.
 
 ## :material-account-group: Community & Resources
 
@@ -504,7 +579,7 @@ pip install gepa
     <div class="community-title">API Reference</div>
     <div class="community-desc">Full documentation</div>
   </a>
-  <a href="https://discord.gg/A7dABbtmFw" target="_blank" class="community-card">
+  <a href="https://discord.gg/WXFSeVGdbW" target="_blank" class="community-card">
     <div class="community-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></div>
     <div class="community-title">Discord</div>
     <div class="community-desc">Join 1,000+ developers</div>

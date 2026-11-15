@@ -1,9 +1,9 @@
-# GEPA in Action
+# Showcase
 
 Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains. These examples showcase the versatility and impact of reflective prompt evolution.
 
 !!! tip "Living Document"
-    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/A7dABbtmFw) or [Twitter/X](https://x.com/LakshyAAAgrawal)!
+    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/WXFSeVGdbW), [Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w), or [Twitter/X](https://x.com/LakshyAAAgrawal)!
 
 **Quick Navigation:**
 
@@ -43,6 +43,21 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the full blog](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
 
+-   **Dropbox Dash: 45% NMSE Reduction for Relevance Judging**
+
+    ---
+
+    Dropbox used GEPA to optimize their Dash search relevance judge, achieving **45% NMSE reduction** on gpt-oss-120b and reducing model adaptation time from weeks to days. For the small gemma-3-12b model, GEPA cut malformed JSON from 40% to under 3% while improving NMSE from 46.88 to 17.26.
+
+    **Key Results:**
+
+    - 45% NMSE improvement on gpt-oss-120b (8.83 → 4.86)
+    - gemma-3-12b: malformed JSON 40% → <3%, NMSE 46.88 → 17.26
+    - Model adaptation time: 1-2 weeks → 1-2 days
+    - 10-100x more data labeling at equivalent costs
+
+    [:material-arrow-right: Read the blog](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy)
+
 -   **OpenAI Cookbook: Self-Evolving Agents**
 
     ---
@@ -76,21 +91,23 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)
 
--   **Google ADK Agents Optimization**
+-   **Google ADK: Official Agent Optimization**
 
     ---
 
     ![Google ADK Training](../static/img/use-cases/google_adk.png){ .card-image }
 
-    Tutorial on optimizing **Google Agent Development Kit (ADK)** agents using GEPA for improved performance.
+    Google's Agent Development Kit (ADK) uses GEPA as its **built-in agent optimization engine**. The `adk optimize` CLI command runs a `GEPARootAgentPromptOptimizer` to automatically improve agent instructions based on evaluation results.
 
-    **Key Topics:**
+    **Key Features:**
 
-    - Optimizing agent SOPs (Standard Operating Procedures)
-    - Integrating GEPA with ADK workflows
-    - Production deployment patterns
+    - Official `adk optimize` CLI powered by GEPA
+    - `LocalEvalSampler` for running evaluations
+    - Automatic prompt rewriting via `GEPARootAgentPromptOptimizer`
 
-    [:material-arrow-right: View tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
+    [:material-arrow-right: Official ADK docs](https://adk.dev/optimize/)
+
+    [:material-arrow-right: Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
 
 -   **Comet-ml Opik Integration**
 
@@ -106,6 +123,26 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View documentation](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
 
+-   **BAML Prompt Optimization**
+
+    ---
+
+    BAML integrates GEPA into `baml-cli optimize` for test-driven prompt optimization with multi-objective support (accuracy, latency, tokens).
+
+    [:material-arrow-right: Read the guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
+
+-   **Prompt Optimization with Pydantic AI**
+
+    ---
+
+    Tutorial demonstrating GEPA integration with Pydantic AI using `Agent.override()` for instruction injection and Pydantic Evals for parallel evaluation.
+
+    **Results:** Contact extraction improved from 86% → 97% accuracy
+
+    [:material-arrow-right: Read the tutorial](https://pydantic.dev/articles/prompt-optimization-with-gepa)
+
+    [:material-arrow-right: View code examples](https://github.com/pydantic/pydantic-stack-demo/tree/main/pai-gepa-prompt-optimization)
+
 </div>
 
 ---
@@ -113,6 +150,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 ## :material-code-braces: AI Coding Agents & Research Tools
 
 <div class="grid cards" markdown>
+
+-   **Nous Research Hermes Agent: Self-Evolution**
+
+    ---
+
+    Nous Research's **Hermes Agent** uses DSPy + GEPA as its evolutionary self-improvement system, optimizing the agent's own skills, prompts, and code. It maintains populations of solutions, applies LLM-driven mutations targeted at specific failure cases, and selects based on fitness.
+
+    **Key Features:**
+
+    - Evolutionary self-improvement of agent skills and prompts
+    - Population-based optimization with fitness selection
+    - Targeted mutations driven by failure case analysis
+
+    [:material-arrow-right: View the repo](https://github.com/NousResearch/hermes-agent-self-evolution)
+
+    [:material-arrow-right: Announcement](https://x.com/NousResearch/status/2031137681439109147)
 
 -   **Production Incident Diagnosis**
 
@@ -379,6 +432,106 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Try the notebook](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
 
+-   **Prompt Optimization Makes Misalignment Legible**
+
+    ---
+
+    Biddulph & Carroll (MATS 8.0 / ICML submission) show that GEPA's optimized system prompts **verbalize reward-hacking strategies in plain English**, making misalignment detectable and removable — unlike RL, where learned strategies are opaque.
+
+    **Key Findings:**
+
+    - GEPA prompts that reward-hack also describe the hack in the prompt text
+    - Sanitizing the prompt (removing misaligned instructions) stops the hacking
+    - Tested on Hinted MMLU, Targeted Sycophancy, and other environments
+
+    [:material-arrow-right: Read the post](https://www.lesswrong.com/posts/vRpLPZpmECCfxHfv6/paper-prompt-optimization-makes-misalignment-legible)
+
+-   **Automated Risk-of-Bias Assessment of Clinical Trials**
+
+    ---
+
+    Li, Mathrani & Susnjak (2025) use GEPA to optimize prompts for risk-of-bias assessment across **7 RoB domains** and multiple LLMs, achieving **30–40% improvement** in key domains over manually crafted prompts.
+
+    **Key Results:**
+
+    - Highest overall accuracy across 100 randomized controlled trials
+    - Models: Mistral Small 3.1, GPT-oss-20b, GPT-4 Nano/Mini
+    - Inspectable execution traces via DSPy + GEPA
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2512.01452)
+
+-   **Clinical NER: GEPA vs Domain-Specific Transformers (IEEE BigData 2025)**
+
+    ---
+
+    Varghese & Shang (University of Missouri, IEEE BigData 2025) benchmark GEPA optimization against fine-tuned Bio+ClinicalBERT on the n2c2 Track 2 ADE dataset, reporting **up to 12.5% improvement** in zero-shot clinical NER from GEPA optimization.
+
+    **Key Results:**
+
+    - GEPA improved zero-shot F1 by up to 12.5%
+    - Switching reflection model from GPT-4o-mini to GPT-4.1-mini raised few-shot F1 from 41.4% to 45.4%
+    - Fine-tuned domain models still lead, but GEPA narrows the gap without any training data
+
+    [:material-arrow-right: Read the paper](https://ieeexplore.ieee.org/abstract/document/11401686)
+
+-   **Empowering Small Models for GPU Parallelization**
+
+    ---
+
+    Jhaveri & Lopes (2026) use GEPA to evolve prompts so that small "nano" LLMs can generate correct OpenACC pragmas, improving **GPT-4.1 Nano compilation rate from 66.7% to 93.3%** and GPT-5 Nano to **100%** on the PolyBench suite.
+
+    **Key Results:**
+
+    - 21% increase in programs achieving GPU speedups over CPU
+    - GEPA makes cheap models match expensive ones on HPC code generation
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2601.08884)
+
+-   **Prompt Optimisation for Error Detection in Medical Notes**
+
+    ---
+
+    Myles, Schrempf & Harris-Birtill (2026) use GEPA as the primary optimization method, improving **GPT-5 accuracy from 0.669 to 0.785** and **Qwen3-32B from 0.578 to 0.690** on the MEDEC benchmark, approaching medical doctor performance.
+
+    **Key Results:**
+
+    - ~17–20% relative accuracy gains from GEPA optimization
+    - State-of-the-art on clinical error detection
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.22483)
+
+-   **What Do Prompts Reveal About Model Capabilities in Low-Resource Languages? (AfricaNLP 2026)**
+
+    ---
+
+    Ajayi & Ogundepo (AfricaNLP 2026) investigate what GEPA-optimized prompts reveal about LLM capabilities when applied to **low-resource African languages**, using prompt optimization as a lens into model behavior on underrepresented languages.
+
+    [:material-arrow-right: Read the paper](https://openreview.net/attachment?id=7JZmTp85Yf&name=pdf)
+
+    [:material-arrow-right: LinkedIn announcement](https://www.linkedin.com/feed/update/urn%3Ali%3Aactivity%3A7444797637414924289/?commentUrn=urn%3Ali%3Acomment%3A%28activity%3A7444797637414924289%2C7445145380280758273%29&dashCommentUrn=urn%3Ali%3Afsd%5Fcomment%3A%287445145380280758273%2Curn%3Ali%3Aactivity%3A7444797637414924289%29)
+
+-   **Beyond the Answer: Decoding the Behavior of LLMs as Scientific Reasoners (ICLR 2026 Workshop)**
+
+    ---
+
+    Pandey, Ye & Li (Post-AGI Science and Society Workshop, ICLR 2026) use a GEPA-based approach to systematically optimize prompts for scientific reasoning tasks, finding that reasoning gains correspond to **model-specific heuristics that fail to generalize** across systems — framing prompt optimization as a tool for model interpretability.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.28038)
+
+-   **Self-Optimizing Multi-Agent Systems for Deep Research (ECIR 2026 Workshop)**
+
+    ---
+
+    Camara, Slot & Zavrel (Zeta Alpha, ECIR 2026) evaluate GEPA and TextGrad for optimizing multi-agent Deep Research systems. **GEPA outperforms TextGrad, OpenAI's prompt optimizer, and expert-crafted prompts**, with GEPA + custom meta-prompt achieving the best overall score (0.705) on the ScholarQA-CS benchmark.
+
+    **Key Results:**
+
+    - GEPA's Pareto-based exploration converges faster than TextGrad's greedy search
+    - Domain-tailored meta-prompts yield the best performance
+    - Optimized agents match or outperform expert-crafted prompts
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2604.02988)
+
 </div>
 
 ---
@@ -440,6 +593,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - Practical implementation guidance
 
     [:material-arrow-right: Watch the event](https://www.linkedin.com/events/automaticpromptoptimization-ait7404883890873618433/theater/)
+
+    [:material-arrow-right: BAML Prompt Optimization Guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
 
 </div>
 
@@ -980,6 +1135,6 @@ Ready to optimize your own AI systems with GEPA?
 
     Connect with other GEPA users and contributors.
 
-    [:material-arrow-right: Discord](https://discord.gg/A7dABbtmFw) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+    [:material-arrow-right: Discord](https://discord.gg/WXFSeVGdbW) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 
 </div>

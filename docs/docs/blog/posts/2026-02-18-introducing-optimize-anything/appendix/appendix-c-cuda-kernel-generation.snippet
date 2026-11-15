@@ -1,0 +1,371 @@
+<span id="appendix-c-cuda-kernel-generation"></span>
+??? example "CUDA Kernel Generation (KernelBench)"
+
+    We tackle [KernelBench](https://github.com/ScalingIntelligence/KernelBench), a benchmark of PyTorch neural-network operations where the goal is to generate a custom CUDA kernel with C++ extensions that is both correct and faster than the reference PyTorch implementation. A single shared prompt is optimized across multiple problems so that insights from one kernel transfer to others.
+
+    **Candidate** — The seed candidate is a minimal one-line instruction prompt that tells the LLM to generate a CUDA kernel replacement. It provides just enough structure to define the expected output format (a complete Python file using `load_inline`).
+
+    ```python
+    SEED_PROMPT = """Write a CUDA kernel to replace the given PyTorch model for better performance.
+    Output a complete Python file with ModelNew using load_inline. Include all imports."""
+    ```
+
+    **Evaluator** — The evaluator compiles the LLM-generated kernel, benchmarks it against a baseline PyTorch implementation for the given problem, and returns rich Actionable Side Information (ASI) with the generated code, CUDA documentation consulted during generation, runtime measurements, speedup ratios, correctness status, and detailed error feedback when compilation or validation fails.
+
+    ```python
+    def evaluate(candidate, example):
+        baseline = baselines[example.problem_id]
+        code, cuda_docs, eval_result = run_kernel(
+            candidate, example.ref_arch, lm, predictor
+        )
+        score = compute_score(eval_result, baseline)
+
+        runtime = eval_result.get("PerformanceStatsMean")
+        return score, {
+            "score": score,
+            "problem_id": example.problem_id,
+            "level": example.level,
+            "baseline_ms": baseline,
+            "code": code,
+            "cuda_docs": cuda_docs,
+            "cuda_docs_post": post_docs,
+            "runtime_ms": runtime,
+            "speedup": baseline / runtime if runtime else None,
+            "compiled_successfully": eval_result.get("CompilationSucceeded", False),
+            "ran_without_error": eval_result.get("NoRuntimeErrorDuringCorrectnessCheck", False),
+            "output_values_correct": eval_result.get("CorrectnessSucceeded", False),
+            "error_type": eval_result.get("ErrorType"),
+            "error_detail": eval_result.get("ErrorDetail"),
+        }
+    ```
+
+    **Optimizer** — This is a Multi-Task Search: a `dataset` of multiple KernelBench problems means insights from optimizing one kernel transfer to others via shared prompt improvements. `RefinerConfig()` enables automatic per-evaluation refinement — after each evaluation, an LLM proposes a refined candidate based on the feedback. `background` is used to inject CUDA best practices and constraints into the optimization loop.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, RefinerConfig
+
+    optimize_anything(
+        seed_candidate=SEED_PROMPT,
+        evaluator=evaluate,
+        dataset=dataset,  # KernelBench problems
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=2000, cache_evaluation=True),
+            refiner=RefinerConfig(),  # auto-refine after each evaluation
+        ),
+        objective="Generate an LLM prompt that produces fast, correct CUDA kernels outperforming PyTorch baselines.",
+        background=BACKGROUND,
+    )
+    ```
+
+    **Optimized artifact** — Below is the best kernel discovered for a LayerNorm CUDA kernel, which led to 3.32x speedup. It loads four numbers at a time from GPU memory instead of one (float4 vectorization), cutting memory transaction overhead by roughly 4x. It splits the work into two clean passes: first compute the mean and variance, then normalize. This lets the GPU optimize each step independently rather than juggling both at once. Finally, threads share their partial sums using direct register-to-register transfers (warp shuffles), skipping the usual detour through slower shared memory.
+
+
+    <section class="scrollable-code" markdown>
+
+    ```python
+    import math
+    import torch
+    import torch.nn as nn
+    from torch.utils.cpp_extension import load_inline
+
+    _kb_layernorm_mod = None
+
+    def _get_kb_layernorm_mod():
+        global _kb_layernorm_mod
+        if _kb_layernorm_mod is not None:
+            return _kb_layernorm_mod
+        if not torch.cuda.is_available():
+            return None
+        try:
+            _kb_layernorm_mod = load_inline(
+                name="kb_layernorm_vec",
+                cpp_sources=r"""
+    #include <torch/extension.h>
+    #include <vector>
+
+    // Forward declaration only (implementation in CUDA file)
+    torch::Tensor layernorm_forward(torch::Tensor input,
+                                    torch::Tensor weight,
+                                    torch::Tensor bias,
+                                    double eps,
+                                    std::vector<int64_t> normalized_shape);
+    """,
+                cuda_sources=r"""
+    #include <torch/extension.h>
+    #include <cuda_runtime.h>
+    #include <ATen/cuda/CUDAContext.h>
+    #include <stdint.h>
+    #include <vector>
+
+    #ifndef KB_WARP_SIZE
+    #define KB_WARP_SIZE 32
+    #endif
+
+    __inline__ __device__ float warp_sum(float v) {
+        unsigned mask = 0xffffffffu;
+        #pragma unroll
+        for (int offset = KB_WARP_SIZE / 2; offset > 0; offset >>= 1) {
+            v += __shfl_down_sync(mask, v, offset);
+        }
+        return v;
+    }
+
+    // Kernel: compute per-row mean and inv_std for a [B, M] matrix
+    __global__ void rowwise_stats_kernel(const float* __restrict__ x,
+                                        float* __restrict__ mean,
+                                        float* __restrict__ inv_std,
+                                        int64_t B,
+                                        int64_t M,
+                                        float eps) {
+        int64_t row = blockIdx.x;
+        if (row >= B) return;
+
+        const float* row_ptr = x + row * M;
+
+        bool use_vec4 = ((reinterpret_cast<uintptr_t>(row_ptr) & 0xF) == 0) && (M % 4 == 0);
+
+        float thread_sum = 0.0f;
+        float thread_sumsq = 0.0f;
+
+        if (use_vec4) {
+            const float4* row_v4 = reinterpret_cast<const float4*>(row_ptr);
+            int64_t M4 = M >> 2;
+            for (int64_t j = threadIdx.x; j < M4; j += blockDim.x) {
+                float4 v = row_v4[j];
+                thread_sum   += (v.x + v.y + v.z + v.w);
+                thread_sumsq += (v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+            }
+        } else {
+            for (int64_t j = threadIdx.x; j < M; j += blockDim.x) {
+                float v = row_ptr[j];
+                thread_sum   += v;
+                thread_sumsq += v * v;
+            }
+        }
+
+        // Reduce within warp
+        thread_sum = warp_sum(thread_sum);
+        thread_sumsq = warp_sum(thread_sumsq);
+
+        // Shared memory to collect per-warp results
+        int warp_id = threadIdx.x / KB_WARP_SIZE;
+        int lane = threadIdx.x % KB_WARP_SIZE;
+        int warp_count = (blockDim.x + KB_WARP_SIZE - 1) / KB_WARP_SIZE;
+        extern __shared__ float smem[];
+        float* smem_sum = smem;
+        float* smem_sumsq = smem + warp_count;
+
+        if (lane == 0) {
+            smem_sum[warp_id] = thread_sum;
+            smem_sumsq[warp_id] = thread_sumsq;
+        }
+        __syncthreads();
+
+        if (warp_id == 0) {
+            float val_sum = (lane < warp_count) ? smem_sum[lane] : 0.0f;
+            float val_sumsq = (lane < warp_count) ? smem_sumsq[lane] : 0.0f;
+            val_sum = warp_sum(val_sum);
+            val_sumsq = warp_sum(val_sumsq);
+            if (lane == 0) {
+                float mean_r = val_sum / static_cast<float>(M);
+                float var_r = val_sumsq / static_cast<float>(M) - mean_r * mean_r;
+                var_r = var_r < 0.0f ? 0.0f : var_r; // numerical guard
+                float inv = rsqrtf(var_r + eps);
+                mean[row] = mean_r;
+                inv_std[row] = inv;
+            }
+        }
+    }
+
+    // Kernel: normalize and apply affine per row
+    __global__ void layernorm_affine_kernel(const float* __restrict__ x,
+                                            const float* __restrict__ weight,
+                                            const float* __restrict__ bias,
+                                            const float* __restrict__ mean,
+                                            const float* __restrict__ inv_std,
+                                            float* __restrict__ y,
+                                            int64_t B,
+                                            int64_t M) {
+        int64_t row = blockIdx.x;
+        if (row >= B) return;
+
+        const float* row_x = x + row * M;
+        float* row_y = y + row * M;
+        float m = mean[row];
+        float inv = inv_std[row];
+
+        bool use_vec4 = ((reinterpret_cast<uintptr_t>(row_x) & 0xF) == 0) &&
+                        ((reinterpret_cast<uintptr_t>(weight) & 0xF) == 0) &&
+                        ((reinterpret_cast<uintptr_t>(bias) & 0xF) == 0) &&
+                        ((reinterpret_cast<uintptr_t>(row_y) & 0xF) == 0) &&
+                        (M % 4 == 0);
+
+        if (use_vec4) {
+            const float4* x_v4 = reinterpret_cast<const float4*>(row_x);
+            const float4* w_v4 = reinterpret_cast<const float4*>(weight);
+            const float4* b_v4 = reinterpret_cast<const float4*>(bias);
+            float4* y_v4 = reinterpret_cast<float4*>(row_y);
+            int64_t M4 = M >> 2;
+            for (int64_t j = threadIdx.x; j < M4; j += blockDim.x) {
+                float4 xv = x_v4[j];
+                float4 wv = w_v4[j];
+                float4 bv = b_v4[j];
+                float4 out;
+                out.x = ((xv.x - m) * inv) * wv.x + bv.x;
+                out.y = ((xv.y - m) * inv) * wv.y + bv.y;
+                out.z = ((xv.z - m) * inv) * wv.z + bv.z;
+                out.w = ((xv.w - m) * inv) * wv.w + bv.w;
+                y_v4[j] = out;
+            }
+        } else {
+            for (int64_t j = threadIdx.x; j < M; j += blockDim.x) {
+                float xv = row_x[j];
+                float out = ((xv - m) * inv) * weight[j] + bias[j];
+                row_y[j] = out;
+            }
+        }
+    }
+
+    static inline int next_pow2_int(int v) {
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return v;
+    }
+
+    // Host function exposed to Python
+    torch::Tensor layernorm_forward(torch::Tensor input,
+                                    torch::Tensor weight,
+                                    torch::Tensor bias,
+                                    double eps,
+                                    std::vector<int64_t> normalized_shape) {
+        TORCH_CHECK(input.is_cuda(), "layernorm_forward: input must be CUDA");
+        TORCH_CHECK(weight.is_cuda(), "layernorm_forward: weight must be CUDA");
+        TORCH_CHECK(bias.is_cuda(), "layernorm_forward: bias must be CUDA");
+        TORCH_CHECK(input.scalar_type() == at::kFloat, "layernorm_forward: only float32 supported");
+        TORCH_CHECK(weight.scalar_type() == at::kFloat, "layernorm_forward: weight must be float32");
+        TORCH_CHECK(bias.scalar_type() == at::kFloat, "layernorm_forward: bias must be float32");
+        TORCH_CHECK(!normalized_shape.empty(), "layernorm_forward: normalized_shape must be non-empty");
+        TORCH_CHECK(input.dim() >= static_cast<int64_t>(normalized_shape.size()),
+                    "layernorm_forward: input.dim < normalized_shape.size");
+
+        // Validate trailing dimensions match normalized_shape
+        auto in_sizes = input.sizes();
+        int64_t k = static_cast<int64_t>(normalized_shape.size());
+        for (int64_t i = 0; i < k; ++i) {
+            TORCH_CHECK(in_sizes[in_sizes.size() - k + i] == normalized_shape[i],
+                        "layernorm_forward: input trailing dims must match normalized_shape");
+        }
+
+        int64_t M = 1;
+        for (int64_t d : normalized_shape) {
+            TORCH_CHECK(d > 0, "layernorm_forward: normalized_shape dims must be > 0");
+            M *= d;
+        }
+        TORCH_CHECK(weight.numel() == M, "layernorm_forward: weight numel mismatch");
+        TORCH_CHECK(bias.numel() == M, "layernorm_forward: bias numel mismatch");
+
+        auto input_c = input.contiguous();
+        int64_t total = input_c.numel();
+        TORCH_CHECK(total % M == 0, "layernorm_forward: input numel not divisible by M");
+        int64_t B = total / M;
+
+        auto x2d = input_c.view({B, M});
+        auto w1d = weight.contiguous().view({M});
+        auto b1d = bias.contiguous().view({M});
+
+        auto options = input.options().dtype(at::kFloat);
+        auto out2d = at::empty_like(x2d, options);
+        auto mean = at::empty({B}, options);
+        auto inv_std = at::empty({B}, options);
+
+        // Choose threads per block: power-of-two between 256 and 1024, not exceeding M
+        int t_candidate = (int)std::min<int64_t>(1024, (int64_t)next_pow2_int((int)std::min<int64_t>(M, 1024)));
+        int threads = t_candidate < 256 ? 256 : t_candidate;
+        int blocks = (int)B;
+        int warp_count = (threads + KB_WARP_SIZE - 1) / KB_WARP_SIZE;
+        size_t shmem = sizeof(float) * 2 * warp_count;
+
+        rowwise_stats_kernel<<<blocks, threads, shmem, at::cuda::getCurrentCUDAStream()>>>(
+            x2d.data_ptr<float>(),
+            mean.data_ptr<float>(),
+            inv_std.data_ptr<float>(),
+            B, M, static_cast<float>(eps));
+
+        layernorm_affine_kernel<<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(
+            x2d.data_ptr<float>(),
+            w1d.data_ptr<float>(),
+            b1d.data_ptr<float>(),
+            mean.data_ptr<float>(),
+            inv_std.data_ptr<float>(),
+            out2d.data_ptr<float>(),
+            B, M
+        );
+
+        auto out = out2d.view(input.sizes());
+        return out;
+    }
+    """,
+                functions=["layernorm_forward"],
+                with_cuda=True,
+                extra_cuda_cflags=["-O3"],
+                extra_cflags=["-O3"],
+                verbose=False,
+            )
+        except Exception:
+            _kb_layernorm_mod = None
+        return _kb_layernorm_mod
+
+
+    class ModelNew(nn.Module):
+        """
+        Drop-in replacement for Model that accelerates LayerNorm forward
+        with a CUDA extension when beneficial, otherwise falls back to PyTorch.
+        """
+        def __init__(self, normalized_shape: tuple):
+            super(ModelNew, self).__init__()
+            self.ln = nn.LayerNorm(normalized_shape=normalized_shape)
+
+            # Optionally warm up loader (will only build if CUDA is available)
+            _get_kb_layernorm_mod()
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            # Only use custom CUDA path when:
+            # - input is CUDA float32
+            # - extension is available
+            # - sufficiently large normalized dimension for payoff
+            norm_shape = tuple(self.ln.normalized_shape)
+            M = 1
+            for d in norm_shape:
+                M *= int(d)
+
+            kb_mod = _get_kb_layernorm_mod()
+            use_custom = (
+                kb_mod is not None
+                and x.is_cuda
+                and x.dtype == torch.float32
+                and M >= 512
+                and x.numel() >= 100000
+            )
+
+            if use_custom:
+                if getattr(self.ln, "elementwise_affine", True):
+                    weight = self.ln.weight
+                    bias = self.ln.bias
+                else:
+                    # No affine: emulate with ones/zeros on the correct device
+                    weight = torch.ones(norm_shape, device=x.device, dtype=torch.float32)
+                    bias = torch.zeros(norm_shape, device=x.device, dtype=torch.float32)
+                return kb_mod.layernorm_forward(
+                    x, weight, bias, float(self.ln.eps), list(norm_shape)
+                )
+
+            # Fallback to PyTorch reference
+            return self.ln(x)
+
+    ```
+    </section>

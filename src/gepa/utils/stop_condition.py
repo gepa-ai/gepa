@@ -173,6 +173,23 @@ class MaxMetricCallsStopper(StopperProtocol):
         return gepa_state.total_num_evals >= self.max_metric_calls
 
 
+class MaxCandidateProposalsStopper(StopperProtocol):
+    """
+    Stop callback that stops after a maximum number of candidate proposals.
+
+    Note: state.i starts at -1, and is incremented at the START of each loop iteration.
+    The stopper is checked BEFORE the increment, so when state.i = N-1, we're about to
+    run proposal N. To allow exactly max_proposals proposals, we stop when
+    state.i >= max_proposals - 1 (i.e., we've completed max_proposals proposals).
+    """
+
+    def __init__(self, max_proposals: int):
+        self.max_proposals = max_proposals
+
+    def __call__(self, gepa_state: GEPAState) -> bool:
+        return gepa_state.i >= self.max_proposals - 1
+
+
 class CompositeStopper(StopperProtocol):
     """
     Stop callback that combines multiple stopping conditions.

@@ -1,0 +1,957 @@
+<span id="appendix-b-circle-packing"></span>
+??? example "Circle Packing (n=26)"
+
+    We tackle circle packing, a classic combinatorial optimization problem benchmarked by many LLM-based evolution algorithms including ShinkaEvolve, OpenEvolve, and AlphaEvolve.
+    The goal is to pack n=26 circles within a unit square, maximizing the sum of radii.
+
+    **Candidate** — We adopt a seed candidate from ShinkaEvolve's code. It places circles in concentric rings: one at the center, a ring of 8 around it, and an outer ring for the remaining circles. It clips positions into the unit square and greedily shrinks radii until no circle overlaps another or breaches a boundary.
+
+    <section class="scrollable-code" markdown>
+
+    ```python
+    SEED_CODE = '''
+    import numpy as np
+
+    def main(timeout, current_best_solution):
+        """
+        Circle packing optimization.
+
+        Args:
+            timeout: Time budget in seconds
+            current_best_solution: Previous best circles array (n, 3) or None
+
+        Returns:
+            dict with 'circles' (n, 3) array and 'all_scores' list
+        """
+        n = 26
+
+        # Use current_best_solution if provided, otherwise start fresh
+        if current_best_solution is not None:
+            circles = current_best_solution.copy()
+        else:
+            # Simple initial placement
+            centers = np.zeros((n, 2))
+
+            # Center circle
+            centers[0] = [0.5, 0.5]
+
+            # Ring of 8 around center
+            for i in range(min(8, n - 1)):
+                angle = 2 * np.pi * i / 8
+                centers[i + 1] = [0.5 + 0.3 * np.cos(angle), 0.5 + 0.3 * np.sin(angle)]
+
+            # Outer ring for remaining
+            if n > 9:
+                remaining = n - 9
+                for i in range(remaining):
+                    angle = 2 * np.pi * i / remaining
+                    centers[i + 9] = [0.5 + 0.7 * np.cos(angle), 0.5 + 0.7 * np.sin(angle)]
+
+            centers = np.clip(centers, 0.01, 0.99)
+            radii = compute_max_radii(centers)
+            circles = np.hstack([centers, radii.reshape(-1, 1)])
+
+        score = float(np.sum(circles[:, 2]))
+        return {'circles': circles, 'all_scores': [score]}
+
+
+    def compute_max_radii(centers):
+        """Compute maximum radii that don't overlap and stay in unit square."""
+        n = centers.shape[0]
+        radii = np.ones(n)
+
+        # Limit by distance to borders
+        for i in range(n):
+            x, y = centers[i]
+            radii[i] = min(x, y, 1 - x, 1 - y)
+
+        # Limit by distance to other circles
+        for i in range(n):
+            for j in range(i + 1, n):
+                dist = np.sqrt(np.sum((centers[i] - centers[j]) ** 2))
+                if radii[i] + radii[j] > dist:
+                    scale = dist / (radii[i] + radii[j])
+                    radii[i] *= scale
+                    radii[j] *= scale
+
+        return radii
+    '''
+    ```
+    </section>
+
+    **Evaluator** — The evaluator sandboxes the proposed code, runs it with a 600-second timeout, validates circles against geometric constraints (no overlaps, all within the unit square), and returns rich ASI with circle positions, multiple metrics derived from evaluation trajectory, validation details, stdout/stderr so the LLM understands which geometric constraints are binding. The `extract_best_circles(opt_state)` helper warm-starts each new proposal with the best circles discovered so far.
+
+    ```python
+    from examples.circle_packing.utils import extract_best_circles, execute_code
+
+    def evaluate(candidate, opt_state):
+        warm_start = extract_best_circles(opt_state)
+        result = execute_code(candidate, 600, warm_start)
+
+        circles = result["circles"]
+        score = result["validation_details"]["sum_radii"]
+        metrics = compute_multiple_metrics(result["all_scores"])
+
+        side_info = {
+            "scores": {"sum_radii": score},
+            "metrics": metrics,  # mean, min, max, EMA1, EMA2 of the circles explored by this candidate
+            "code": candidate,
+            "circles": circles,
+            "stdout": result.get("stdout", ""),
+            "error": result.get("error"),
+            "traceback": result.get("traceback"),
+            "validation_details": result.get("validation_details"),
+        }
+
+        return score, side_info
+    ```
+
+    **Optimizer** — This is a Single-Task Search with no `dataset`. `frontier_type="objective"` tracks the Pareto frontier per objective metric (e.g., `sum_radii`) rather than per dataset example. 
+    `RefinerConfig()` injects a `refiner_prompt` into a candidate dictionary to add an inner-loop refinement step after each evaluation.
+    A Refiner LLM reads the feedback and proposes an improved candidate.
+    GEPA keeps whichever is better, and the refiner's own prompt is co-evolved alongside the candidate so refinement quality improves over time.
+    Combined with `frontier_type="objective"`, the `RefinerConfig()` doubles the pareto metrics: the original candidates' metrics + the refiner's metrics.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+
+    optimize_anything(
+        seed_candidate=SEED_CODE,
+        evaluator=evaluate,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=150, cache_evaluation=True, frontier_type="objective"),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
+            refiner=RefinerConfig()
+        ),
+        objective="Optimize circle packing code to maximize sum of circle radii "
+                  "within a unit square for N=26 circles.",
+    )
+    ```
+
+    **Optimized artifact** — From a 75-line concentric-ring heuristic, GEPA evolved a 900+ line bilevel optimizer that formulates packing as an LP over radii and uses dual variables to derive exact gradients for L-BFGS-B over center positions. It layers SLP with adaptive trust regions, CMA-ES for evolutionary exploration, and diverse seeding strategies (hexagonal grid, farthest-point insertion, corner spokes, edge rings). The result scores 2.63598+, beating AlphaEvolve's 2.6358.
+
+    <section class="scrollable-code" markdown>
+
+    ```python
+    import numpy as np
+    import time
+
+    def main(timeout, current_best_solution):
+        """
+        Breakthrough optimizer (refined): Bilevel L-BFGS with exact LP sensitivities + SLP block boosts + CMA/Evolution fallback
+        - Uses LP over radii with dual-based gradient for centers (bilevel).
+        - L-BFGS-B over centers, with proper best-tracking inside objective.
+        - Block SLP trust-region boosts on worst circles.
+        - Aggressive relocation of worst circles to edges/corners.
+        - Multiple diverse seeding + optional CMA-ES and evolutionary exploration.
+        - Minor performance/robustness adjustments based on evaluation.
+        """
+        n = 26
+        start_time = time.time()
+        time_budget = max(1.0, float(timeout))
+        rng = np.random.default_rng(20260124)
+        all_scores = []
+
+        eps = 1e-9
+        r_min = 1e-12
+
+        def now():
+            return time.time()
+
+        def time_left():
+            return time_budget - (now() - start_time)
+
+        def clamp_centers(centers):
+            return np.clip(centers, eps, 1.0 - eps)
+
+        # Precompute all unordered pairs (i<j)
+        pairs = np.array([(i, j) for i in range(n) for j in range(i + 1, n)], dtype=int)
+        m_pairs = pairs.shape[0]
+
+        def pairwise_diff(centers):
+            """Vectorized pairwise differences and unit vectors."""
+            idx_i = pairs[:, 0]
+            idx_j = pairs[:, 1]
+            diff = centers[idx_i] - centers[idx_j]
+            d = np.sqrt(np.maximum(np.sum(diff * diff, axis=1), 1e-18))
+            u = (diff.T / d).T
+            return diff, d, u
+
+        def boundary_limits(centers):
+            x = centers[:, 0]
+            y = centers[:, 1]
+            return np.minimum(np.minimum(x, 1.0 - x), np.minimum(y, 1.0 - y))
+
+        def score_from_radii(r):
+            return float(np.sum(r))
+
+        # Check SciPy availability once
+        scipy_available = True
+        try:
+            from scipy.optimize import linprog
+        except Exception:
+            scipy_available = False
+
+        # LP for radii given centers (exact); optionally returns duals for A_ub x <= b
+        def solve_radii_lp(centers, need_duals=False):
+            if not scipy_available:
+                # Fallback: feasible shrink
+                b = boundary_limits(centers)
+                r = np.minimum(b, 0.5)
+                r = np.maximum(r, r_min)
+                for _ in range(2000):
+                    changed = False
+                    for (i, j) in pairs:
+                        dij = np.linalg.norm(centers[i] - centers[j])
+                        s = r[i] + r[j]
+                        if s > dij:
+                            excess = s - dij
+                            dec = 0.5 * excess
+                            ni = max(r_min, r[i] - dec)
+                            nj = max(r_min, r[j] - dec)
+                            if ni != r[i] or nj != r[j]:
+                                r[i] = ni
+                                r[j] = nj
+                                changed = True
+                    if not changed:
+                        break
+                r = np.minimum(r, boundary_limits(centers))
+                r = np.maximum(r, r_min)
+                return r, True, {'dual': None}
+
+            x = centers[:, 0]
+            y = centers[:, 1]
+            _, d, _ = pairwise_diff(centers)
+            num_vars = n
+            rows = 4 * n + m_pairs
+            A_ub = np.zeros((rows, num_vars), dtype=float)
+            b_ub = np.zeros(rows, dtype=float)
+            # Boundary constraints
+            for i in range(n):
+                A_ub[4 * i + 0, i] = 1.0; b_ub[4 * i + 0] = x[i]
+                A_ub[4 * i + 1, i] = 1.0; b_ub[4 * i + 1] = 1.0 - x[i]
+                A_ub[4 * i + 2, i] = 1.0; b_ub[4 * i + 2] = y[i]
+                A_ub[4 * i + 3, i] = 1.0; b_ub[4 * i + 3] = 1.0 - y[i]
+            # Pairwise constraints
+            base = 4 * n
+            for k, (i, j) in enumerate(pairs):
+                A_ub[base + k, i] = 1.0
+                A_ub[base + k, j] = 1.0
+                b_ub[base + k] = d[k]
+            c_obj = -np.ones(num_vars, dtype=float)
+            bounds = [(r_min, None)] * n
+            dual = None
+            try:
+                res = linprog(c_obj, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+                if getattr(res, "success", False) and res.x is not None:
+                    r = np.array(res.x, dtype=float)
+                    r = np.minimum(r, boundary_limits(centers))
+                    r = np.maximum(r, r_min)
+                    if need_duals:
+                        try:
+                            ine = getattr(res, "ineqlin", None)
+                            if ine is not None and hasattr(ine, "marginals") and ine.marginals is not None:
+                                dual = np.array(ine.marginals, dtype=float)
+                            else:
+                                dual = None
+                        except Exception:
+                            dual = None
+                    return r, True, {'dual': dual}
+                else:
+                    b = boundary_limits(centers)
+                    r = np.maximum(np.minimum(b, 0.5), r_min)
+                    return r, False, {'dual': None}
+            except Exception:
+                b = boundary_limits(centers)
+                r = np.maximum(np.minimum(b, 0.5), r_min)
+                return r, False, {'dual': None}
+
+        # Compute gradient wrt centers from LP dual multipliers (sensitivity of optimal value)
+        def gradient_from_duals(centers, dual_vec):
+            g = np.zeros((n, 2), dtype=float)
+            if dual_vec is None or dual_vec.shape[0] != (4 * n + m_pairs):
+                return g
+            # Boundary contributions
+            for i in range(n):
+                aL = dual_vec[4 * i + 0]
+                aR = dual_vec[4 * i + 1]
+                aB = dual_vec[4 * i + 2]
+                aT = dual_vec[4 * i + 3]
+                g[i, 0] += (aL - aR)
+                g[i, 1] += (aB - aT)
+            # Pairwise distance contributions
+            base = 4 * n
+            _, _, u = pairwise_diff(centers)
+            for k, (i, j) in enumerate(pairs):
+                lam = dual_vec[base + k]
+                if lam != 0.0:
+                    ux, uy = u[k, 0], u[k, 1]
+                    g[i, 0] += lam * ux
+                    g[i, 1] += lam * uy
+                    g[j, 0] -= lam * ux
+                    g[j, 1] -= lam * uy
+            return g
+
+        # SLP step (trust-region linearization for dx, dy and radii)
+        def slp_step(centers, delta, move_mask=None):
+            if not scipy_available:
+                return None, None, None, False
+            x0 = centers[:, 0]
+            y0 = centers[:, 1]
+            _, d, u = pairwise_diff(centers)
+            var_count = 3 * n
+            rows = 4 * n + m_pairs
+            A_ub = np.zeros((rows, var_count), dtype=float)
+            b_ub = np.zeros(rows, dtype=float)
+            r_idx = np.arange(n)
+            dx_idx = n + np.arange(n)
+            dy_idx = 2 * n + np.arange(n)
+
+            bounds = [None] * var_count
+            for i in range(n):
+                bounds[r_idx[i]] = (r_min, None)
+            for i in range(n):
+                if move_mask is not None and not move_mask[i]:
+                    lb_dx, ub_dx = 0.0, 0.0
+                    lb_dy, ub_dy = 0.0, 0.0
+                else:
+                    lb_dx = max(-delta, -x0[i] + eps)
+                    ub_dx = min(delta, 1.0 - x0[i] - eps)
+                    lb_dy = max(-delta, -y0[i] + eps)
+                    ub_dy = min(delta, 1.0 - y0[i] - eps)
+                    if lb_dx > ub_dx:
+                        lb_dx = ub_dx = 0.0
+                    if lb_dy > ub_dy:
+                        lb_dy = ub_dy = 0.0
+                bounds[dx_idx[i]] = (lb_dx, ub_dx)
+                bounds[dy_idx[i]] = (lb_dy, ub_dy)
+
+            # Boundary linear constraints
+            for i in range(n):
+                row = 4 * i
+                A_ub[row, r_idx[i]] = 1.0;   A_ub[row, dx_idx[i]] = -1.0; b_ub[row] = x0[i]
+                A_ub[row + 1, r_idx[i]] = 1.0; A_ub[row + 1, dx_idx[i]] = +1.0; b_ub[row + 1] = 1.0 - x0[i]
+                A_ub[row + 2, r_idx[i]] = 1.0; A_ub[row + 2, dy_idx[i]] = -1.0; b_ub[row + 2] = y0[i]
+                A_ub[row + 3, r_idx[i]] = 1.0; A_ub[row + 3, dy_idx[i]] = +1.0; b_ub[row + 3] = 1.0 - y0[i]
+
+            # Pairwise linearized constraints (first-order)
+            base = 4 * n
+            for k, (i, j) in enumerate(pairs):
+                ux, uy = u[k, 0], u[k, 1]
+                row = base + k
+                A_ub[row, r_idx[i]] += 1.0
+                A_ub[row, r_idx[j]] += 1.0
+                A_ub[row, dx_idx[i]] += -ux
+                A_ub[row, dx_idx[j]] += +ux
+                A_ub[row, dy_idx[i]] += -uy
+                A_ub[row, dy_idx[j]] += +uy
+                b_ub[row] = d[k]
+
+            c_obj = np.zeros(var_count, dtype=float)
+            c_obj[:n] = -1.0  # maximize sum r
+
+            try:
+                res = linprog(c_obj, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+                if getattr(res, "success", False) and res.x is not None:
+                    sol = np.array(res.x, dtype=float)
+                    r_lin = sol[:n]
+                    dx = sol[n:2 * n]
+                    dy = sol[2 * n:3 * n]
+                    return dx, dy, r_lin, True
+                else:
+                    return None, None, None, False
+            except Exception:
+                return None, None, None, False
+
+        def polish_slp(centers_init, max_outer=80, delta0=0.08, move_mask=None):
+            centers = clamp_centers(centers_init.copy())
+            r, ok, _ = solve_radii_lp(centers, need_duals=False)
+            if not ok:
+                return centers, r, score_from_radii(r)
+            best_c = centers.copy()
+            best_r = r.copy()
+            best_score = score_from_radii(r)
+            delta = delta0
+            for _ in range(max_outer):
+                if time_left() < 0.05:
+                    break
+                dx, dy, r_lin, ok_lin = slp_step(centers, delta, move_mask=move_mask)
+                if not ok_lin:
+                    delta *= 0.5
+                    if delta < 1e-4:
+                        break
+                    continue
+                c_try = clamp_centers(centers + np.stack([dx, dy], axis=1))
+                r_try, ok_r, _ = solve_radii_lp(c_try, need_duals=False)
+                if not ok_r:
+                    delta *= 0.7
+                    continue
+                sc = score_from_radii(r_try)
+                if sc > best_score + 1e-12:
+                    centers = c_try
+                    best_c = c_try.copy()
+                    best_r = r_try.copy()
+                    best_score = sc
+                    delta = min(0.25, delta * 1.25)
+                    all_scores.append(best_score)
+                else:
+                    delta *= 0.7
+                    if delta < 1e-4:
+                        break
+            return best_c, best_r, best_score
+
+        # Block SLP boosts: focus moves on worst circles and high-gradient ones
+        def block_slp_boost(centers_init, rounds=4, k=10, delta=0.18):
+            centers = clamp_centers(centers_init.copy())
+            r, ok, info = solve_radii_lp(centers, need_duals=True)
+            if not ok:
+                return centers, r, score_from_radii(r)
+            best_c, best_r = centers.copy(), r.copy()
+            best_s = score_from_radii(r)
+            for _ in range(rounds):
+                if time_left() < 0.05:
+                    break
+                dual = info.get('dual', None) if isinstance(info, dict) else None
+                if dual is not None:
+                    g = gradient_from_duals(centers, dual)
+                    gmag = np.linalg.norm(g, axis=1)
+                else:
+                    gmag = np.zeros(n)
+                idx_small = np.argsort(best_r)[:max(3, k // 2)]
+                idx_grad = np.argsort(-gmag)[:max(3, k - len(idx_small))]
+                sel = np.unique(np.concatenate([idx_small, idx_grad]))
+                move_mask = np.zeros(n, dtype=bool)
+                move_mask[sel] = True
+                c_try, r_try, s_try = polish_slp(centers, max_outer=60, delta0=delta, move_mask=move_mask)
+                if s_try > best_s + 1e-12:
+                    best_s = s_try
+                    best_c = c_try.copy()
+                    best_r = r_try.copy()
+                    centers = c_try
+                    r, ok, info = solve_radii_lp(centers, need_duals=True)
+                    all_scores.append(best_s)
+                else:
+                    delta *= 0.8
+                    if delta < 0.04:
+                        break
+            return best_c, best_r, best_s
+
+        # Dual-guided ascent on centers (fallback/local method)
+        def dual_guided_optimize(centers_init, max_iters=120, step0=0.08):
+            centers = clamp_centers(centers_init.copy())
+            r, ok, info = solve_radii_lp(centers, need_duals=True)
+            if not ok:
+                return centers, r, score_from_radii(r)
+            best_c = centers.copy()
+            best_r = r.copy()
+            best_score = score_from_radii(r)
+            all_scores.append(best_score)
+            step = step0
+            stall = 0
+            for _ in range(max_iters):
+                if time_left() < 0.05:
+                    break
+                dual = info.get('dual', None) if isinstance(info, dict) else None
+                if dual is None:
+                    c2, r2, s2 = polish_slp(centers, max_outer=40, delta0=min(0.08, step))
+                    if s2 > best_score + 1e-12:
+                        centers, r = c2, r2
+                        best_c = c2.copy()
+                        best_r = r2.copy()
+                        best_score = s2
+                        all_scores.append(best_score)
+                        step = min(0.25, step * 1.2)
+                        stall = 0
+                    else:
+                        step *= 0.7
+                        stall += 1
+                        if stall > 6:
+                            noise = rng.normal(0, step * 0.5, size=centers.shape)
+                            centers = clamp_centers(centers + noise)
+                            r, ok, info = solve_radii_lp(centers, need_duals=True)
+                            if not ok:
+                                break
+                            stall = 0
+                    continue
+
+                g = gradient_from_duals(centers, dual)
+                g_norm = np.linalg.norm(g, axis=1) + 1e-12
+                g_scaled = g / g_norm[:, None]
+                s_try = step
+                accepted = False
+                for _ in range(8):
+                    c_try = clamp_centers(centers + s_try * g_scaled)
+                    r_try, ok_try, info_try = solve_radii_lp(c_try, need_duals=True)
+                    if not ok_try:
+                        s_try *= 0.5
+                        continue
+                    sc = score_from_radii(r_try)
+                    if sc > best_score + 1e-12:
+                        centers = c_try
+                        r = r_try
+                        info = info_try
+                        best_c = c_try.copy()
+                        best_r = r_try.copy()
+                        best_score = sc
+                        all_scores.append(best_score)
+                        step = min(0.25, max(step, s_try) * 1.15)
+                        accepted = True
+                        stall = 0
+                        break
+                    else:
+                        s_try *= 0.5
+                if not accepted:
+                    step *= 0.75
+                    stall += 1
+                    if stall % 4 == 0:
+                        noise = rng.normal(0, max(1e-3, step * 0.4), size=centers.shape)
+                        centers = clamp_centers(centers + noise)
+                        r, ok, info = solve_radii_lp(centers, need_duals=True)
+                        if not ok:
+                            break
+                    if stall > 12 and step < 5e-4:
+                        break
+            return best_c, best_r, best_score
+
+        # L-BFGS over centers using LP sensitivities (bilevel)
+        def lbfgs_bilevel(centers_init, max_iters=300):
+            centers0 = clamp_centers(centers_init.copy())
+            if not scipy_available:
+                return dual_guided_optimize(centers0, max_iters=min(100, max_iters), step0=0.08)
+            try:
+                from scipy.optimize import minimize
+            except Exception:
+                return dual_guided_optimize(centers0, max_iters=min(100, max_iters), step0=0.08)
+
+            best_c = centers0.copy()
+            r0, ok0, info0 = solve_radii_lp(centers0, need_duals=True)
+            if not ok0:
+                return dual_guided_optimize(centers0, max_iters=min(100, max_iters), step0=0.08)
+            best_r = r0.copy()
+            best_s = score_from_radii(best_r)
+            all_scores.append(best_s)
+
+            def f_and_g(flat):
+                nonlocal best_c, best_r, best_s
+                if time_left() < 0.03:
+                    # Return current best gradient zero to prompt termination
+                    return -best_s, np.zeros_like(flat)
+                c = flat.reshape(n, 2)
+                c = clamp_centers(c)
+                r, ok, info = solve_radii_lp(c, need_duals=True)
+                if not ok:
+                    # Penalize invalid solve
+                    return 1e3, np.zeros_like(flat)
+                s = score_from_radii(r)
+                dual = info.get('dual', None) if isinstance(info, dict) else None
+                if dual is None:
+                    g = np.zeros((n, 2), dtype=float)
+                else:
+                    g = gradient_from_duals(c, dual)
+                # Track incumbent directly here
+                if s > best_s + 1e-12:
+                    best_s = s
+                    best_c = c.copy()
+                    best_r = r.copy()
+                    all_scores.append(best_s)
+                return -s, -g.reshape(-1)
+
+            bounds = [(eps, 1.0 - eps)] * (2 * n)
+
+            options = {
+                'maxiter': int(max(20, min(max_iters, 400))),
+                'ftol': 1e-12,
+                'gtol': 1e-6,
+                'maxcor': 20,
+                'disp': False
+            }
+
+            x0 = centers0.flatten()
+
+            # Callback to stop on time; best is already tracked in f_and_g, so cb only early-stops
+            def cb(_xk):
+                if time_left() < 0.02:
+                    return True
+                return False
+
+            try:
+                minimize(fun=lambda x: f_and_g(x)[0],
+                         x0=x0,
+                         jac=lambda x: f_and_g(x)[1],
+                         method='L-BFGS-B',
+                         bounds=bounds,
+                         callback=cb,
+                         options=options)
+            except Exception:
+                # Fall back to dual-guided local optimizer
+                return dual_guided_optimize(best_c, max_iters=min(80, max_iters // 2 + 1), step0=0.06)
+
+            # Final LP tighten on best
+            r_best, ok_best, _ = solve_radii_lp(best_c, need_duals=False)
+            if ok_best:
+                best_s = score_from_radii(r_best)
+                best_r = r_best
+                all_scores.append(best_s)
+            return best_c, best_r, best_s
+
+        # Evolutionary exploration around a base solution
+        def evo_explore(base_c, base_r, rounds=30, sigma0=0.05, pop=12):
+            best_c = base_c.copy()
+            best_r = base_r.copy()
+            best_s = score_from_radii(base_r)
+            sigma = sigma0
+            success = 0
+            attempts = 0
+            for _ in range(rounds):
+                if time_left() < 0.1:
+                    break
+                improvements = []
+                for _j in range(pop):
+                    noise = rng.normal(0, sigma, size=best_c.shape)
+                    c_child = clamp_centers(best_c + noise)
+                    r_child, ok, _ = solve_radii_lp(c_child, need_duals=False)
+                    if not ok:
+                        continue
+                    sc = score_from_radii(r_child)
+                    improvements.append((sc, c_child, r_child))
+                if not improvements:
+                    sigma *= 0.7
+                    continue
+                improvements.sort(key=lambda x: -x[0])
+                top_sc, top_c, top_r = improvements[0]
+                attempts += 1
+                if top_sc > best_s + 1e-12:
+                    success += 1
+                    best_s = top_sc
+                    best_c = top_c.copy()
+                    best_r = top_r.copy()
+                    all_scores.append(best_s)
+                    if time_left() > 0.05:
+                        c_ref, r_ref, s_ref = lbfgs_bilevel(best_c, max_iters=80)
+                        if s_ref > best_s + 1e-12:
+                            best_s = s_ref
+                            best_c = c_ref.copy()
+                            best_r = r_ref.copy()
+                            all_scores.append(best_s)
+                    sigma *= 1.1
+                else:
+                    sigma *= 0.85
+                if attempts >= 10:
+                    rate = success / max(1, attempts)
+                    if rate > 0.25:
+                        sigma *= 1.2
+                    elif rate < 0.15:
+                        sigma *= 0.8
+                    attempts = 0
+                    success = 0
+            return best_c, best_r, best_s
+
+        # Aggressive relocation of smallest circles to edges/corners
+        def relocate_worst(centers_init, trials_per_circle=28, k_frac=0.35):
+            centers = clamp_centers(centers_init.copy())
+            r_cur, ok, _ = solve_radii_lp(centers, need_duals=False)
+            if not ok:
+                return centers, r_cur, score_from_radii(r_cur)
+            order = np.argsort(r_cur)
+            k = max(2, int(np.ceil(k_frac * n)))
+            best_centers = centers.copy()
+            best_r = r_cur.copy()
+            best_s = score_from_radii(best_r)
+
+            def gen_candidates():
+                cands = []
+                # Edge-aligned dense candidates
+                for _ in range(trials_per_circle):
+                    t = rng.uniform(0.06, 0.94)
+                    off = rng.uniform(0.015, 0.18)
+                    cands.append([t, off])
+                    cands.append([t, 1.0 - off])
+                    cands.append([off, t])
+                    cands.append([1.0 - off, t])
+                # Corners with jitter
+                corners = np.array([[0.06, 0.06], [0.94, 0.06], [0.06, 0.94], [0.94, 0.94]])
+                for _ in range(max(1, trials_per_circle // 2)):
+                    for c in corners:
+                        jitter = rng.normal(0, 0.035, size=2)
+                        cands.append(np.clip(c + jitter, eps, 1.0 - eps))
+                # Interior scattering
+                for _ in range(trials_per_circle // 2):
+                    cands.append(rng.uniform(0.12, 0.88, size=2))
+                return np.array(cands, dtype=float)
+
+            for idx in order[:k]:
+                if time_left() < 0.03:
+                    break
+                cands = gen_candidates()
+                # Local perturbation
+                local = centers[idx] + rng.normal(0, 0.05, size=(trials_per_circle // 2, 2))
+                local = clamp_centers(local)
+                cands = np.vstack([cands, local, centers[idx][None, :]])
+                # Evaluate each candidate by moving only this circle
+                best_local_s = best_s
+                best_local_c = best_centers.copy()
+                best_local_r = best_r.copy()
+                for cand in cands:
+                    tmp_c = best_centers.copy()
+                    tmp_c[idx] = cand
+                    r_new, ok2, _ = solve_radii_lp(tmp_c, need_duals=False)
+                    if not ok2:
+                        continue
+                    sc = score_from_radii(r_new)
+                    if sc > best_local_s + 1e-12:
+                        best_local_s = sc
+                        best_local_c = tmp_c
+                        best_local_r = r_new
+                if best_local_s > best_s + 1e-12:
+                    best_s = best_local_s
+                    best_centers = best_local_c
+                    best_r = best_local_r
+                    all_scores.append(best_s)
+            return best_centers, best_r, best_s
+
+        # Seeding strategies
+        def hex_seed(N):
+            rows = int(np.floor(np.sqrt(N)))
+            cols = int(np.ceil(N / max(1, rows)))
+            xs = np.linspace(0.12, 0.88, cols)
+            ys = np.linspace(0.12, 0.88, rows)
+            centers = []
+            idx = 0
+            for ri, yy in enumerate(ys):
+                offset = (xs[1] - xs[0]) * 0.5 if (ri % 2 == 1 and len(xs) > 1) else 0.0
+                for x in xs:
+                    if idx >= N:
+                        break
+                    xi = np.clip(x + offset, 0.04, 0.96)
+                    jitter = 0.02
+                    centers.append([xi + rng.normal(0, jitter), yy + rng.normal(0, jitter)])
+                    idx += 1
+                if idx >= N:
+                    break
+            centers = np.array(centers, dtype=float)
+            while centers.shape[0] < N:
+                centers = np.vstack([centers, rng.uniform(0.1, 0.9, size=(1, 2))])
+            return clamp_centers(centers[:N])
+
+        def uniform_seed(N):
+            return clamp_centers(rng.uniform(0.08, 0.92, size=(N, 2)))
+
+        def edge_ring_seed(N):
+            per_side = max(5, N // 4)
+            centers = []
+            offset = 0.08
+            tvals = np.linspace(0.08, 0.92, per_side)
+            for t in tvals:
+                centers.append([t, offset]); centers.append([t, 1.0 - offset])
+            for t in tvals:
+                centers.append([offset, t]); centers.append([1.0 - offset, t])
+            centers = np.array(centers, dtype=float)
+            if centers.shape[0] < N:
+                extra = clamp_centers(rng.uniform(0.2, 0.8, size=(N - centers.shape[0], 2)))
+                centers = np.vstack([centers, extra])
+            return clamp_centers(centers[:N])
+
+        def farthest_seed(N):
+            grid = np.stack(np.meshgrid(np.linspace(0.08, 0.92, 31), np.linspace(0.08, 0.92, 31)), axis=-1).reshape(-1, 2)
+            idx0 = rng.choice(grid.shape[0], size=1, replace=False)[0]
+            centers = [grid[idx0]]
+            while len(centers) < N:
+                C = np.array(centers)
+                D = np.sqrt(np.maximum(np.sum((grid[:, None, :] - C[None, :, :])**2, axis=2), 0.0))
+                dmin = np.min(D, axis=1)
+                cand_idx = np.argmax(dmin)
+                centers.append(grid[cand_idx])
+            return clamp_centers(np.array(centers))
+
+        def corner_spokes_seed(N):
+            corners = np.array([[0.12, 0.12], [0.88, 0.12],
+                                [0.12, 0.88], [0.88, 0.88]], dtype=float)
+            centers = []
+            k = N // 4
+            rem = N - 4 * k
+            for c in corners:
+                for _ in range(k):
+                    ang = rng.uniform(0, 2 * np.pi)
+                    rad = rng.uniform(0.0, 0.26)
+                    pt = c + rad * np.array([np.cos(ang), np.sin(ang)])
+                    centers.append(pt)
+            for _ in range(rem):
+                centers.append(rng.uniform(0.2, 0.8, size=2))
+            centers = np.array(centers, dtype=float)
+            return clamp_centers(centers)
+
+        def edge_bias_hex_seed(N):
+            base = hex_seed(N)
+            alpha = rng.uniform(0.9, 1.1)
+            scaled = 0.5 + alpha * (base - 0.5)
+            mask = rng.random(N) < 0.5
+            scaled[mask, :] = np.clip(
+                scaled[mask, :] + np.sign(scaled[mask, :] - 0.5) * 0.07,
+                eps, 1.0 - eps
+            )
+            return clamp_centers(scaled)
+
+        init_candidates = []
+        if isinstance(current_best_solution, np.ndarray):
+            try:
+                cb = current_best_solution.astype(float)
+                if cb.shape[0] == n and cb.shape[1] >= 2:
+                    centers_cb = clamp_centers(cb[:, :2])
+                    init_candidates.append(centers_cb)
+                    for _ in range(4):
+                        init_candidates.append(
+                            clamp_centers(centers_cb + rng.normal(0, 0.01, size=centers_cb.shape))
+                        )
+            except Exception:
+                pass
+        init_candidates.append(hex_seed(n))
+        init_candidates.append(uniform_seed(n))
+        init_candidates.append(edge_ring_seed(n))
+        init_candidates.append(farthest_seed(n))
+        init_candidates.append(corner_spokes_seed(n))
+        init_candidates.append(edge_bias_hex_seed(n))
+        for _ in range(4):
+            init_candidates.append(uniform_seed(n))
+
+        # Evaluate seeds
+        scored_seeds = []
+        for init_centers in init_candidates:
+            if time_left() < 0.4:
+                break
+            c0 = init_centers.copy()
+            r0, _, _ = solve_radii_lp(c0, need_duals=False)
+            sc0 = score_from_radii(r0)
+            scored_seeds.append((sc0, c0, r0))
+            all_scores.append(sc0)
+
+        scored_seeds.sort(key=lambda x: -x[0])
+        top_k = min(8, len(scored_seeds))
+        top_seeds = scored_seeds[:top_k] if top_k > 0 else []
+
+        best_circles = None
+        best_score = -1e18
+
+        def try_update_best(c, r):
+            nonlocal best_circles, best_score
+            sc = score_from_radii(r)
+            if best_circles is None or sc > best_score + 1e-12:
+                best_score = sc
+                best_circles = np.hstack([c, r.reshape(-1, 1)])
+                all_scores.append(best_score)
+                return True
+            return False
+
+        # Run bilevel L-BFGS + block SLP from top seeds
+        for _, c_init, _ in top_seeds:
+            if time_left() < 0.4:
+                break
+            max_iters = int(250 * min(1.0, max(0.25, time_left() / (time_budget + 1e-9))))
+            c1, r1, _ = lbfgs_bilevel(c_init, max_iters=max(60, max_iters))
+            try_update_best(c1, r1)
+            if time_left() < 0.15:
+                break
+            c2, r2, _ = block_slp_boost(c1, rounds=4, k=10, delta=0.18)
+            try_update_best(c2, r2)
+
+        # If nothing yet, start from a random
+        if best_circles is None:
+            c0 = uniform_seed(n)
+            r0, _, _ = solve_radii_lp(c0, need_duals=False)
+            try_update_best(c0, r0)
+
+        # Optional CMA-ES global search over centers (if available)
+        cma_available = True
+        try:
+            import cma
+        except Exception:
+            cma_available = False
+
+        if cma_available and time_left() > 0.6:
+            bounds = [0.0, 1.0]
+
+            def obj(flat):
+                c = flat.reshape(n, 2)
+                c = clamp_centers(c)
+                r, ok, _ = solve_radii_lp(c, need_duals=False)
+                if not ok:
+                    return 1e3
+                return -score_from_radii(r)
+
+            restarts = 2 + (1 if time_left() > 6.0 else 0)
+            incumbent_c = best_circles[:, :2].copy()
+            incumbent_r = best_circles[:, 2].copy()
+            incumbent_s = score_from_radii(incumbent_r)
+
+            for ri in range(restarts):
+                if time_left() < 0.5:
+                    break
+                x0 = incumbent_c.flatten()
+                sigma0 = 0.15 if ri == 0 else 0.2
+                popsize = 18 + 8 * ri
+                opts = {
+                    'bounds': [bounds[0], bounds[1]],
+                    'seed': int(rng.integers(1, 10**9)),
+                    'popsize': popsize,
+                    'maxiter': 1000000,
+                    'verb_log': 0,
+                    'verb_disp': 0,
+                    'tolx': 1e-12,
+                }
+                es = cma.CMAEvolutionStrategy(x0, sigma0, opts)
+                while (not es.stop()) and time_left() > 0.3:
+                    X = es.ask()
+                    vals = [obj(x) for x in X]
+                    es.tell(X, vals)
+                    best_idx = int(np.argmin(vals))
+                    best_flat = np.array(X[best_idx], dtype=float)
+                    c_candidate = clamp_centers(best_flat.reshape(n, 2))
+                    r_candidate, ok, _ = solve_radii_lp(c_candidate, need_duals=False)
+                    if ok:
+                        sc = score_from_radii(r_candidate)
+                        if sc > incumbent_s + 1e-12:
+                            incumbent_s = sc
+                            incumbent_c = c_candidate.copy()
+                            incumbent_r = r_candidate.copy()
+                            all_scores.append(incumbent_s)
+                    if time_left() < 0.5:
+                        break
+                try_update_best(incumbent_c, incumbent_r)
+
+        # Aggressive relocation of smallest circles
+        if time_left() > 0.2:
+            centers = best_circles[:, :2].copy()
+            centers2, r2, _ = relocate_worst(centers, trials_per_circle=30, k_frac=0.38)
+            try_update_best(centers2, r2)
+            if time_left() > 0.2:
+                c3, r3, _ = lbfgs_bilevel(centers2, max_iters=100)
+                try_update_best(c3, r3)
+
+        # Evolutionary exploration + local bilevel polish
+        if time_left() > 0.35:
+            centers = best_circles[:, :2].copy()
+            r = best_circles[:, 2].copy()
+            rounds = int(16 + 100 * min(1.0, time_left() / (time_budget + 1e-9)))
+            c_evo, r_evo, _ = evo_explore(centers, r, rounds=rounds, sigma0=0.05, pop=14)
+            try_update_best(c_evo, r_evo)
+
+        # Final SLP polish and LP tighten
+        if time_left() > 0.15:
+            c_final, r_final, _ = polish_slp(best_circles[:, :2].copy(), max_outer=100, delta0=0.08, move_mask=None)
+            try_update_best(c_final, r_final)
+
+        try:
+            centers_final = best_circles[:, :2]
+            r_final, _, _ = solve_radii_lp(centers_final, need_duals=False)
+            best_circles = np.hstack([centers_final, r_final.reshape(-1, 1)])
+            best_score = score_from_radii(r_final)
+            if not all_scores or best_score > max(all_scores) + 1e-12:
+                all_scores.append(best_score)
+        except Exception:
+            pass
+
+        return {
+            'circles': best_circles.astype(float),
+            'all_scores': [float(s) for s in all_scores] if all_scores else [float(best_score)]
+        }
+    ```
+    </section>

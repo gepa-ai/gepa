@@ -117,9 +117,90 @@ The `generate_api_docs.py` script provides several automation features:
 | `python scripts/generate_api_docs.py --validate` | Validate all API imports work |
 | `python scripts/generate_api_docs.py --print-nav` | Print nav structure for mkdocs.yml |
 
+## Social Media Preview Screenshots
+
+Social media previews are automatically generated for all key pages during CI builds. When users share links on Twitter, LinkedIn, Facebook, etc., they see beautiful preview cards.
+
+### How It Works
+
+1. **Local Development**: No impact - script only runs in CI
+2. **CI Build**: After `mkdocs build`, Playwright captures page screenshots at 1200×630px
+3. **Screenshot Updates**: Script updates `og:image` tags in HTML to point to generated previews
+4. **Deploy**: Screenshots are included in the deployed site
+
+### Configured Pages
+
+The following pages get automatic social preview screenshots:
+
+| Page | Screenshot Path | Purpose |
+|------|-----------------|---------|
+| Home | `/assets/social/home.png` | Main landing page preview |
+| Showcase (Use Cases) | `/assets/social/showcase.png` | Production use cases |
+| About | `/assets/social/about.png` | About GEPA |
+| Blog Index | `/assets/social/blog.png` | Blog feed |
+| Guides | `/assets/social/guides.png` | Documentation guides |
+| API Docs | `/assets/social/api.png` | API reference |
+| Tutorials | `/assets/social/tutorials.png` | Tutorial notebooks |
+
+### Custom Social Images
+
+To provide a custom social preview image for a blog post or page, add OG meta tags to the frontmatter:
+
+```yaml
+---
+title: My Blog Post
+meta:
+  - property: og:image
+    content: /blog/2026/02/18/my-post/custom-header.png
+  - name: twitter:image
+    content: /blog/2026/02/18/my-post/custom-header.png
+---
+```
+
+The script will skip updating OG tags for pages that already have custom images defined.
+
+### Adding More Pages
+
+To include additional pages in screenshot generation, edit `docs/scripts/generate_social_screenshots.py`:
+
+```python
+def get_pages_to_screenshot() -> list[tuple[str, str]]:
+    return [
+        # Add your page here
+        ("site/path/to/page/index.html", "site/assets/social/page-name.png"),
+    ]
+```
+
+And update the `og_updates` dictionary:
+
+```python
+og_updates = {
+    # Add corresponding update here
+    "path/to/page/index.html": "/assets/social/page-name.png",
+}
+```
+
+### Screenshot Generation Script
+
+Location: `docs/scripts/generate_social_screenshots.py`
+
+**Environment Detection**: Only runs in CI (`CI` environment variable must be set)
+
+**Dependencies**:
+- `playwright>=1.40.0` - Browser automation
+- `pillow>=10.0.0` - Image processing
+
+**Workflow Steps**:
+1. Install Playwright browsers with system dependencies
+2. Render each configured page in a 1200×630px viewport
+3. Take screenshot and save to `/assets/social/`
+4. Update OG image tags in HTML files to point to screenshots
+
 ## Deployment
 
 Documentation is automatically built and deployed to GitHub Pages on push to main via GitHub Actions.
+
+Staging deployments to Cloudflare Pages work identically - they also include social preview screenshots.
 
 ### Troubleshooting
 

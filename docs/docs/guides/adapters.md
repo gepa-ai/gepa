@@ -1,5 +1,10 @@
 # Creating Adapters
 
+!!! tip "Most users don't need a custom adapter"
+    The [`optimize_anything`](quickstart.md) API handles most use cases — just write an evaluator function.
+    Custom adapters are for advanced scenarios where you need full control over batch evaluation,
+    trace capture, or reflective dataset formatting.
+
 GEPA can optimize any system consisting of text components by implementing the `GEPAAdapter` protocol. This guide explains how to create custom adapters.
 
 ## The GEPAAdapter Protocol

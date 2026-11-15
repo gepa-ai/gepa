@@ -1,0 +1,39 @@
+<svg viewBox="0 0 1280 1280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1280" height="1280" fill="#f0f8ff" />
+  
+  <!-- Bicycle Wheels -->
+  <circle cx="400" cy="900" r="150" fill="none" stroke="#333" stroke-width="20" />
+  <circle cx="400" cy="900" r="130" fill="none" stroke="#ccc" stroke-width="2" />
+  <circle cx="880" cy="900" r="150" fill="none" stroke="#333" stroke-width="20" />
+  <circle cx="880" cy="900" r="130" fill="none" stroke="#ccc" stroke-width="2" />
+  
+  <!-- Bicycle Frame -->
+  <path d="M400 900 L640 900 L800 650 L500 650 Z" fill="none" stroke="#d32f2f" stroke-width="25" stroke-linejoin="round" />
+  <line x1="880" y1="900" x2="800" y2="600" stroke="#d32f2f" stroke-width="25" />
+  <line x1="750" y1="600" x2="850" y2="600" stroke="#333" stroke-width="20" stroke-linecap="round" />
+  
+  <!-- Pelican Body -->
+  <ellipse cx="600" cy="550" rx="120" ry="180" fill="#ffffff" stroke="#ddd" stroke-width="2" />
+  
+  <!-- Pelican Neck and Head -->
+  <path d="M650 400 Q750 350 720 200" fill="none" stroke="#ffffff" stroke-width="60" stroke-linecap="round" />
+  <circle cx="720" cy="200" r="50" fill="#ffffff" />
+  
+  <!-- Eye -->
+  <circle cx="740" cy="185" r="8" fill="#000" />
+  
+  <!-- Beak (Large Pouch) -->
+  <path d="M750 200 L950 230 Q950 350 750 320 Z" fill="#ffb74d" stroke="#f57c00" stroke-width="5" />
+  
+  <!-- Wings (Handlebars grip) -->
+  <path d="M600 550 Q750 550 800 600" fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" />
+  <path d="M500 550 Q400 550 350 650" fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" />
+
+  <!-- Legs/Pedals -->
+  <line x1="600" y1="730" x2="640" y2="850" stroke="#ffa726" stroke-width="15" />
+  <line x1="610" y1="850" x2="670" y2="850" stroke="#333" stroke-width="10" stroke-linecap="round" />
+  
+  <line x1="550" y1="730" x2="520" y2="800" stroke="#ffa726" stroke-width="15" />
+  <line x1="490" y1="800" x2="550" y2="800" stroke="#333" stroke-width="10" stroke-linecap="round" />
+</svg>

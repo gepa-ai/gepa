@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .opik_adapter import OpikAdapter, OpikDataInst  # noqa: F401
+from .opik_adapter import OpikAdapter, OpikDataInst
 
 __all__ = ["OpikAdapter", "OpikDataInst"]

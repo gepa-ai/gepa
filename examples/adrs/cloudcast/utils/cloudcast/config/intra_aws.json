@@ -1,0 +1,22 @@
+{
+    "source_node": "aws:ap-northeast-1",
+    "dest_nodes": ["aws:me-south-1", 
+        "aws:eu-south-1",
+        "aws:us-west-2",
+        "aws:us-east-1", 
+        "aws:sa-east-1",
+        "aws:ap-southeast-1"
+    ],
+    "data_vol": 300,
+    "num_partitions": 10,
+    "ingress_limit": {
+        "aws": 10, 
+        "gcp": 16, 
+        "azure": 16
+    }, 
+    "egress_limit": {
+        "aws": 5, 
+        "gcp": 7, 
+        "azure": 16
+    }
+}

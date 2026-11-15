@@ -1,0 +1,51 @@
+{% extends "main.html" %}
+
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'assets/index-styles.css' | url }}">
+{% endblock %}
+
+{% block tabs %}{% endblock %}
+
+{% block header %}
+<header class="md-header md-header--shadow md-header--landing" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header') }}">
+    <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+      <img src="{{ 'static/img/gepa_logo_with_text_white.svg' | url }}" alt="logo">
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      {% set icon = config.theme.icon.menu or "material/menu" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </label>
+    <div class="landing-nav">
+      <a href="guides/use-cases/" class="landing-nav__link">Showcase</a>
+      <a href="blog/" class="landing-nav__link landing-nav__link--highlight">Blog<span class="landing-nav__badge">New</span></a>
+      <a href="guides/" class="landing-nav__link">Docs</a>
+      <a href="about/" class="landing-nav__link landing-nav__link--hide-mobile">About</a>
+    </div>
+    {% if config.theme.palette %}
+      {% if not config.theme.palette is mapping %}
+        {% include "partials/palette.html" %}
+      {% endif %}
+    {% endif %}
+    {% if not config.theme.palette is mapping %}
+      {% include "partials/javascripts/palette.html" %}
+    {% endif %}
+    {% if "material/search" in config.plugins %}
+      {% set search = config.plugins["material/search"] | attr("config") %}
+      {% if search.enabled %}
+        <label class="md-header__button md-icon" for="__search">
+          {% set icon = config.theme.icon.search or "material/magnify" %}
+          {% include ".icons/" ~ icon ~ ".svg" %}
+        </label>
+        {% include "partials/search.html" %}
+      {% endif %}
+    {% endif %}
+    {% if config.repo_url %}
+      <div class="md-header__source">
+        {% include "partials/source.html" %}
+      </div>
+    {% endif %}
+  </nav>
+</header>
+{% endblock %}

@@ -1,25 +1,221 @@
 /* Custom styles for GEPA documentation */
 
-/* Make the header logo larger (2.5x default size) */
+/* ============================================
+   Deep Research Theme – Color Overrides
+   ============================================ */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #212C4D;
+  --md-primary-fg-color--light: #0096C7;
+  --md-primary-fg-color--dark: #023E8A;
+  --md-accent-fg-color: #0077B6;
+  --md-accent-fg-color--transparent: rgba(0, 119, 182, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #212C4D;
+  --md-primary-fg-color--light: #0096C7;
+  --md-primary-fg-color--dark: #023E8A;
+  --md-accent-fg-color: #90E0EF;
+  --md-accent-fg-color--transparent: rgba(144, 224, 239, 0.1);
+}
+
+/* Gradient-styled code text (e.g. "optimize_anything" in blog titles) */
+.gradient-code {
+    background: linear-gradient(135deg, #023E8A, #0077B6, #00B4D8, #48CAE4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-family: var(--md-code-font-family, SFMono-Regular, Consolas, Menlo, monospace);
+}
+
+[data-md-color-scheme="slate"] .gradient-code {
+    background: linear-gradient(135deg, #60A5FA, #818CF8, #A78BFA);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Slightly increase base body text size from Material default of 0.8rem */
+.md-typeset {
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+/* Make content links clearly distinguishable from text */
+.md-content .md-typeset a {
+    text-decoration: underline;
+    text-decoration-color: rgba(0, 119, 182, 0.4);
+    text-underline-offset: 2px;
+    transition: text-decoration-color 0.2s;
+}
+
+.md-content .md-typeset a:hover {
+    text-decoration-color: currentColor;
+}
+
+[data-md-color-scheme="slate"] .md-content .md-typeset a {
+    text-decoration-color: rgba(144, 224, 239, 0.4);
+}
+
+/* Exclude underlines from UI-like links within content */
+.md-content .md-typeset .headerlink,
+.md-content .md-typeset .md-nav__link,
+.md-content .md-typeset .md-source,
+.md-content .md-typeset .blog-subscribe a,
+.md-content .md-typeset .blog-post-authors a,
+.md-content .md-typeset .people-grid-note a,
+.md-content .md-typeset .fn-ref,
+.md-content .md-typeset .fn-backref,
+.md-content .md-typeset .marquee-track a {
+    text-decoration: none;
+}
+
+/* Hide separate "GEPA" title text since it's in the logo,
+   but keep the element in flex layout as a spacer */
+.md-header__title {
+    visibility: hidden;
+}
+
+/* Hide "GEPA" text in the mobile sidebar drawer (logo already has it) */
+label.md-nav__title[for="__drawer"] {
+    font-size: 0;
+    line-height: 0;
+    padding-bottom: 0;
+}
+
+label.md-nav__title[for="__drawer"] .md-nav__button {
+    font-size: 1rem;
+}
+
+/* ============================================
+   Compact single-row header (all pages)
+   ============================================ */
+
+.md-header__inner {
+    height: 2.4rem;
+    max-width: none;
+    padding: 0 1.5rem;
+}
+
+@media screen and (max-width: 76.25em) {
+    .md-header__inner {
+        padding: 0 0.2rem;
+    }
+}
+
+/* Logo: prevent clipping, allow full width */
+.md-header__button.md-logo {
+    flex-shrink: 0;
+    overflow: visible;
+    padding: 2px 4px;
+    margin-right: 0.5rem;
+}
+
 .md-header__button.md-logo img,
 .md-header__button.md-logo svg {
-    height: 60px;  /* Default is 24px, this is 2.5x */
+    height: 28px;
     width: auto;
 }
 
-/* Adjust the header to accommodate the larger logo */
-.md-header__button.md-logo {
-    padding: 4px;
+.md-header__button {
+    padding: 2px 6px;
 }
 
-/* Make the site title (GEPA) text larger */
-.md-header__title {
-    font-size: 1.4rem;  /* Default is ~0.9rem */
-    font-weight: 600;
+/* Nav links fill the middle, push to the right */
+.landing-nav {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    margin-right: 0.25rem;
 }
 
-.md-header__topic {
-    font-size: 1.4rem;
+.landing-nav__link {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.3rem 0.7rem;
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    transition: color 0.15s;
+    white-space: nowrap;
+}
+
+.landing-nav__link:hover {
+    color: #fff;
+}
+
+/* Active nav link */
+.landing-nav__link--active {
+    color: #fff;
+}
+
+/* Highlighted nav link (button-like) */
+.landing-nav__link--highlight {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    color: #fff !important;
+    position: relative;
+    padding: 0.25rem 0.65rem !important;
+    transition: all 0.25s ease;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.08);
+}
+
+.landing-nav__link--highlight:hover {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.14));
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 14px rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+}
+
+/* "New" badge */
+.landing-nav__badge {
+    font-size: 0.5rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-left: 5px;
+    position: relative;
+    top: -1px;
+    line-height: 1.4;
+    display: inline-block;
+    animation: badge-pulse 2s ease-in-out infinite;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.4);
+}
+
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Push repo source to far right */
+.md-header__source {
+    margin-left: auto;
+}
+
+/* Landing page: wider nav link spacing (only 3 links) */
+.md-header--landing .landing-nav__link {
+    padding: 0.3rem 0.9rem;
+}
+
+/* Hide nav links on small screens — sidebar/drawer handles navigation.
+   Keep them visible on the landing page (core links fit fine). */
+@media screen and (max-width: 40em) {
+    .md-header:not(.md-header--landing) .landing-nav {
+        display: none;
+    }
+    /* When landing-nav is hidden, push palette/search/toc icons to the right */
+    .md-header:not(.md-header--landing) .landing-nav + * {
+        margin-left: auto;
+    }
+    .md-header--landing .landing-nav__link--hide-mobile {
+        display: none;
+    }
 }
 
 /* ============================================
@@ -193,4 +389,637 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+/* ============================================
+   Blog: Clean, Consistent Styling
+   ============================================ */
+
+/* --- Blog listing page --- */
+
+/* Blog subscribe link (appended via template at bottom of listing) */
+.blog-subscribe {
+    font-size: 0.85rem;
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.blog-subscribe a {
+    color: var(--md-default-fg-color--lighter);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.blog-subscribe a:hover {
+    color: var(--md-primary-fg-color);
+}
+
+/* Blog listing: hide author avatar images */
+.md-post--excerpt .md-post__authors {
+    display: none;
+}
+
+/* Blog post listing: compact spacing */
+.md-post {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-post:last-child {
+    border-bottom: none;
+}
+
+/* Post metadata: date and category — consistent secondary text size */
+.md-post__meta {
+    font-size: 0.85rem;
+    color: var(--md-default-fg-color--light);
+    margin-bottom: 0.25rem;
+}
+
+/* Tighten heading margin inside listing cards */
+.md-post--excerpt .md-post__content h1,
+.md-post--excerpt .md-post__content h2 {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* Blog listing: show only the title, hide excerpt text and "Continue reading" */
+.md-post--excerpt .md-post__content > :not(h1):not(h2) {
+    display: none !important;
+}
+
+/* Blog post title links (listing page) */
+.md-post .md-post__content h1 a,
+.md-post .md-post__content h2 a {
+    text-decoration: none;
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+    transition: color 0.2s;
+}
+
+.md-post .md-post__content h1 a:hover,
+.md-post .md-post__content h2 a:hover {
+    color: var(--md-primary-fg-color);
+}
+
+/* Blog categories/tags: subtle pills */
+.md-post .md-categories a {
+    font-size: 0.85rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 12px;
+    background: rgba(33, 44, 77, 0.1);
+    color: var(--md-primary-fg-color);
+    text-decoration: none;
+    border: 1px solid rgba(33, 44, 77, 0.2);
+    transition: all 0.2s;
+}
+
+.md-post .md-categories a:hover {
+    background: rgba(33, 44, 77, 0.2);
+    border-color: rgba(33, 44, 77, 0.4);
+}
+
+
+/* Dark mode adjustments for blog listing */
+[data-md-color-scheme="slate"] .md-post .md-categories a {
+    background: rgba(33, 44, 77, 0.08);
+}
+
+/* Figure captions: allow full width and remove gap above caption */
+.md-typeset figure > br {
+    display: none;
+}
+.md-typeset figcaption {
+    max-width: 100%;
+    margin-top: 0.25em;
+}
+
+/* --- Blog post page: academic paper style --- */
+
+/* Ensure the post content container fills viewport width */
+.md-content--post {
+    width: 100%;
+    overflow-wrap: break-word;
+}
+
+/* Constrain post article width for readability */
+.md-content--post article.md-content__inner {
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 1rem 1.2rem 0;
+    box-sizing: border-box;
+}
+
+/* Prevent wide elements from causing page-level horizontal scroll */
+.blog-post-body pre,
+.blog-post-body .arithmatex {
+    overflow-x: auto;
+}
+
+/* Blog post header – flush-left, vLLM-inspired */
+.blog-post-header {
+    text-align: left;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.blog-post-header .blog-post-title {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 0.5rem;
+    color: var(--md-default-fg-color);
+}
+
+.blog-post-byline {
+    font-size: 0.8rem;
+    color: var(--md-default-fg-color--light);
+    line-height: 1.6;
+}
+
+.blog-post-date {
+    color: var(--md-default-fg-color--light);
+}
+
+/* Bullet separator between date and authors */
+.blog-post-date + .blog-post-authors::before {
+    content: "\2022";
+    margin: 0 0.4rem;
+    color: var(--md-default-fg-color--lighter);
+}
+
+.blog-post-authors a {
+    color: var(--md-accent-fg-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.blog-post-authors a:hover {
+    text-decoration: underline;
+}
+
+.blog-post-equal-contrib {
+    font-size: 0.78rem;
+    color: var(--md-default-fg-color--lighter);
+}
+
+/* Hide the duplicate h1 rendered from page.content */
+.blog-post-body h1:first-of-type {
+    display: none;
+}
+
+/* Post body typography */
+.blog-post-body {
+    line-height: 1.8;
+}
+
+/* Tighter spacing for bulleted / numbered lists */
+.blog-post-body li {
+    margin-bottom: 0;
+    line-height: 1.5;
+}
+
+@media screen and (max-width: 76.25em) {
+    .blog-post-header .blog-post-title {
+        font-size: 1.6rem;
+    }
+    .md-content--post article.md-content__inner {
+        padding-top: 0.25rem;
+    }
+}
+
+/* ============================================
+   Appendix Tiles – card-style collapsibles
+   ============================================
+
+   DOM: article.md-typeset > .blog-post-body > .appendix-tiles > details.example
+   Material targets:  .md-typeset details.example          (0,2,1)  border-color
+                      .md-typeset .example > summary       (0,2,1)  background-color
+                      .md-typeset .example > summary:before (0,2,1) background-color, mask
+   Our selectors use .md-typeset .appendix-tiles details[class] (0,3,1) to win. */
+
+/* --- Card container --- */
+.md-typeset .appendix-tiles details[class] {
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0;
+    overflow: hidden;
+    background: var(--md-default-bg-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    font-size: 0.875rem;
+}
+
+.md-typeset .appendix-tiles details[class]:hover {
+    border-color: var(--md-primary-fg-color--light);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.md-typeset .appendix-tiles details[class][open] {
+    border-color: var(--md-primary-fg-color--light);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* --- Summary row --- */
+.md-typeset .appendix-tiles details[class] > summary {
+    padding: 0.85rem 1.1rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    border: none;
+    background: transparent;
+    min-height: unset;
+    color: var(--md-default-fg-color);
+}
+
+/* Left chevron – same size as summary text, vertically aligned */
+.md-typeset .appendix-tiles details[class] > summary::before {
+    content: "▶";
+    font-size: 0.9rem;
+    line-height: 1;
+    display: inline-block;
+    position: static;
+    transition: transform 0.2s ease;
+    color: var(--md-default-fg-color--light);
+    flex-shrink: 0;
+    width: auto;
+    height: auto;
+    background-color: transparent;
+    mask-image: none;
+    -webkit-mask-image: none;
+    transform: none;
+}
+
+.md-typeset .appendix-tiles details[class][open] > summary::before {
+    transform: rotate(90deg);
+}
+
+/* Hide Material's right-side toggle arrow */
+.md-typeset .appendix-tiles details[class] > summary::after {
+    display: none;
+}
+
+/* Remove webkit default marker */
+.md-typeset .appendix-tiles details summary::-webkit-details-marker {
+    display: none;
+}
+
+/* --- Content area --- */
+.md-typeset .appendix-tiles details[class] > :not(summary) {
+    padding: 0 1.1rem 0.85rem;
+}
+
+.md-typeset .appendix-tiles details[class] p {
+    margin-top: 0.4em !important;
+    margin-bottom: 0.4em !important;
+}
+
+.md-typeset .appendix-tiles details pre {
+    overflow-x: auto;
+}
+
+.md-typeset .scrollable-code .highlight {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* ============================================
+   About Page – People Grid
+   ============================================ */
+
+.people-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 1.25rem;
+    margin: 1.5rem 0 2.5rem;
+}
+
+.people-grid--advisors {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.person-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    text-decoration: none !important;
+    padding: 1rem 0.5rem;
+    border-radius: 0.75rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    cursor: pointer;
+}
+
+.person-card:hover {
+    transform: translateY(-4px);
+    background: var(--md-accent-fg-color--transparent);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* Avatar: circular image (override Material's img { height: auto }) */
+img.person-avatar,
+div.person-avatar {
+    width: 88px;
+    height: 88px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 0.6rem;
+    border: 3px solid var(--md-default-fg-color--lightest);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background: var(--md-default-fg-color--lightest);
+    flex-shrink: 0;
+}
+
+.person-card:hover .person-avatar {
+    border-color: var(--md-primary-fg-color);
+    box-shadow: 0 0 0 3px var(--md-accent-fg-color--transparent);
+}
+
+/* Avatar: initials fallback */
+.person-avatar--initials {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--md-primary-fg-color), var(--md-primary-fg-color--light));
+    border-color: transparent;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: 0.03em;
+}
+
+.person-avatar--initials::before {
+    content: attr(data-initials);
+}
+
+.person-card:hover .person-avatar--initials {
+    border-color: transparent;
+    box-shadow: 0 0 0 3px var(--md-accent-fg-color--transparent);
+}
+
+/* Name and role text */
+.person-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--md-default-fg-color);
+    line-height: 1.3;
+}
+
+.person-role {
+    font-size: 0.7rem;
+    color: var(--md-default-fg-color--light);
+    margin-top: 0.15rem;
+    line-height: 1.3;
+}
+
+/* Note below contributors grid */
+.people-grid-note {
+    font-size: 0.78rem;
+    color: var(--md-default-fg-color--light);
+    text-align: center;
+    margin-top: -1.5rem;
+    margin-bottom: 2rem;
+}
+
+.people-grid-note a {
+    color: var(--md-primary-fg-color);
+    text-decoration: none;
+}
+
+.people-grid-note a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive: smaller avatars on mobile */
+@media screen and (max-width: 40em) {
+    .people-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 0.75rem;
+    }
+    .people-grid--advisors {
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    }
+    img.person-avatar,
+    div.person-avatar {
+        width: 68px;
+        height: 68px;
+    }
+    .person-card {
+        padding: 0.75rem 0.25rem;
+    }
+    .person-avatar--initials {
+        font-size: 1.1rem;
+    }
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .person-card:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+[data-md-color-scheme="slate"] .person-avatar {
+    border-color: var(--md-default-fg-color--lighter);
+}
+
+/* ============================================
+   Blog Footnotes (hand-rolled, works inside HTML)
+   ============================================ */
+
+/* Superscript reference inside figcaptions / HTML blocks */
+.fn-ref {
+    text-decoration: none;
+    color: var(--md-primary-fg-color);
+    font-weight: 600;
+}
+
+.fn-ref:hover {
+    text-decoration: underline;
+}
+
+.fn-ref sup {
+    font-size: 0.7em;
+    line-height: 0;
+    vertical-align: super;
+}
+
+/* Footnote section at the bottom of the post */
+.blog-footnotes {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+    font-size: 0.82rem;
+    color: var(--md-default-fg-color--light);
+    line-height: 1.6;
+}
+
+.blog-footnotes ol {
+    padding-left: 1.4em;
+    margin: 0;
+}
+
+.blog-footnotes li {
+    margin-bottom: 0.35em;
+}
+
+.blog-footnotes li:target {
+    background: var(--md-accent-fg-color--transparent);
+    border-radius: 3px;
+    padding: 0.1em 0.25em;
+}
+
+.fn-backref {
+    text-decoration: none;
+    color: var(--md-primary-fg-color);
+    margin-left: 0.25em;
+    font-size: 0.9em;
+}
+
+.fn-backref:hover {
+    text-decoration: underline;
+}
+
+/* --- Dark mode --- */
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class] {
+    background: var(--md-code-bg-color);
+    border-color: var(--md-default-fg-color--lighter);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class]:hover {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class][open] {
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   TOC Drawer – mobile table of contents
+   ============================================ */
+
+/* Toggle button: hidden on wide screens where the TOC sidebar is visible.
+   Use .md-header to beat Material's .md-header__button { display: inline-block }. */
+.md-header button.toc-toggle {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: currentColor;
+}
+
+.toc-toggle svg {
+    width: 1.2rem;
+    height: 1.2rem;
+    fill: currentColor;
+}
+
+/* Show on screens narrower than Material's right-sidebar breakpoint */
+@media screen and (max-width: 60em) {
+    .md-header button.toc-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+/* Hide on landing page (no TOC there) */
+.md-header--landing .toc-toggle {
+    display: none !important;
+}
+
+/* --- Overlay --- */
+.toc-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+[data-md-toc-open] .toc-overlay {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* --- Drawer panel --- */
+.toc-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    width: 280px;
+    max-width: 85vw;
+    background: var(--md-default-bg-color);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem 0;
+}
+
+[data-md-toc-open] .toc-drawer {
+    transform: translateX(0);
+}
+
+/* Title */
+.toc-drawer__title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--md-default-fg-color--light);
+    padding: 0.5rem 1.2rem 0.75rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    margin-bottom: 0.5rem;
+}
+
+/* Nav links inside drawer */
+.toc-drawer .md-nav__list {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.toc-drawer .md-nav__item {
+    padding: 0;
+}
+
+.toc-drawer .md-nav__link {
+    display: block;
+    padding: 0.45rem 1.2rem;
+    font-size: 0.8rem;
+    color: var(--md-default-fg-color--light);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+    line-height: 1.4;
+}
+
+.toc-drawer .md-nav__link:hover {
+    color: var(--md-accent-fg-color);
+    background: var(--md-accent-fg-color--transparent);
+}
+
+/* Indent h3-level items */
+.toc-drawer .toc-drawer__indent .md-nav__link,
+.toc-drawer .md-nav .md-nav .md-nav__link {
+    padding-left: 2rem;
+    font-size: 0.78rem;
+}
+
+/* Dark mode */
+[data-md-color-scheme="slate"] .toc-drawer {
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.35);
 }

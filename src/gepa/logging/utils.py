@@ -18,7 +18,6 @@ def log_detailed_metrics_after_discovering_new_program(
     linear_pareto_front_program_idx,
     valset_size: int,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst],
-    log_individual_valset_scores_and_programs: bool = False,
 ):
     # best_prog_per_agg_val_score = idxmax(gepa_state.program_full_scores_val_set)
     best_prog_per_agg_val_score = val_evaluation_policy.get_best_program(gepa_state)
@@ -68,37 +67,64 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(f"Iteration {gepa_state.i + 1}: Linear pareto front program index: {linear_pareto_front_program_idx}")
     logger.log(f"Iteration {gepa_state.i + 1}: New program candidate index: {new_program_idx}")
 
+    # Scalar metrics go to log_metrics (creates wandb/mlflow line charts)
     metrics = {
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
-        "valset_pareto_front_programs": {k: list(v) for k, v in gepa_state.program_at_pareto_front_valset.items()},
-        "best_valset_agg_score": best_score_on_valset,
+        "best_score_on_valset": best_score_on_valset,
         "linear_pareto_front_program_idx": linear_pareto_front_program_idx,
         "best_program_as_per_agg_score_valset": best_prog_per_agg_val_score,
-        "best_score_on_valset": best_score_on_valset,
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
         "val_program_average": valset_score,
         "total_metric_calls": gepa_state.total_num_evals,
     }
-    if log_individual_valset_scores_and_programs:
-        metrics.update(
-            {
-                "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
-                "individual_valset_score_new_program": dict(valset_scores),
-            }
-        )
     if objective_scores:
-        metrics["objective_scores_new_program"] = dict(objective_scores)
-    if valset_evaluation.objective_scores_by_val_id:
-        metrics["objective_scores_by_val_new_program"] = {
-            val_id: dict(scores) for val_id, scores in valset_evaluation.objective_scores_by_val_id.items()
-        }
-    if gepa_state.objective_pareto_front:
-        metrics["objective_pareto_front_scores"] = dict(gepa_state.objective_pareto_front)
-        metrics["objective_pareto_front_programs"] = {
-            k: list(v) for k, v in gepa_state.program_at_pareto_front_objectives.items()
-        }
-
+        for obj_name, obj_val in objective_scores.items():
+            if isinstance(obj_val, int | float):
+                metrics[f"objective/{obj_name}"] = obj_val
     experiment_tracker.log_metrics(metrics, step=gepa_state.i + 1)
+
+    # Structured data goes to log_table (creates wandb Tables / mlflow artifacts)
+    # instead of log_metrics, which would flatten nested dicts into hundreds of charts.
+    # Only log the new candidate's row to avoid O(candidates * valset) repeated uploads.
+
+    all_val_ids = sorted(gepa_state.pareto_front_valset.keys(), key=str)
+    val_columns = ["candidate_idx", "parent_ids"] + [str(vid) for vid in all_val_ids]
+    new_scores_dict = gepa_state.prog_candidate_val_subscores[new_program_idx]
+    new_parent = gepa_state.parent_program_for_candidate[new_program_idx]
+    val_row = [new_program_idx, str(new_parent)] + [new_scores_dict.get(vid) for vid in all_val_ids]
+    experiment_tracker.log_table("valset_scores", columns=val_columns, data=[val_row])
+
+    # Valset pareto front: which programs are best for which val examples
+    pareto_front_rows = [
+        [str(val_id), score, str(sorted(gepa_state.program_at_pareto_front_valset[val_id]))]
+        for val_id, score in gepa_state.pareto_front_valset.items()
+    ]
+    if pareto_front_rows:
+        experiment_tracker.log_table(
+            "valset_pareto_front",
+            columns=["val_id", "best_score", "program_ids"],
+            data=pareto_front_rows,
+        )
+
+    # Objective scores for the new candidate only
+    new_obj_scores = gepa_state.prog_candidate_objective_scores[new_program_idx]
+    if new_obj_scores:
+        all_objectives = sorted(new_obj_scores.keys(), key=str)
+        obj_columns = ["candidate_idx", "parent_ids"] + [str(obj) for obj in all_objectives]
+        obj_row = [new_program_idx, str(new_parent)] + [new_obj_scores.get(obj) for obj in all_objectives]
+        experiment_tracker.log_table("objective_scores", columns=obj_columns, data=[obj_row])
+
+    # Objective pareto front
+    if gepa_state.objective_pareto_front:
+        obj_pareto_rows = [
+            [str(obj), float(score), str(sorted(gepa_state.program_at_pareto_front_objectives[obj]))]
+            for obj, score in gepa_state.objective_pareto_front.items()
+        ]
+        experiment_tracker.log_table(
+            "objective_pareto_front",
+            columns=["objective", "best_score", "program_ids"],
+            data=obj_pareto_rows,
+        )

@@ -1,6 +1,119 @@
 {% extends "base.html" %}
 
 {% block extrahead %}
+{{ super() }}
+
+{% if page %}
+{% set page_title = page.meta.get('title', page.title) %}
+{% set page_desc = page.meta.description if page.meta.description else config.site_description %}
+{% set page_url = config.site_url ~ page.url %}
+{% set page_image = (config.site_url ~ page.meta.social_image) if page.meta.social_image else "" %}
+{% set is_blog_post = page.url and page.url.startswith('blog/2') %}
+{% set social_title = (config.site_name ~ ": " ~ page_title) if (config.site_name not in page_title) else page_title %}
+
+<!--
+  NOTE on social_image paths: The blog plugin rewrites page URLs
+  (blog/2026/02/18/slug/) but copies image assets at the original source
+  directory path (blog/2026-02-18-slug/images/). The social_image front matter
+  uses the source path — that's where the image actually lives. Both resolve.
+
+  NOTE on JSON-LD: Conditional fields (description, image, datePublished)
+  always have a non-conditional field after them (publisher, mainEntityOfPage),
+  so commas are never trailing. Validated with Python's strict json parser.
+-->
+
+<!-- Open Graph meta tags -->
+<meta property="og:type" content="{% if is_blog_post %}article{% else %}website{% endif %}">
+<meta property="og:title" content="{{ social_title }}">
+<meta property="og:url" content="{{ page_url }}">
+<meta property="og:site_name" content="{{ config.site_name }}">
+{% if page_desc -%}
+<meta property="og:description" content="{{ page_desc }}">
+{%- endif %}
+{% if page_image -%}
+<meta property="og:image" content="{{ page_image }}">
+{%- endif %}
+{% if page.meta.get('date', {}).get('created') -%}
+<meta property="article:published_time" content="{{ page.meta.date.created }}">
+{%- endif %}
+
+<!-- Twitter Card meta tags -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ social_title }}">
+{% if page_desc -%}
+<meta name="twitter:description" content="{{ page_desc }}">
+{%- endif %}
+{% if page_image -%}
+<meta name="twitter:image" content="{{ page_image }}">
+{%- endif %}
+
+{% if page.meta.citation_authors %}
+<!-- Google Scholar citation meta tags (Highwire Press) -->
+<meta name="citation_title" content="{{ page_title }}">
+{% for author in page.meta.citation_authors -%}
+<meta name="citation_author" content="{{ author }}">
+{% endfor -%}
+{% if page.meta.get('date', {}).get('created') -%}
+<meta name="citation_publication_date" content="{{ page.meta.date.created.strftime('%Y/%m/%d') }}">
+<meta name="citation_online_date" content="{{ page.meta.date.created.strftime('%Y/%m/%d') }}">
+{%- endif %}
+{% if page_desc -%}
+<meta name="citation_abstract" content="{{ page_desc }}">
+{%- endif %}
+<meta name="citation_abstract_html_url" content="{{ page_url }}">
+<meta name="citation_fulltext_html_url" content="{{ page_url }}">
+<meta name="citation_pdf_url" content="{{ page_url }}paper.pdf">
+<meta name="citation_language" content="en">
+{% if page.meta.citation_keywords -%}
+<meta name="citation_keywords" content="{{ page.meta.citation_keywords }}">
+{%- endif %}
+{% if page.meta.citation_technical_report_institution -%}
+<meta name="citation_technical_report_institution" content="{{ page.meta.citation_technical_report_institution }}">
+{%- endif %}
+{% endif %}
+
+<!-- Structured data (JSON-LD) — uses |tojson to avoid autoescape corruption -->
+{% autoescape false %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  {% if is_blog_post -%}
+  "@type": "{% if page.meta.citation_authors %}ScholarlyArticle{% else %}BlogPosting{% endif %}",
+  "headline": {{ social_title | tojson }},
+  "url": {{ page_url | tojson }},
+  {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
+  {% if page_image %}"image": {{ page_image | tojson }},{% endif %}
+  {% if page.meta.get('date', {}).get('created') %}"datePublished": {{ page.meta.date.created.isoformat() | tojson }},{% endif %}
+  {% if page.meta.citation_authors %}"author": [{% for author in page.meta.citation_authors %}{"@type": "Person", "name": {{ author | tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}],{% endif %}
+  "publisher": {
+    "@type": "Organization",
+    "name": "GEPA",
+    "url": {{ config.site_url | tojson }},
+    "logo": {
+      "@type": "ImageObject",
+      "url": {{ (config.site_url ~ "static/img/gepa_logo.png") | tojson }}
+    }
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": {{ page_url | tojson }}
+  }
+  {%- else -%}
+  "@type": "WebPage",
+  "name": {{ social_title | tojson }},
+  "url": {{ page_url | tojson }},
+  {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
+  "publisher": {
+    "@type": "Organization",
+    "name": "GEPA",
+    "url": {{ config.site_url | tojson }}
+  }
+  {%- endif %}
+}
+</script>
+{% endautoescape %}
+{% endif %}
+
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-HGHHSE0CDS"></script>
 <script>
@@ -10,4 +123,54 @@
 
   gtag('config', 'G-HGHHSE0CDS');
 </script>
+{% endblock %}
+
+{% block tabs %}{% endblock %}
+
+{% block header %}
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header') }}">
+    <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+      <img src="{{ 'static/img/gepa_logo_with_text_white.svg' | url }}" alt="logo">
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      {% set icon = config.theme.icon.menu or "material/menu" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </label>
+    <div class="landing-nav">
+      <a href="{{ 'guides/use-cases/' | url }}" class="landing-nav__link{% if page and page.url and 'use-cases' in page.url %} landing-nav__link--active{% endif %}">Showcase</a>
+      <a href="{{ 'blog/' | url }}" class="landing-nav__link landing-nav__link--highlight{% if page and page.url and page.url.startswith('blog') %} landing-nav__link--active{% endif %}">Blog<span class="landing-nav__badge">New</span></a>
+      <a href="{{ 'guides/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('guides') and 'use-cases' not in page.url %} landing-nav__link--active{% endif %}">Docs</a>
+      <a href="{{ 'tutorials/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('tutorials') %} landing-nav__link--active{% endif %}">Tutorials</a>
+      <a href="{{ 'api/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('api') %} landing-nav__link--active{% endif %}">API</a>
+      <a href="{{ 'about/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('about') %} landing-nav__link--active{% endif %}">About</a>
+    </div>
+    {% if config.theme.palette %}
+      {% if not config.theme.palette is mapping %}
+        {% include "partials/palette.html" %}
+      {% endif %}
+    {% endif %}
+    {% if not config.theme.palette is mapping %}
+      {% include "partials/javascripts/palette.html" %}
+    {% endif %}
+    {% if "material/search" in config.plugins %}
+      {% set search = config.plugins["material/search"] | attr("config") %}
+      {% if search.enabled %}
+        <label class="md-header__button md-icon" for="__search">
+          {% set icon = config.theme.icon.search or "material/magnify" %}
+          {% include ".icons/" ~ icon ~ ".svg" %}
+        </label>
+        {% include "partials/search.html" %}
+      {% endif %}
+    {% endif %}
+    {% if config.repo_url %}
+      <div class="md-header__source">
+        {% include "partials/source.html" %}
+      </div>
+    {% endif %}
+    <button class="toc-toggle md-header__button md-icon" aria-label="Table of contents" title="Table of contents">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 9h14V7H3v2m0 4h14v-2H3v2m0 4h14v-2H3v2m16 0h2v-2h-2v2m0-10v2h2V7h-2m0 6h2v-2h-2v2Z"/></svg>
+    </button>
+  </nav>
+</header>
 {% endblock %}

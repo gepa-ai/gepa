@@ -35,6 +35,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict, runtime_checkable
 
 if TYPE_CHECKING:
+    from gepa.core.data_loader import DataLoader
     from gepa.core.state import GEPAState, ProgramIdx
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class IterationStartEvent(TypedDict):
 
     iteration: int
     state: GEPAState
+    trainset_loader: DataLoader
 
 
 class IterationEndEvent(TypedDict):
@@ -156,6 +158,10 @@ class ProposalEndEvent(TypedDict):
 
     iteration: int
     new_instructions: dict[str, str]
+    prompts: dict[str, str | list[dict[str, Any]]]
+    """Per-component prompts sent to the reflection LM (component name → rendered prompt)."""
+    raw_lm_outputs: dict[str, str]
+    """Per-component raw LM outputs before extraction (component name → raw text)."""
 
 
 class CandidateAcceptedEvent(TypedDict):

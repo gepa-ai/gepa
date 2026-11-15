@@ -14,6 +14,12 @@ Learn how to use GEPA to evolve entire DSPy programs, including custom signature
 
 - **[ARC AGI Example](arc_agi.ipynb)** - Apply GEPA to the ARC (Abstraction and Reasoning Corpus) challenge, demonstrating how to optimize programs for complex reasoning tasks.
 
+### 3D Unicorn Optimization (Seedless)
+
+Use GEPA's `seed_candidate=None` mode to evolve a complete Python program (build123d + pyrender) that generates a 3D unicorn — starting from no code at all. This tutorial demonstrates how to optimize when you know *what good looks like* (evaluation aspects) but don't know *how to get started* (no seed). GEPA bootstraps the first candidate from a natural-language objective, then iteratively refines it using VLM feedback on rendered multi-view images.
+
+- **[3D Unicorn Optimization](3d_unicorn_optimization.ipynb)** - From no code to a 600+ line 3D modeling program through seedless optimization with visual feedback.
+
 ## External Tutorials
 
 For more tutorials, especially those focused on the DSPy integration, see:
@@ -44,7 +50,9 @@ For more tutorials, especially those focused on the DSPy integration, see:
 - [DeepResearch Agent](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher) - LangGraph + DSPy + GEPA research system by @RajaPatnaik
 - [Self-Improving AI Agents](https://medium.com/@bindupriya117/building-self-improving-ai-agents-gepa-for-orchestration-trm-for-reasoning-1602e96f3e2b) - GEPA for orchestration, TRM for reasoning
 - [Context Compression Experiments](https://github.com/Laurian/context-compression-experiments-2508) - GEPA for optimizing context compression prompts by @gridinoc
-- [Google ADK Training with GEPA](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/) - Optimizing Google Agent Development Kit agents
+- [Google ADK Agent Optimization (Official)](https://adk.dev/optimize/) - Built-in GEPA-powered optimization in Google's Agent Development Kit
+- [Google ADK Training with GEPA](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/) - Community tutorial on optimizing ADK agents
+- [Speeding Up a Sudoku Solver with GEPA optimize_anything](https://blog.mariusvach.com/posts/gepa-sudoku-solver) - Use `optimize_anything` to speed up a Python Sudoku solver `optimize_anything`
 
 ### International Tutorials
 
