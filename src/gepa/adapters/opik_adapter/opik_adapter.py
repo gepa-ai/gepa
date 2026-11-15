@@ -11,38 +11,22 @@ import logging
 import random
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 from opik import Dataset
+from opik.evaluation.metrics.score_result import ScoreResult
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
-if TYPE_CHECKING:
-    from opik_optimizer.api_objects import chat_prompt
-    from opik_optimizer.core.evaluation import evaluate_with_result
-    from opik_optimizer.utils.candidate_selection import select_candidate
-    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
-
-_IMPORT_ERROR: Exception | None = None
-helpers: Any = None
-chat_prompt: Any = None
-evaluate_with_result: Any = None
-select_candidate: Any = None
-OptimizableAgent: Any = None
-
 try:
     from opik_optimizer import helpers
+    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
     from opik_optimizer.api_objects import chat_prompt
+    from opik_optimizer.api_objects.types import MetricFunction
     from opik_optimizer.core.evaluation import evaluate_with_result
     from opik_optimizer.utils.candidate_selection import select_candidate
-    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
 except Exception as exc:  # pragma: no cover - optional dependency path
-    _IMPORT_ERROR = exc
-
-if _IMPORT_ERROR is not None:  # pragma: no cover - optional dependency path
-    raise ImportError(
-        "gepa.adapters.opik_adapter requires the optional 'opik-optimizer' package."
-    ) from _IMPORT_ERROR
+    raise ImportError("gepa.adapters.opik_adapter requires the optional 'opik-optimizer' package.") from exc
 
 logger = logging.getLogger(__name__)
 
@@ -82,16 +66,18 @@ def _apply_system_text(prompt_obj: chat_prompt.ChatPrompt, system_text: str) -> 
 
 
 InstantiateAgentFn = Callable[[chat_prompt.ChatPrompt, str | None], OptimizableAgent]
-PrepareExperimentFn = Callable[
-    [
-        chat_prompt.ChatPrompt,
-        Dataset,
-        Callable[[dict[str, Any], str], Any],
-        dict[str, Any] | None,
-        dict[str, Any] | None,
-    ],
-    dict[str, Any],
-]
+
+
+class PrepareExperimentFn(Protocol):
+    def __call__(
+        self,
+        *,
+        prompt: chat_prompt.ChatPrompt,
+        dataset: Dataset,
+        metric: MetricFunction,
+        experiment_config: dict[str, Any] | None,
+        configuration_updates: dict[str, Any] | None,
+    ) -> dict[str, Any]: ...
 
 
 class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
@@ -101,7 +87,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         self,
         base_prompt: chat_prompt.ChatPrompt,
         dataset: Dataset,
-        metric: Callable[[dict[str, Any], str], Any],
+        metric: MetricFunction,
         instantiate_agent: InstantiateAgentFn,
         prepare_experiment_config: PrepareExperimentFn,
         *,
@@ -132,9 +118,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         if validation_dataset is not None:
             try:
                 self._val_item_ids = {
-                    str(item.get("id"))
-                    for item in validation_dataset.get_items()
-                    if item.get("id") is not None
+                    str(item.get("id")) for item in validation_dataset.get_items() if item.get("id") is not None
                 }
             except Exception:
                 self._val_item_ids = set()
@@ -145,9 +129,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             if policy:
                 return policy
         model_kwargs = prompt_variant.model_kwargs or {}
-        policy = model_kwargs.get("candidate_selection_policy") or model_kwargs.get(
-            "selection_policy"
-        )
+        policy = model_kwargs.get("candidate_selection_policy") or model_kwargs.get("selection_policy")
         if isinstance(policy, str) and policy.strip():
             return policy.strip()
         return "best_by_metric"
@@ -167,10 +149,10 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         # FIXME(opik-adapter-multimetric): support opt-in objective_scores propagation once
         # objective frontier mode is rolled out end-to-end.
         metric_result = self._metric(dataset_item, output)
-        if hasattr(metric_result, "value"):
+        if isinstance(metric_result, list):
+            raise TypeError("OpikAdapter does not support lists of metric scores.")
+        if isinstance(metric_result, ScoreResult):
             return float(metric_result.value)
-        if hasattr(metric_result, "score"):
-            return float(metric_result.score)
         return float(metric_result)
 
     def _resolve_dataset_for_item_ids(self, dataset_item_ids: list[str]) -> Dataset:

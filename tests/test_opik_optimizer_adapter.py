@@ -1,26 +1,21 @@
 from __future__ import annotations
 
+from importlib.util import find_spec
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
+if find_spec("opik_optimizer") is None:
+    pytest.skip("opik_optimizer is not installed", allow_module_level=True)
+
+from opik.evaluation.metrics.score_result import ScoreResult
 from opik_optimizer import ChatPrompt
 
-try:
-    from gepa.adapters.opik_adapter.opik_adapter import (
-        OpikAdapter,
-        OpikDataInst,
-    )
-except ImportError:
-    pytest.skip(
-        "gepa.adapters.opik_adapter not available; install gepa with Opik adapter",
-        allow_module_level=True,
-    )
-
-
-class DummyMetricResult:
-    def __init__(self, value: float) -> None:
-        self.value = value
+from gepa.adapters.opik_adapter.opik_adapter import (
+    OpikAdapter,
+    OpikDataInst,
+)
 
 
 class DummyAgent:
@@ -70,11 +65,11 @@ class DummyDataset:
 
 
 def _make_metric(score_value: float):
-    def metric(dataset_item: dict[str, Any], llm_output: str) -> DummyMetricResult:
+    def metric(dataset_item: dict[str, Any], llm_output: str) -> ScoreResult:
         expected = str(dataset_item.get("answer", ""))
         if expected and expected in llm_output:
-            return DummyMetricResult(score_value)
-        return DummyMetricResult(0.0)
+            return ScoreResult(name=metric.__name__, value=score_value)
+        return ScoreResult(name=metric.__name__, value=0.0)
 
     return metric
 
@@ -107,9 +102,7 @@ def test_opik_adapter_local_eval(monkeypatch: pytest.MonkeyPatch) -> None:
         instantiate_agent=lambda _prompt, _project=None: DummyAgent(),
         prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
         system_fallback="Answer",
-        optimizer_metric_tracker=lambda: tracker_count.__setitem__(
-            "count", tracker_count["count"] + 1
-        ),
+        optimizer_metric_tracker=lambda: tracker_count.__setitem__("count", tracker_count["count"] + 1),
     )
 
     result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=True)
@@ -119,6 +112,36 @@ def test_opik_adapter_local_eval(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.outputs == [{"output": "A"}]
     assert result.trajectories and result.trajectories[0]["score"] == 1.0
     assert tracker_count["count"] == 1
+
+
+def test_opik_adapter_rejects_list_metric_results() -> None:
+    metric_calls: list[tuple[dict[str, Any], str]] = []
+
+    def metric(dataset_item: dict[str, Any], llm_output: str) -> list[ScoreResult]:
+        metric_calls.append((dataset_item, llm_output))
+        return [ScoreResult(name="accuracy", value=1.0)]
+
+    adapter = OpikAdapter(
+        base_prompt=ChatPrompt(system="Answer", user="{input}"),
+        dataset=DummyDataset(),
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: DummyAgent(),
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+        candidate_selection_policy="first",
+    )
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"input": "Which?", "answer": "A"},
+        )
+    ]
+
+    with pytest.raises(TypeError, match="does not support lists of metric scores"):
+        adapter.evaluate(batch, {"system_prompt": "Answer"})
+
+    assert metric_calls == [(batch[0].opik_item, "A")]
 
 
 def test_opik_adapter_task_evaluator_used(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,9 +185,7 @@ def test_opik_adapter_task_evaluator_used(monkeypatch: pytest.MonkeyPatch) -> No
         instantiate_agent=lambda _prompt, _project=None: agent,
         prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
         system_fallback="Answer",
-        optimizer_metric_tracker=lambda: tracker_count.__setitem__(
-            "count", tracker_count["count"] + 1
-        ),
+        optimizer_metric_tracker=lambda: tracker_count.__setitem__("count", tracker_count["count"] + 1),
     )
 
     result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
@@ -216,9 +237,7 @@ def test_opik_adapter_reflective_dataset(monkeypatch: pytest.MonkeyPatch) -> Non
         instantiate_agent=lambda _prompt, _project=None: agent,
         prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
         system_fallback="Answer",
-        optimizer_metric_tracker=lambda: tracker_count.__setitem__(
-            "count", tracker_count["count"] + 1
-        ),
+        optimizer_metric_tracker=lambda: tracker_count.__setitem__("count", tracker_count["count"] + 1),
     )
 
     eval_result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=True)
