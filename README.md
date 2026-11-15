@@ -177,6 +177,7 @@ GEPA connects to your system via the [`GEPAAdapter`](src/gepa/core/adapter.py) i
 | [DefaultAdapter](src/gepa/adapters/default_adapter/) | System prompt optimization for single-turn LLM tasks |
 | [ConfidenceAdapter](src/gepa/adapters/confidence_adapter/) | Logprob-aware classification optimization — penalizes lucky guesses and feeds confidence diagnostics into reflection. `pip install "gepa[confidence]"` |
 | [DSPy Full Program](src/gepa/adapters/dspy_full_program_adapter/) | Evolves entire DSPy programs (signatures, modules, control flow). **67% → 93%** on MATH. |
+| [Opik Optimizer](src/gepa/adapters/opik_adapter/) | Optimize prompts and agents with Opik's optimizer SDK |
 | [Generic RAG](src/gepa/adapters/generic_rag_adapter/) | Vector store-agnostic RAG optimization (ChromaDB, Weaviate, Qdrant, Pinecone) |
 | [MCP Adapter](src/gepa/adapters/mcp_adapter/) | Optimize [MCP](https://modelcontextprotocol.io/) tool descriptions and system prompts |
 | [TerminalBench](src/gepa/adapters/terminal_bench_adapter/) | Optimize the [Terminus](https://www.tbench.ai/terminus) terminal-use agent |
@@ -414,6 +415,7 @@ Finally:
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [ConfidenceAdapter](src/gepa/adapters/confidence_adapter/) - Logprob-aware classification optimization using [`llm-structured-confidence`](https://github.com/rodolfonobrega/llm-structured-confidence). Detects lucky guesses by extracting token-level logprobs from structured JSON outputs with `enum` constraints, and feeds confidence diagnostics (logprob, probability, top alternatives) into the reflection LLM. Install with `pip install "gepa[confidence]"`. See the [guide](https://gepa-ai.github.io/gepa/guides/confidence-adapter/).
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
+    - [Opik Optimizer Adapter](src/gepa/adapters/opik_adapter/) - Native GEPA adapter for integrating with Opik's optimizer SDK tooling so GEPA can optimize prompts and agents without double evaluations.
     - [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) - Vector store-agnostic RAG optimization supporting ChromaDB, Weaviate, Qdrant, Pinecone, and more. Optimizes query reformulation, context synthesis, answer generation, and document reranking prompts.
     - [MCP Adapter](src/gepa/adapters/mcp_adapter/) - Optimize [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool usage. Supports local stdio servers, remote SSE/HTTP servers, and optimizes tool descriptions and system prompts.
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
