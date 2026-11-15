@@ -68,6 +68,9 @@ Callback system for observing and instrumenting GEPA optimization runs.
 - [`MergeAttemptedEvent`](callbacks/MergeAttemptedEvent.md)
 - [`MergeAcceptedEvent`](callbacks/MergeAcceptedEvent.md)
 - [`MergeRejectedEvent`](callbacks/MergeRejectedEvent.md)
+- [`CrossoverAttemptedEvent`](callbacks/CrossoverAttemptedEvent.md)
+- [`CrossoverAcceptedEvent`](callbacks/CrossoverAcceptedEvent.md)
+- [`CrossoverRejectedEvent`](callbacks/CrossoverRejectedEvent.md)
 - [`BudgetUpdatedEvent`](callbacks/BudgetUpdatedEvent.md)
 - [`ErrorEvent`](callbacks/ErrorEvent.md)
 - [`StateSavedEvent`](callbacks/StateSavedEvent.md)
@@ -104,6 +107,7 @@ Proposers generate new candidate programs during optimization.
 - [`ProposeNewCandidate`](proposers/ProposeNewCandidate.md)
 - [`ReflectiveMutationProposer`](proposers/ReflectiveMutationProposer.md)
 - [`MergeProposer`](proposers/MergeProposer.md)
+- [`CrossoverProposer`](proposers/CrossoverProposer.md)
 - [`Signature`](proposers/Signature.md)
 - [`LanguageModel`](proposers/LanguageModel.md)
 
