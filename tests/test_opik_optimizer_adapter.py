@@ -16,6 +16,7 @@ from gepa.adapters.opik_adapter.opik_adapter import (
     OpikAdapter,
     OpikDataInst,
 )
+from gepa.core.adapter import EvaluationBatch
 
 
 class DummyAgent:
@@ -253,6 +254,52 @@ def test_opik_adapter_reflective_dataset(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "Generated Outputs" in entry
     assert "Feedback" in entry
     assert tracker_count["count"] == 1
+
+
+@pytest.mark.parametrize(
+    "trajectories",
+    [None, [], [{"input": {"input": "Which?", "answer": "A"}, "output": "A", "score": 1.0}]],
+    ids=["missing", "empty", "populated"],
+)
+def test_opik_adapter_reflective_dataset_lists_are_independent(
+    trajectories: list[dict[str, Any]] | None,
+) -> None:
+    adapter = OpikAdapter(
+        base_prompt=ChatPrompt(system="Answer", user="{input}"),
+        dataset=DummyDataset(),
+        metric=_make_metric(1.0),
+        instantiate_agent=lambda _prompt, _project=None: DummyAgent(),
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+    )
+    eval_batch = EvaluationBatch(
+        outputs=[{"output": "A"}] if trajectories else [],
+        scores=[1.0] if trajectories else [],
+        trajectories=trajectories,
+    )
+
+    reflective = adapter.make_reflective_dataset(
+        {"system_prompt": "Answer", "user_prompt": "{input}"},
+        eval_batch,
+        components_to_update=["system_prompt", "user_prompt"],
+    )
+    expected = (
+        [
+            {
+                "Inputs": {"text": "Which?"},
+                "Generated Outputs": "A",
+                "Feedback": "Observed score=1.0000. Expected answer: A",
+            }
+        ]
+        if trajectories
+        else []
+    )
+    assert reflective == {"system_prompt": expected, "user_prompt": expected}
+
+    reflective["system_prompt"].append({"Feedback": "system-only"})
+    assert reflective["user_prompt"] == expected
+    assert reflective["system_prompt"].pop() == {"Feedback": "system-only"}
+    reflective["user_prompt"].append({"Feedback": "user-only"})
+    assert reflective["system_prompt"] == expected
 
 
 def test_opik_adapter_uses_validation_dataset(monkeypatch: pytest.MonkeyPatch) -> None:

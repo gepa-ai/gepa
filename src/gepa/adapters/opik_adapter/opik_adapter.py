@@ -433,4 +433,4 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         if not reflective_records:
             logger.debug("No trajectories captured for candidate; returning empty reflective dataset")
 
-        return dict.fromkeys(components, reflective_records)
+        return {component: list(reflective_records) for component in components}
