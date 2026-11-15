@@ -77,6 +77,7 @@ class ReflectiveMutationProposer:
         sampling_strategy: SamplingStrategy | None = None,
         reflection_strategy: ReflectionLM | None = None,
         reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
+        perfect_score_assumed: bool = False,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -86,6 +87,10 @@ class ReflectiveMutationProposer:
         self.batch_sampler = batch_sampler
         self.perfect_score = perfect_score
         self.skip_perfect_score = skip_perfect_score
+        # True when perfect_score is a default guess rather than a known upper
+        # bound: skipping is then turned off as soon as any score exceeds it.
+        self.perfect_score_assumed = perfect_score_assumed
+        self._val_programs_checked = 0
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
@@ -132,6 +137,27 @@ class ReflectiveMutationProposer:
                 "perfect_score must be provided when skip_perfect_score is True. "
                 "If you do not have a perfect target score, set skip_perfect_score=False."
             )
+
+    def _disable_skip_if_assumed_score_exceeded(
+        self, state: GEPAState[RolloutOutput, DataId], minibatch_scores: Sequence[float | None], i: int
+    ) -> None:
+        """Turn off perfect-score skipping once a score above the assumed bound is seen.
+
+        Checks the parent's minibatch scores (the ones the skip decision uses)
+        and the valset scores of programs added since the last check.
+        """
+        assert self.perfect_score is not None
+        observed = [s for s in minibatch_scores if s is not None]
+        for subscores in state.prog_candidate_val_subscores[self._val_programs_checked :]:
+            observed.extend(subscores.values())
+        self._val_programs_checked = len(state.prog_candidate_val_subscores)
+        top = max(observed, default=None)
+        if top is not None and top > self.perfect_score:
+            self.logger.log(
+                f"Iteration {i}: Observed score {top} > assumed perfect score {self.perfect_score}; "
+                "disabling skip_perfect_score for this run."
+            )
+            self.skip_perfect_score = False
 
     def propose_new_texts(
         self,
@@ -448,6 +474,8 @@ class ReflectiveMutationProposer:
                 prepared.append(None)
                 continue
 
+            if self.skip_perfect_score and self.perfect_score_assumed:
+                self._disable_skip_if_assumed_score_exceeded(state, eval_curr.scores, i)
             if (
                 self.skip_perfect_score
                 and self.perfect_score is not None

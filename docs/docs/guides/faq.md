@@ -103,6 +103,10 @@ Each iteration involves:
 
 We typically recommend calling GEPA with at least 15-30x of len(valset) to allow it to propose and evaluate upto 15 new candidates.
 
+### Why does GEPA log "All subsample scores perfect … Skipping"?
+
+When every example in a minibatch already reaches the perfect score, there is nothing to fix there, so GEPA skips reflection for that iteration (`skip_perfect_score`, on by default). `gepa.optimize` uses `perfect_score=1.0`. In `optimize_anything`, if your scores have a known upper bound, set it with `ReflectionConfig(perfect_score=...)`. Otherwise GEPA assumes `1.0`, logs that assumption, and turns skipping off as soon as a higher score appears. For unbounded scores you can also pass `ReflectionConfig(skip_perfect_score=False)`.
+
 ### What's the recommended train/validation split?
 
 Use **80% train / 20% validation** when you have more than **200 total datapoints**. If you have fewer than 200 total datapoints, a **50/50 split** is usually better.
