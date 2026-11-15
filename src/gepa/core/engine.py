@@ -1004,9 +1004,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
                 iteration_started = True
 
-                # 1) Attempt merge first if scheduled and last iter found new program
+                # 1) Attempt merge first if scheduled and last iter found new program.
+                # Merges scheduled before max_merge_invocations was reached stay in
+                # merges_due, so the cap is checked here too.
                 if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                    if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
+                    if (
+                        self.merge_proposer.merges_due > 0
+                        and self.merge_proposer.last_iter_found_new_program
+                        and self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations
+                    ):
                         proposal = self.merge_proposer.propose(state)
                         self.merge_proposer.last_iter_found_new_program = False  # old behavior
 
