@@ -50,6 +50,89 @@ class EpsilonGreedyCandidateSelector(CandidateSelector):
             return idxmax(state.program_full_scores_val_set)
 
 
+class BatchLexicaseCandidateSelector(CandidateSelector):
+    """Batch lexicase selection over per-instance validation scores.
+
+    Shuffles the validation instances, groups them into batches of `batch_size`, and
+    filters the candidate pool batch by batch, keeping only candidates with the maximal
+    batch score sum, until a single candidate survives (remaining ties are broken
+    uniformly). Only instances scored for every candidate participate.
+
+    Every candidate can win under some batch ordering, so no candidate is ever assigned
+    zero selection probability. This differs from Pareto-frontier sampling, whose dominance
+    pruning can exclude the highest-aggregate candidates entirely when per-instance tie sets
+    are large (e.g. binary metrics). `batch_size` tunes selection pressure: 1 recovers plain
+    lexicase selection (Helmuth, Spector & Matheson, 2015); a batch spanning the whole
+    valset recovers argmax by aggregate score. Batching follows Aenugu & Spector (2019).
+    """
+
+    def __init__(self, batch_size: int = 8, rng: random.Random | None = None):
+        assert batch_size > 0
+        self.batch_size = batch_size
+        if rng is None:
+            self.rng = random.Random(0)
+        else:
+            self.rng = rng
+
+    def select_candidate_idx(self, state: GEPAState) -> int:
+        subscores = state.prog_candidate_val_subscores
+        assert len(subscores) == len(state.program_candidates)
+        num_candidates = len(subscores)
+        if num_candidates == 1:
+            return 0
+
+        common_ids = set(subscores[0].keys())
+        for candidate_scores in subscores[1:]:
+            common_ids &= candidate_scores.keys()
+        if not common_ids:
+            return self.rng.randrange(num_candidates)
+
+        # Sort before shuffling so selection depends only on the rng seed, not set iteration order.
+        instance_ids = sorted(common_ids, key=repr)
+        self.rng.shuffle(instance_ids)
+
+        survivors = list(range(num_candidates))
+        for start in range(0, len(instance_ids), self.batch_size):
+            batch = instance_ids[start : start + self.batch_size]
+            batch_scores = [sum(subscores[idx][i] for i in batch) for idx in survivors]
+            best = max(batch_scores)
+            survivors = [idx for idx, score in zip(survivors, batch_scores, strict=False) if score >= best - 1e-9]
+            if len(survivors) == 1:
+                return survivors[0]
+        return self.rng.choice(survivors)
+
+
+class LatestCandidateSelector(CandidateSelector):
+    """Always selects the most recently accepted candidate, growing a single
+    sequential chain: depth equals the number of accepts. With GEPA's
+    minibatch acceptance gate this is a greedy incumbent loop; useful for
+    isolating sequential-depth effects from pool selection.
+    """
+
+    def select_candidate_idx(self, state: GEPAState) -> int:
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
+        return len(state.program_candidates) - 1
+
+
+class UnprunedParetoCandidateSelector(CandidateSelector):
+    """Samples proportional to per-instance Pareto-front membership, skipping the
+    dominance-pruning step of `ParetoCandidateSelector`. Serves as an ablation control
+    for isolating the effect of dominance pruning on parent selection.
+    """
+
+    def __init__(self, rng: random.Random | None = None):
+        if rng is None:
+            self.rng = random.Random(0)
+        else:
+            self.rng = rng
+
+    def select_candidate_idx(self, state: GEPAState) -> int:
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
+        sampling_list = [prog_idx for front in state.get_pareto_front_mapping().values() for prog_idx in front]
+        assert len(sampling_list) > 0
+        return self.rng.choice(sampling_list)
+
+
 class TopKParetoCandidateSelector(CandidateSelector):
     """Pareto selection restricted to the top K programs by aggregate score."""
 
