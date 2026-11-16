@@ -6,7 +6,7 @@ import warnings
 
 from gepa.rpc.generated import gepa_pb2 as gepa__pb2
 
-GRPC_GENERATED_VERSION = '1.83.1'
+GRPC_GENERATED_VERSION = '1.85.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -50,6 +50,11 @@ class GEPAServiceStub:
                 request_serializer=gepa__pb2.StatusRequest.SerializeToString,
                 response_deserializer=gepa__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.Cancel = channel.unary_unary(
+                '/gepa_rpc.GEPAService/Cancel',
+                request_serializer=gepa__pb2.CancelRequest.SerializeToString,
+                response_deserializer=gepa__pb2.CancelResponse.FromString,
+                _registered_method=True)
 
 
 class GEPAServiceServicer:
@@ -73,6 +78,17 @@ class GEPAServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Cancel(self, request, context):
+        """Additive, backward-compatible: requests that a running run stop. Two
+        distinct effects, not necessarily simultaneous: any in-flight
+        evaluate/reflective-dataset wait on this run is unblocked immediately,
+        while the optimizer itself is only *asked* to stop and exits at its
+        next checkpoint. See servicer.py's Cancel handler.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_GEPAServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -90,6 +106,11 @@ def add_GEPAServiceServicer_to_server(servicer, server):
                     servicer.GetStatus,
                     request_deserializer=gepa__pb2.StatusRequest.FromString,
                     response_serializer=gepa__pb2.StatusResponse.SerializeToString,
+            ),
+            'Cancel': grpc.unary_unary_rpc_method_handler(
+                    servicer.Cancel,
+                    request_deserializer=gepa__pb2.CancelRequest.FromString,
+                    response_serializer=gepa__pb2.CancelResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -173,6 +194,33 @@ class GEPAService:
             '/gepa_rpc.GEPAService/GetStatus',
             gepa__pb2.StatusRequest.SerializeToString,
             gepa__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Cancel(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/gepa_rpc.GEPAService/Cancel',
+            gepa__pb2.CancelRequest.SerializeToString,
+            gepa__pb2.CancelResponse.FromString,
             options,
             channel_credentials,
             insecure,

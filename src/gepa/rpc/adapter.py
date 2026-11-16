@@ -16,20 +16,58 @@ import uuid
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 from gepa.rpc.conversions import RemoteExample, RemoteTrajectory, reflective_data_to_python
 from gepa.rpc.generated import gepa_pb2 as pb
 
+# Default ceiling on how long the server waits for a client to answer a single
+# EvaluateBatchRequest / ReflectiveDatasetRequest / OmniEvaluateBatchRequest.
+# Without this, a hung or malicious client blocks the run's runner thread --
+# and, transitively, the gRPC pool slot its stream occupies -- forever.
+DEFAULT_CALLBACK_TIMEOUT_SECONDS = 300.0
+
 
 class RemoteAdapterCancelledError(RuntimeError):
     """Raised inside the optimizer thread when the client stream is gone."""
 
 
+class EvaluatorResponseError(ValueError):
+    """Raised when the client's own response is malformed -- the wrong number
+    of scores/outputs/trajectories for the batch it was handed.
+
+    A distinct type so servicer.py can report this as the client's own
+    mistake (actionable without server logs) rather than an internal failure.
+    """
+
+
+class RemoteAdapterTimeoutError(RuntimeError):
+    """Raised inside the optimizer thread when a client callback times out.
+
+    Distinct from RemoteAdapterCancelledError: the client is still connected,
+    it just didn't answer in time.
+    """
+
+
+class RunCancelledError(RuntimeError):
+    """Raised inside the optimizer thread after an explicit Cancel RPC.
+
+    Distinct from RemoteAdapterCancelledError (client disconnected) and
+    RemoteAdapterTimeoutError (client too slow): the run was cancelled on
+    purpose, by request, while the client was still connected and responsive.
+    """
+
+
 class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
-    def __init__(self, outbound: queue.Queue[pb.ServerMessage | None]):
+    def __init__(
+        self,
+        outbound: queue.Queue[pb.ServerMessage | None],
+        callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    ):
         self._outbound = outbound
+        self._callback_timeout = callback_timeout
         self._pending: dict[str, Future] = {}
         self._lock = threading.Lock()
         self._cancelled = False
@@ -43,7 +81,24 @@ class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
         self._resolve(resp.request_id, resp)
 
     def cancel(self, exc: BaseException | None = None) -> None:
-        """Called when the client stream ends. Fail every in-flight call."""
+        """Fail every in-flight call. Called on stream-close or explicit Cancel.
+
+        Safe to call more than once (e.g. once from the reader thread on
+        stream-close and once from an explicit Cancel RPC): `self._pending`
+        is only ever drained once, under `self._lock`, so a second call finds
+        nothing left to fail.
+
+        This pop-under-lock hand-off is also why cancellation can't race a
+        normally-completing future: whichever of `cancel`/`_resolve` pops a
+        given request_id first is the only one that ever touches its future,
+        so `set_exception`/`set_result` can never both fire on the same
+        future and raise InvalidStateError.
+
+        Note this only unblocks what this adapter's caller is waiting on
+        (effect 1 of cancellation) -- it does not by itself stop the
+        optimizer loop from issuing more work (effect 2). See servicer.py's
+        Cancel handler for how the two are wired together.
+        """
         err = exc or RemoteAdapterCancelledError("client stream closed")
         with self._lock:
             self._cancelled = True
@@ -70,6 +125,23 @@ class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
             self._pending[request_id] = fut
         return request_id, fut
 
+    def _await(self, request_id: str, fut: Future) -> Any:
+        """Block on `fut`, bounded by the configured callback timeout.
+
+        On timeout, drop the now-abandoned future from `self._pending` under
+        the same lock `cancel`/`_resolve` use, so a later `cancel()` can't
+        try to act on a future this call already gave up on.
+        """
+        try:
+            return fut.result(timeout=self._callback_timeout)
+        except FutureTimeoutError:
+            with self._lock:
+                self._pending.pop(request_id, None)
+            raise RemoteAdapterTimeoutError(
+                f"client did not respond to request {request_id} within "
+                f"{self._callback_timeout}s"
+            ) from None
+
     # GEPAAdapter
     def evaluate(
         self,
@@ -85,12 +157,12 @@ class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
             capture_traces=capture_traces,
         )
         self._outbound.put(pb.ServerMessage(evaluate_batch_request=request))
-        resp: pb.EvaluateBatchResponse = fut.result()
+        resp: pb.EvaluateBatchResponse = self._await(request_id, fut)
 
         outputs = list(resp.outputs)
         scores = list(resp.scores)
         if len(outputs) != len(batch) or len(scores) != len(batch):
-            raise ValueError(
+            raise EvaluatorResponseError(
                 f"client returned mismatched evaluate response: "
                 f"got {len(outputs)} outputs, {len(scores)} scores for batch of {len(batch)}"
             )
@@ -98,7 +170,7 @@ class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
         trajectories: list[RemoteTrajectory] | None = None
         if capture_traces:
             if len(resp.trajectories) != len(batch):
-                raise ValueError(
+                raise EvaluatorResponseError(
                     f"capture_traces=True but client returned {len(resp.trajectories)} trajectories "
                     f"for batch of {len(batch)}"
                 )
@@ -123,7 +195,7 @@ class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
             trajectories=[t.to_proto() for t in eval_batch.trajectories],
         )
         self._outbound.put(pb.ServerMessage(reflective_dataset_request=request))
-        resp: pb.ReflectiveDatasetResponse = fut.result()
+        resp: pb.ReflectiveDatasetResponse = self._await(request_id, fut)
         return reflective_data_to_python(resp)
 
 
@@ -160,13 +232,25 @@ class OmniRemoteEvaluator:
     """batch_evaluator passed to optimize_anything.
 
     Groups (candidate, example) pairs by candidate and sends one
-    OmniEvaluateBatchRequest per unique candidate, blocking on a Future
-    until the client responds. The reader thread resolves futures via
-    deliver_response().
+    OmniEvaluateBatchRequest per unique candidate. The reader thread
+    resolves futures via deliver_response().
+
+    Tracks metric_calls_used directly (one increment per example scored,
+    across every group) rather than relying on a GEPA-specific progress
+    callback, because this evaluator -- unlike _OmniProgressCallback --
+    runs for every engine (gepa, autoresearch, best_of_n, meta_harness).
+    Without it, non-gepa engines always reported metric_calls_used=0.
     """
 
-    def __init__(self, outbound: queue.Queue[pb.OmniServerMessage | None]):
+    def __init__(
+        self,
+        outbound: queue.Queue[pb.OmniServerMessage | None],
+        callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+        run_status: dict[str, Any] | None = None,
+    ):
         self._outbound = outbound
+        self._callback_timeout = callback_timeout
+        self._run_status = run_status
         self._pending: dict[str, Future] = {}
         self._lock = threading.Lock()
         self._cancelled = False
@@ -177,6 +261,8 @@ class OmniRemoteEvaluator:
         self._resolve(resp.request_id, resp)
 
     def cancel(self, exc: BaseException | None = None) -> None:
+        """See RemoteAdapter.cancel -- identical hand-off, same race-free
+        reasoning, same two-distinct-effects caveat."""
         err = exc or RemoteAdapterCancelledError("client stream closed")
         with self._lock:
             self._cancelled = True
@@ -202,6 +288,18 @@ class OmniRemoteEvaluator:
             self._pending[request_id] = fut
         return request_id, fut
 
+    def _await(self, request_id: str, fut: Future) -> Any:
+        """See RemoteAdapter._await."""
+        try:
+            return fut.result(timeout=self._callback_timeout)
+        except FutureTimeoutError:
+            with self._lock:
+                self._pending.pop(request_id, None)
+            raise RemoteAdapterTimeoutError(
+                f"client did not respond to request {request_id} within "
+                f"{self._callback_timeout}s"
+            ) from None
+
     # batch_evaluator
     def __call__(
         self,
@@ -221,6 +319,13 @@ class OmniRemoteEvaluator:
 
         results: list[tuple[float, dict[str, Any]]] = [(0.0, {}) for _ in range(len(pairs))]
 
+        # Dispatch every group's request before awaiting any of them, so a
+        # client that evaluates candidate groups concurrently on its own side
+        # isn't forced to serialize behind us. Previously this put one
+        # group's request, blocked on its response, and only then put the
+        # next group's -- making multi-group calls strictly sequential no
+        # matter how parallel the client was.
+        inflight: list[tuple[str, Future, list[int], list[Any]]] = []
         for candidate_str, indexed_examples in groups.items():
             indices = [i for i, _, _ in indexed_examples]
             examples = [ex for _, ex, _ in indexed_examples]
@@ -237,10 +342,13 @@ class OmniRemoteEvaluator:
             self._outbound.put(pb.OmniServerMessage(
                 evaluate_batch_request=pb.OmniEvaluateBatchRequest(request_id=request_id, **request_kwargs)
             ))
-            resp: pb.OmniEvaluateBatchResponse = fut.result()
+            inflight.append((request_id, fut, indices, examples))
+
+        for request_id, fut, indices, examples in inflight:
+            resp: pb.OmniEvaluateBatchResponse = self._await(request_id, fut)
 
             if len(resp.scores) != len(examples):
-                raise ValueError(
+                raise EvaluatorResponseError(
                     f"client returned {len(resp.scores)} scores for batch of {len(examples)}"
                 )
 
@@ -251,5 +359,10 @@ class OmniRemoteEvaluator:
                 except json.JSONDecodeError:
                     side_info = {"raw": side_info_json}
                 results[indices[i]] = (float(score), side_info)
+
+            if self._run_status is not None:
+                self._run_status["metric_calls_used"] = (
+                    self._run_status.get("metric_calls_used", 0) + len(examples)
+                )
 
         return results

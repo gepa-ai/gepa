@@ -4,6 +4,12 @@ service GEPAService {
   rpc RunOptimization(stream ClientMessage) returns (stream ServerMessage);
   rpc RunOptimizationOmni(stream OmniClientMessage) returns (stream OmniServerMessage);
   rpc GetStatus(StatusRequest) returns (StatusResponse);
+  // Additive, backward-compatible: requests that a running run stop. Two
+  // distinct effects, not necessarily simultaneous: any in-flight
+  // evaluate/reflective-dataset wait on this run is unblocked immediately,
+  // while the optimizer itself is only *asked* to stop and exits at its
+  // next checkpoint. See servicer.py's Cancel handler.
+  rpc Cancel(CancelRequest) returns (CancelResponse);
 }
 message OmniClientMessage {
   oneof payload {
@@ -135,11 +141,22 @@ message StatusResponse {
     RUNNING = 1;
     COMPLETE = 2;
     FAILED = 3;
+    CANCELLED = 4;
   }
   string run_id = 1;
   Status status = 2;
   string message = 3;
   int32 metric_calls_used = 4;
+}
+message CancelRequest {
+  string run_id = 1;
+}
+message CancelResponse {
+  // True if a run matching run_id was found and a cancellation was issued.
+  // False (not an error) if the run_id is unknown or already finished --
+  // cancelling a run that isn't running anymore is a no-op, not a failure.
+  bool accepted = 1;
+  string message = 2;
 }
 message Example {
   string id = 1;

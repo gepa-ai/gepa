@@ -109,7 +109,7 @@ rpc = [
     # after every `scripts/compile_proto.sh` regeneration, since the floor it
     # stamps in tracks whatever grpcio-tools generated the code, not the
     # grpcio release gepa.rpc happened to be developed against).
-    "grpcio>=1.83.1",
+    "grpcio>=1.85.1",
     "protobuf>=7.35.1",
     # reflection_lm goes through litellm; see the litellm cap comment in the
     # `full` extra above for why it's bounded at <1.92.

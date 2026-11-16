@@ -25,7 +25,13 @@ import grpc
 
 import gepa
 from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
-from gepa.rpc.adapter import OmniRemoteEvaluator, RemoteAdapter
+from gepa.rpc.adapter import (
+    DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    EvaluatorResponseError,
+    OmniRemoteEvaluator,
+    RemoteAdapter,
+    RunCancelledError,
+)
 from gepa.rpc.conversions import RemoteExample
 from gepa.rpc.generated import gepa_pb2 as pb
 from gepa.rpc.generated import gepa_pb2_grpc as pb_grpc
@@ -34,6 +40,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_REFLECTION_LM = "openai/gpt-5.1"
 DEFAULT_RUNS_DIR = os.environ.get("GEPA_RPC_RUNS_DIR", "./runs")
+
+# Caps how many RunOptimization/RunOptimizationOmni streams may be in flight
+# at once. Each such stream pins one gRPC worker thread for its entire life
+# (gRPC-python's sync streaming model requires this), so leaving it unbounded
+# means enough long runs starve every other RPC -- GetStatus and Cancel
+# included -- which is exactly the reviewer's max_workers=2 repro. server.py
+# validates that max_workers leaves headroom above this for control-plane
+# calls to always have a free thread.
+DEFAULT_MAX_CONCURRENT_RUNS = 8
 
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
@@ -142,15 +157,34 @@ class _OmniProgressCallback:
 
 _MAX_RUNS = 1000
 
+_FINISHED_STATUSES = ("complete", "failed", "cancelled")
+
 
 class GEPAServicer(pb_grpc.GEPAServiceServicer):
-    def __init__(self, runs_dir: str = DEFAULT_RUNS_DIR):
+    def __init__(
+        self,
+        runs_dir: str = DEFAULT_RUNS_DIR,
+        max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
+        callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    ):
         self._runs_dir = runs_dir
         self._runs: dict[str, dict[str, Any]] = {}
         self._runs_lock = threading.Lock()
+        self._max_concurrent_runs = max_concurrent_runs
+        self._callback_timeout = callback_timeout
+        # Acquired non-blocking at the very top of each streaming RPC, before
+        # any other work, so a burst of excess connection attempts is
+        # rejected cheaply rather than queueing behind real work. Released
+        # exactly once per admitted run, in that run's runner() finally
+        # block, however the run ends.
+        self._run_slots = threading.Semaphore(max_concurrent_runs)
 
     def _register_run(
-        self, run_id: str, run_status: dict[str, Any], context: grpc.ServicerContext
+        self,
+        run_id: str,
+        request_fingerprint: Any,
+        run_status: dict[str, Any],
+        context: grpc.ServicerContext,
     ) -> bool:
         with self._runs_lock:
             existing = self._runs.get(run_id)
@@ -158,13 +192,30 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 context.set_code(grpc.StatusCode.ALREADY_EXISTS)
                 context.set_details(f"run {run_id!r} is already active")
                 return False
-            if len(self._runs) >= _MAX_RUNS:
-                # Prefer evicting a finished run; fall back to the oldest entry.
-                evict_key = next(
-                    (k for k, e in self._runs.items() if e.get("status") in ("complete", "failed")),
-                    next(iter(self._runs)),
+            if existing is not None and existing.get("fingerprint") != request_fingerprint:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details(
+                    f"run_id {run_id!r} was previously started with a different "
+                    "trainset/valset/seed_candidate/budget; a resumed run must "
+                    "re-send the exact same request"
                 )
+                return False
+            if len(self._runs) >= _MAX_RUNS:
+                # Only ever evict a finished run. Evicting a still-running
+                # run's status record would make GetStatus wrongly report
+                # UNKNOWN for a run that is actually still in progress.
+                evict_key = next(
+                    (k for k, e in self._runs.items() if e.get("status") in _FINISHED_STATUSES),
+                    None,
+                )
+                if evict_key is None:
+                    context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)
+                    context.set_details(
+                        f"server is tracking {_MAX_RUNS} runs, all still running; try again later"
+                    )
+                    return False
                 del self._runs[evict_key]
+            run_status["fingerprint"] = request_fingerprint
             self._runs[run_id] = run_status
             return True
 
@@ -181,6 +232,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             "running": pb.StatusResponse.RUNNING,
             "complete": pb.StatusResponse.COMPLETE,
             "failed": pb.StatusResponse.FAILED,
+            "cancelled": pb.StatusResponse.CANCELLED,
         }
         return pb.StatusResponse(
             run_id=request.run_id,
@@ -189,16 +241,54 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             metric_calls_used=metric_calls_used,
         )
 
+    # ------------------------------------------------------------------ cancel
+    def Cancel(self, request: pb.CancelRequest, context: grpc.ServicerContext) -> pb.CancelResponse:
+        with self._runs_lock:
+            entry = self._runs.get(request.run_id)
+            if entry is None:
+                return pb.CancelResponse(accepted=False, message=f"unknown run_id {request.run_id!r}")
+            status_str = entry.get("status", "")
+            if status_str != "running":
+                return pb.CancelResponse(
+                    accepted=False,
+                    message=f"run {request.run_id!r} is not running (status={status_str!r})",
+                )
+            cancel_fn = entry.get("cancel")
+        # Invoke the run's own cancel hook outside self._runs_lock: it does
+        # I/O (writing the gepa.stop sentinel) and takes the adapter's
+        # separate lock, neither of which needs the servicer-wide lock held.
+        if cancel_fn is None:
+            return pb.CancelResponse(accepted=False, message="run has no cancel handler (internal error)")
+        cancel_fn()
+        return pb.CancelResponse(accepted=True, message="cancellation requested")
+
     # ----------------------------------------------------------- optimization
     def RunOptimization(self, request_iterator, context: grpc.ServicerContext):
+        if not self._run_slots.acquire(blocking=False):
+            context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)
+            context.set_details(
+                f"server at capacity: {self._max_concurrent_runs} optimization runs already in progress"
+            )
+            return
+
+        released = False
+
+        def release_slot() -> None:
+            nonlocal released
+            if not released:
+                released = True
+                self._run_slots.release()
+
         try:
             first = next(request_iterator)
         except StopIteration:
+            release_slot()
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("client closed stream before sending start_request")
             return
 
         if not first.HasField("start_request"):
+            release_slot()
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("first ClientMessage must contain start_request")
             return
@@ -206,19 +296,54 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
         start_req = first.start_request
         run_id = start_req.run_id or uuid.uuid4().hex
         if not _validate_run_id(run_id, self._runs_dir, context):
+            release_slot()
             return
         run_dir = os.path.join(self._runs_dir, run_id)
 
+        fingerprint = (
+            dict(start_req.seed_candidate),
+            tuple(e.id for e in start_req.trainset),
+            tuple(e.id for e in start_req.valset),
+            start_req.max_metric_calls,
+        )
         run_status: dict[str, Any] = {
             "status": "running",
             "metric_calls_used": 0,
             "message": "",
         }
-        if not self._register_run(run_id, run_status, context):
+        if not self._register_run(run_id, fingerprint, run_status, context):
+            release_slot()
             return
 
         outbound: queue.Queue[pb.ServerMessage | None] = queue.Queue()
-        adapter = RemoteAdapter(outbound)
+        adapter = RemoteAdapter(outbound, callback_timeout=self._callback_timeout)
+
+        cancel_requested = threading.Event()
+
+        def do_cancel() -> None:
+            # Idempotent: Cancel may be retried, or race the run finishing on
+            # its own -- only the first call should do anything.
+            if cancel_requested.is_set():
+                return
+            cancel_requested.set()
+            run_status["status"] = "cancelled"
+            # Effect 1: unblock whatever this run's adapter is waiting on
+            # right now. This alone does NOT stop gepa.optimize from issuing
+            # more work -- that's effect 2 below.
+            adapter.cancel(RunCancelledError(f"run {run_id!r} cancelled by client request"))
+            # Effect 2: ask the optimizer to actually stop. gepa_launcher
+            # auto-registers a FileStopper(os.path.join(run_dir, "gepa.stop"))
+            # stop-callback whenever run_dir is set (always, here), so writing
+            # that file makes gepa.optimize exit at its next checkpoint --
+            # reusing an existing cooperative-stop primitive rather than
+            # inventing a parallel mechanism.
+            try:
+                os.makedirs(run_dir, exist_ok=True)
+                pathlib.Path(run_dir, "gepa.stop").touch()
+            except OSError:
+                logger.warning("failed to write gepa.stop for run %s", run_id, exc_info=True)
+
+        run_status["cancel"] = do_cancel
 
         def reader() -> None:
             try:
@@ -270,18 +395,45 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                         )
                     )
                 )
-            except Exception:
-                logger.exception("optimization run %s failed", run_id)
-                run_status["status"] = "failed"
-                run_status["message"] = "optimization failed"
+            except RunCancelledError as exc:
+                logger.info("optimization run %s cancelled: %s", run_id, exc)
+                # do_cancel() already set status to "cancelled" -- don't
+                # overwrite it with "failed".
                 outbound.put(
                     pb.ServerMessage(
-                        optimization_error=pb.OptimizationError(run_id=run_id, message="optimization failed")
+                        optimization_error=pb.OptimizationError(run_id=run_id, message=str(exc))
+                    )
+                )
+            except EvaluatorResponseError as exc:
+                logger.exception("optimization run %s failed (client response error)", run_id)
+                run_status["status"] = "failed"
+                message = f"{type(exc).__name__}: {exc}"
+                run_status["message"] = message
+                outbound.put(
+                    pb.ServerMessage(
+                        optimization_error=pb.OptimizationError(run_id=run_id, message=message)
+                    )
+                )
+            except Exception as exc:
+                logger.exception("optimization run %s failed", run_id)
+                # Forward the real exception type and message instead of a
+                # hardcoded "optimization failed", so clients can act on
+                # their own mistakes (a malformed evaluate response, say)
+                # without needing the server's logs. The full traceback stays
+                # server-side via logger.exception above; this is the one line
+                # of context a caller actually needs.
+                run_status["status"] = "failed"
+                message = f"{type(exc).__name__}: {exc}"
+                run_status["message"] = message
+                outbound.put(
+                    pb.ServerMessage(
+                        optimization_error=pb.OptimizationError(run_id=run_id, message=message)
                     )
                 )
             finally:
                 outbound.put(None)
                 adapter.cancel()
+                release_slot()
 
         threading.Thread(target=reader, name=f"gepa-rpc-reader-{run_id}", daemon=True).start()
         threading.Thread(target=runner, name=f"gepa-rpc-runner-{run_id}", daemon=True).start()
@@ -294,14 +446,31 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
 
     # ------------------------------------------------------- omni optimization
     def RunOptimizationOmni(self, request_iterator, context: grpc.ServicerContext):
+        if not self._run_slots.acquire(blocking=False):
+            context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)
+            context.set_details(
+                f"server at capacity: {self._max_concurrent_runs} optimization runs already in progress"
+            )
+            return
+
+        released = False
+
+        def release_slot() -> None:
+            nonlocal released
+            if not released:
+                released = True
+                self._run_slots.release()
+
         try:
             first = next(request_iterator)
         except StopIteration:
+            release_slot()
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("client closed stream before sending start_request")
             return
 
         if not first.HasField("start_request"):
+            release_slot()
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("first OmniClientMessage must contain start_request")
             return
@@ -309,15 +478,68 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
         start_req = first.start_request
         run_id = start_req.run_id or uuid.uuid4().hex
         if not _validate_run_id(run_id, self._runs_dir, context):
+            release_slot()
             return
         run_dir = os.path.join(self._runs_dir, run_id)
+        engine = start_req.engine or "gepa"
 
+        fingerprint = (
+            start_req.seed_candidate,
+            tuple(e.id for e in start_req.dataset),
+            tuple(e.id for e in start_req.valset),
+            start_req.max_evals,
+            engine,
+        )
         run_status: dict[str, Any] = {"status": "running", "metric_calls_used": 0, "message": ""}
-        if not self._register_run(run_id, run_status, context):
+        if not self._register_run(run_id, fingerprint, run_status, context):
+            release_slot()
             return
 
         outbound: queue.Queue[pb.OmniServerMessage | None] = queue.Queue()
-        evaluator = OmniRemoteEvaluator(outbound)
+        # For engine="gepa", _OmniProgressCallback below already tracks
+        # metric_calls_used from gepa's own ledger, so handing run_status to
+        # the evaluator too would double-count. Every other engine has no
+        # such callback, which is why they always reported 0 -- give the
+        # evaluator the reference only when nothing else is tracking it.
+        evaluator = OmniRemoteEvaluator(
+            outbound,
+            callback_timeout=self._callback_timeout,
+            run_status=None if engine == "gepa" else run_status,
+        )
+
+        cancel_requested = threading.Event()
+
+        def do_cancel() -> None:
+            if cancel_requested.is_set():
+                return
+            cancel_requested.set()
+            run_status["status"] = "cancelled"
+            # Effect 1 (see RunOptimization.do_cancel for the full
+            # explanation): unblock whatever the evaluator is waiting on.
+            evaluator.cancel(RunCancelledError(f"run {run_id!r} cancelled by client request"))
+            # Effect 2 is only wired for the gepa engine, which runs through
+            # gepa_launcher's FileStopper convention. autoresearch/best_of_n/
+            # meta_harness run as their own subprocesses with no equivalent
+            # hook exposed to this servicer today, so cancelling those still
+            # unblocks effect 1 but does NOT stop the subprocess. Flagged
+            # rather than silently claimed: wiring real subprocess
+            # termination needs a hook into gepa.oa.engines.* that doesn't
+            # exist yet, which is outside this PR's scope (it adds the rpc
+            # layer on top of gepa, not changes to gepa's own engines).
+            if engine == "gepa":
+                try:
+                    os.makedirs(run_dir, exist_ok=True)
+                    pathlib.Path(run_dir, "gepa.stop").touch()
+                except OSError:
+                    logger.warning("failed to write gepa.stop for omni run %s", run_id, exc_info=True)
+            else:
+                logger.warning(
+                    "run %s cancelled, but engine %r has no server-side stop hook -- "
+                    "its subprocess (if any) keeps running until it exits on its own",
+                    run_id, engine,
+                )
+
+        run_status["cancel"] = do_cancel
 
         def reader() -> None:
             try:
@@ -344,7 +566,6 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 ] or None
 
                 max_evals = start_req.max_evals or None
-                engine = start_req.engine or "gepa"
 
                 # Only the gepa engine's Config accepts {reflection, callbacks};
                 # autoresearch/best_of_n/meta_harness each have their own
@@ -393,16 +614,31 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                         total_evals=result.total_evals,
                     )
                 ))
-            except Exception:
-                logger.exception("omni optimization run %s failed", run_id)
-                run_status["status"] = "failed"
-                run_status["message"] = "optimization failed"
+            except RunCancelledError as exc:
+                logger.info("omni optimization run %s cancelled: %s", run_id, exc)
                 outbound.put(pb.OmniServerMessage(
-                    optimization_error=pb.OptimizationError(run_id=run_id, message="optimization failed")
+                    optimization_error=pb.OptimizationError(run_id=run_id, message=str(exc))
+                ))
+            except EvaluatorResponseError as exc:
+                logger.exception("omni optimization run %s failed (client response error)", run_id)
+                message = f"{type(exc).__name__}: {exc}"
+                run_status["status"] = "failed"
+                run_status["message"] = message
+                outbound.put(pb.OmniServerMessage(
+                    optimization_error=pb.OptimizationError(run_id=run_id, message=message)
+                ))
+            except Exception as exc:
+                logger.exception("omni optimization run %s failed", run_id)
+                message = f"{type(exc).__name__}: {exc}"
+                run_status["status"] = "failed"
+                run_status["message"] = message
+                outbound.put(pb.OmniServerMessage(
+                    optimization_error=pb.OptimizationError(run_id=run_id, message=message)
                 ))
             finally:
                 outbound.put(None)
                 evaluator.cancel()
+                release_slot()
 
         threading.Thread(target=reader, name=f"gepa-rpc-omni-reader-{run_id}", daemon=True).start()
         threading.Thread(target=runner, name=f"gepa-rpc-omni-runner-{run_id}", daemon=True).start()

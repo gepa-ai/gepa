@@ -277,10 +277,12 @@ class StatusResponse(_message.Message):
         RUNNING: _ClassVar[StatusResponse.Status]
         COMPLETE: _ClassVar[StatusResponse.Status]
         FAILED: _ClassVar[StatusResponse.Status]
+        CANCELLED: _ClassVar[StatusResponse.Status]
     UNKNOWN: StatusResponse.Status
     RUNNING: StatusResponse.Status
     COMPLETE: StatusResponse.Status
     FAILED: StatusResponse.Status
+    CANCELLED: StatusResponse.Status
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
@@ -290,6 +292,20 @@ class StatusResponse(_message.Message):
     message: str
     metric_calls_used: int
     def __init__(self, run_id: _Optional[str] = ..., status: _Optional[_Union[StatusResponse.Status, str]] = ..., message: _Optional[str] = ..., metric_calls_used: _Optional[int] = ...) -> None: ...
+
+class CancelRequest(_message.Message):
+    __slots__ = ("run_id",)
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    def __init__(self, run_id: _Optional[str] = ...) -> None: ...
+
+class CancelResponse(_message.Message):
+    __slots__ = ("accepted", "message")
+    ACCEPTED_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    accepted: bool
+    message: str
+    def __init__(self, accepted: _Optional[bool] = ..., message: _Optional[str] = ...) -> None: ...
 
 class Example(_message.Message):
     __slots__ = ("id", "fields")

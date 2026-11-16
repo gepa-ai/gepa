@@ -7,6 +7,7 @@ are made — the tests verify the gRPC wire protocol and adapter pipeline only.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import socket
@@ -50,6 +51,31 @@ def stub(tmp_path):
 
     channel.close()
     server.stop(grace=0)
+
+
+@contextlib.contextmanager
+def _custom_stub(tmp_path, *, max_workers=4, max_concurrent_runs=8, callback_timeout=300.0):
+    """Like the `stub` fixture, but exposing GEPAServicer's concurrency and
+    timeout knobs. A plain contextmanager, not a fixture, since different
+    tests need different combinations."""
+    port = _free_port()
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
+    pb_grpc.add_GEPAServiceServicer_to_server(
+        GEPAServicer(
+            runs_dir=str(tmp_path / "runs"),
+            max_concurrent_runs=max_concurrent_runs,
+            callback_timeout=callback_timeout,
+        ),
+        server,
+    )
+    server.add_insecure_port(f"[::]:{port}")
+    server.start()
+    channel = grpc.insecure_channel(f"localhost:{port}")
+    try:
+        yield pb_grpc.GEPAServiceStub(channel)
+    finally:
+        channel.close()
+        server.stop(grace=0)
 
 
 # ------------------------------------------------------------------ helpers
@@ -223,7 +249,14 @@ def test_optimize_evaluate_proxied(stub):
 
 
 def test_optimize_error_propagated(stub):
-    """An exception in the optimizer thread becomes a generic OptimizationError (no leak)."""
+    """An exception in the optimizer thread becomes an actionable OptimizationError.
+
+    Forwards the real exception type and message rather than a generic
+    "optimization failed" string, so a client can act on it -- recognizing
+    its own malformed-response mistakes, say -- without the server's logs.
+    The full traceback stays server-side via logger.exception; only this one
+    line reaches the client.
+    """
     def fake_optimize(**_):
         raise RuntimeError("boom")
 
@@ -231,8 +264,7 @@ def test_optimize_error_propagated(stub):
 
     assert msg is not None
     assert msg.HasField("optimization_error")
-    assert "boom" not in msg.optimization_error.message
-    assert msg.optimization_error.message == "optimization failed"
+    assert msg.optimization_error.message == "RuntimeError: boom"
 
 
 def test_get_status_complete(stub):
@@ -454,7 +486,7 @@ def test_optimize_omni_opt_states_omitted_backward_compat(stub):
 
 
 def test_optimize_omni_error_propagated(stub):
-    """An exception in the Omni optimizer thread becomes a generic OptimizationError (no leak)."""
+    """An exception in the Omni optimizer thread becomes an actionable OptimizationError."""
     def fake_optimize_anything(**_):
         raise ValueError("omni boom")
 
@@ -462,8 +494,7 @@ def test_optimize_omni_error_propagated(stub):
 
     assert msg is not None
     assert msg.HasField("optimization_error")
-    assert "omni boom" not in msg.optimization_error.message
-    assert msg.optimization_error.message == "optimization failed"
+    assert msg.optimization_error.message == "ValueError: omni boom"
 
 
 # ------------------------------------------------------------------ edge case tests
@@ -588,17 +619,16 @@ def test_optimize_omni_invalid_run_id_rejected(stub):
 
 
 def test_get_status_failed(stub):
-    """GetStatus for a failed run returns FAILED with sanitized message."""
+    """GetStatus for a failed run returns FAILED with the real error forwarded."""
     def fake_optimize(**_):
-        raise RuntimeError("internal details that must not leak")
+        raise RuntimeError("some actionable detail")
 
     run_id = "status-fail"
     _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
 
     resp = stub.GetStatus(pb.StatusRequest(run_id=run_id))
     assert resp.status == pb.StatusResponse.FAILED
-    assert "internal details" not in resp.message
-    assert resp.message == "optimization failed"
+    assert resp.message == "RuntimeError: some actionable detail"
 
 
 def test_duplicate_run_id_rejected(stub):
@@ -780,7 +810,7 @@ def test_optimize_reflective_dataset_proxied(stub):
 
 
 def test_optimize_malformed_response_mismatched_scores(stub):
-    """Client returning the wrong number of scores/outputs surfaces as a sanitized error."""
+    """Client returning the wrong number of scores/outputs surfaces as an actionable error."""
     def fake_optimize(*, seed_candidate, trainset, adapter, **_):
         batch = list(trainset)
         adapter.evaluate(batch, dict(seed_candidate), capture_traces=False)
@@ -824,8 +854,8 @@ def test_optimize_malformed_response_mismatched_scores(stub):
 
     assert final is not None
     assert final.HasField("optimization_error")
-    assert "mismatched" not in final.optimization_error.message
-    assert final.optimization_error.message == "optimization failed"
+    assert final.optimization_error.message.startswith("EvaluatorResponseError: ")
+    assert "mismatched" in final.optimization_error.message
 
 
 def test_concurrent_runs_different_ids_succeed(stub):
@@ -955,3 +985,402 @@ def test_max_runs_eviction_prefers_finished(stub):
 
         assert stub.GetStatus(pb.StatusRequest(run_id="evict-1")).status == pb.StatusResponse.UNKNOWN
         assert stub.GetStatus(pb.StatusRequest(run_id="evict-3")).status == pb.StatusResponse.COMPLETE
+
+
+# ------------------------------------------------------------------ tests: Cancel
+
+
+def _blocking_run(stub, run_id, final_out, *, never_respond=True):
+    """Start a run whose evaluate request is never answered, so the only way
+    it ends is cancellation (or timeout). Appends the final message to
+    `final_out`."""
+    def fake_optimize(*, seed_candidate, trainset, adapter, **_):
+        adapter.evaluate(list(trainset), dict(seed_candidate), capture_traces=False)
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id=run_id, seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5,
+    )))
+
+    def gen():
+        while True:
+            msg = req_q.get()
+            if msg is None:
+                return
+            yield msg
+
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        for msg in stub.RunOptimization(gen()):
+            if msg.HasField("evaluate_batch_request") and never_respond:
+                continue
+            if msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                final_out.append(msg)
+                req_q.put(None)
+                break
+
+
+def _await_status(stub, run_id, want, tries=300):
+    import time
+    for _ in range(tries):
+        if stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == want:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_cancel_unblocks_pending_wait_and_marks_cancelled(stub):
+    """Cancel unblocks an in-flight adapter.evaluate wait and marks the run
+    CANCELLED -- the two effects of cancellation, both observable."""
+    import threading
+
+    run_id = "cancel-me"
+    final: list = []
+    t = threading.Thread(target=_blocking_run, args=(stub, run_id, final))
+    t.start()
+
+    assert _await_status(stub, run_id, pb.StatusResponse.RUNNING), "run never reached RUNNING"
+    resp = stub.Cancel(pb.CancelRequest(run_id=run_id), timeout=5)
+    assert resp.accepted is True
+
+    t.join(timeout=10)
+    assert not t.is_alive(), "run did not unblock after Cancel"
+    assert len(final) == 1
+    assert final[0].HasField("optimization_error")
+    assert "cancelled" in final[0].optimization_error.message
+    assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == pb.StatusResponse.CANCELLED
+
+
+def test_cancel_unknown_run_id_not_accepted(stub):
+    """Cancelling a run_id the server never saw is a no-op, not an error."""
+    resp = stub.Cancel(pb.CancelRequest(run_id="never-existed"))
+    assert resp.accepted is False
+
+
+def test_cancel_already_finished_run_not_accepted(stub):
+    """Cancelling an already-complete run is a no-op, not an error."""
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    run_id = "already-done"
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+    assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == pb.StatusResponse.COMPLETE
+    assert stub.Cancel(pb.CancelRequest(run_id=run_id)).accepted is False
+
+
+# ------------------------------------------------------------------ tests: resume validation
+
+
+def test_resume_mismatched_request_rejected(stub):
+    """Re-issuing a finished run_id with a different trainset is rejected."""
+    import grpc as grpc_module
+
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    run_id = "resume-mismatch"
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id=run_id, seed_candidate=_SEED,
+        trainset=[pb.Example(id="different", fields={"input": "9+9", "answer": "18"})],
+        max_metric_calls=5,
+    )))
+
+    def gen():
+        while True:
+            msg = req_q.get()
+            if msg is None:
+                return
+            yield msg
+
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        try:
+            list(stub.RunOptimization(gen()))
+            req_q.put(None)
+            pytest.fail("expected RpcError")
+        except grpc_module.RpcError as e:
+            req_q.put(None)
+            assert e.code() == grpc_module.StatusCode.INVALID_ARGUMENT
+
+
+def test_resume_matching_request_succeeds(stub):
+    """Re-issuing a finished run_id with the *same* request is a legitimate
+    resume and must still be allowed."""
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    run_id = "resume-match"
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+    msg = _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+    assert msg is not None
+    assert msg.HasField("optimization_complete")
+
+
+# ------------------------------------------------------------------ tests: callback timeout
+
+
+def test_callback_timeout_fails_run(tmp_path):
+    """A client that never answers an EvaluateBatchRequest fails the run after
+    callback_timeout instead of hanging forever."""
+    with _custom_stub(tmp_path, callback_timeout=0.2) as stub:
+        run_id = "times-out"
+        final: list = []
+        _blocking_run(stub, run_id, final)
+        assert len(final) == 1
+        assert final[0].HasField("optimization_error")
+        assert final[0].optimization_error.message.startswith("RemoteAdapterTimeoutError: ")
+        assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == pb.StatusResponse.FAILED
+
+
+# ------------------------------------------------------- tests: eviction vs running runs
+
+
+@contextlib.contextmanager
+def _saturating_runs(stub, count, prefix):
+    """Start `count` runs that block inside gepa.optimize until released, so
+    every one occupies a run slot. Yields once all are RUNNING."""
+    import threading
+    import time
+
+    released = threading.Event()
+
+    def fake_optimize(**_):
+        released.wait(timeout=10)
+        return SimpleNamespace(candidates=[{}], best_idx=0, val_aggregate_scores=[0.0])
+
+    threads = []
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        for i in range(count):
+            req_q: queue.Queue = queue.Queue()
+            req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+                run_id=f"{prefix}-{i}", seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5,
+            )))
+
+            def drive(q=req_q):
+                def gen():
+                    while True:
+                        msg = q.get()
+                        if msg is None:
+                            return
+                        yield msg
+                for msg in stub.RunOptimization(gen()):
+                    if msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                        q.put(None)
+                        break
+
+            t = threading.Thread(target=drive)
+            t.start()
+            threads.append(t)
+
+        for i in range(count):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if stub.GetStatus(pb.StatusRequest(run_id=f"{prefix}-{i}")).status == pb.StatusResponse.RUNNING:
+                    break
+                time.sleep(0.01)
+        assert all(
+            stub.GetStatus(pb.StatusRequest(run_id=f"{prefix}-{i}")).status == pb.StatusResponse.RUNNING
+            for i in range(count)
+        ), "not all runs reached RUNNING"
+
+        try:
+            yield
+        finally:
+            released.set()
+            for t in threads:
+                t.join(timeout=10)
+
+
+def _attempt_run(stub, run_id):
+    """Try to start one run; return the gRPC status code it was rejected
+    with, or None if it was admitted."""
+    import grpc as grpc_module
+
+    def fake_optimize(**_):
+        return SimpleNamespace(candidates=[{}], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id=run_id, seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5,
+    )))
+
+    def gen():
+        while True:
+            msg = req_q.get()
+            if msg is None:
+                return
+            yield msg
+
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        try:
+            list(stub.RunOptimization(gen()))
+            req_q.put(None)
+            return None
+        except grpc_module.RpcError as e:
+            req_q.put(None)
+            return e.code()
+
+
+def test_max_runs_eviction_rejects_when_all_running(tmp_path):
+    """At _MAX_RUNS with every tracked run still running, a new run is
+    rejected with RESOURCE_EXHAUSTED rather than evicting a live run's status
+    record (which would make GetStatus wrongly report UNKNOWN for it)."""
+    import grpc as grpc_module
+
+    with _custom_stub(tmp_path, max_concurrent_runs=4) as stub, patch("gepa.rpc.servicer._MAX_RUNS", 2):
+        with _saturating_runs(stub, 2, "blocked"):
+            assert _attempt_run(stub, "blocked-2") == grpc_module.StatusCode.RESOURCE_EXHAUSTED
+        # Both originals survived eviction and completed normally.
+        for i in range(2):
+            assert stub.GetStatus(pb.StatusRequest(run_id=f"blocked-{i}")).status == pb.StatusResponse.COMPLETE
+
+
+# ------------------------------------------------- tests: build_server headroom validation
+
+
+def test_build_server_rejects_insufficient_headroom():
+    """build_server refuses to start when max_workers leaves no headroom
+    above max_concurrent_runs for control-plane RPCs."""
+    from gepa.rpc.server import CONTROL_PLANE_RESERVE, build_server
+
+    with pytest.raises(ValueError, match="max_workers"):
+        build_server(port=_free_port(), max_workers=8, max_concurrent_runs=8)
+    # Exactly at the boundary is allowed.
+    server = build_server(
+        port=_free_port(), max_workers=8 + CONTROL_PLANE_RESERVE, max_concurrent_runs=8,
+    )
+    server.stop(grace=0)
+
+
+# ------------------------------------------------- tests: concurrency under saturation
+
+
+def test_control_plane_responsive_when_runs_saturated(tmp_path):
+    """With every permitted run slot occupied by a long-running stream,
+    GetStatus and Cancel still respond promptly -- i.e. the reserved pool
+    headroom actually protects the control plane."""
+    import time
+
+    import grpc as grpc_module
+
+    with _custom_stub(tmp_path, max_workers=6, max_concurrent_runs=2) as stub:
+        with _saturating_runs(stub, 2, "sat"):
+            # A third run is correctly rejected: slots are full.
+            assert _attempt_run(stub, "sat-overflow") == grpc_module.StatusCode.RESOURCE_EXHAUSTED
+
+            # ...but control-plane RPCs on existing runs stay fast.
+            for i in range(2):
+                start = time.monotonic()
+                resp = stub.GetStatus(pb.StatusRequest(run_id=f"sat-{i}"), timeout=2.0)
+                assert time.monotonic() - start < 2.0
+                assert resp.status == pb.StatusResponse.RUNNING
+
+            start = time.monotonic()
+            cancel_resp = stub.Cancel(pb.CancelRequest(run_id="sat-0"), timeout=2.0)
+            assert time.monotonic() - start < 2.0
+            assert cancel_resp.accepted is True
+
+
+def test_excess_incoming_traffic_rejected_cheaply(tmp_path):
+    """A burst of connection attempts well beyond max_concurrent_runs is
+    rejected quickly (acquire-and-reject before any heavyweight setup) and
+    doesn't itself exhaust the pool enough to block GetStatus."""
+    import threading
+    import time
+
+    import grpc as grpc_module
+
+    with _custom_stub(tmp_path, max_workers=6, max_concurrent_runs=2) as stub:
+        with _saturating_runs(stub, 2, "excess-admitted"):
+            results: dict = {}
+
+            def attempt(idx):
+                results[idx] = _attempt_run(stub, f"excess-{idx}")
+
+            threads = [threading.Thread(target=attempt, args=(i,)) for i in range(10)]
+            start = time.monotonic()
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+            elapsed = time.monotonic() - start
+
+            assert len(results) == 10
+            assert all(code == grpc_module.StatusCode.RESOURCE_EXHAUSTED for code in results.values()), results
+            # Rejection is cheap -- 10 of them shouldn't queue behind real work.
+            assert elapsed < 10.0
+
+            # Control plane still responsive despite the burst.
+            start = time.monotonic()
+            resp = stub.GetStatus(pb.StatusRequest(run_id="excess-admitted-0"), timeout=2.0)
+            assert time.monotonic() - start < 2.0
+            assert resp.status == pb.StatusResponse.RUNNING
+
+
+def test_run_slot_released_on_every_exit_path(tmp_path):
+    """The max_concurrent_runs permit must come back however a run ends --
+    normal completion, mid-run exception, explicit cancellation, and client
+    disconnect. A leak on any path would silently shrink capacity until the
+    server refused all work.
+
+    Run with max_concurrent_runs=1 so a leaked permit is immediately fatal:
+    the *next* run would get RESOURCE_EXHAUSTED instead of succeeding.
+    """
+    import threading
+
+    def ok_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[1.0])
+
+    def boom_optimize(**_):
+        raise RuntimeError("boom")
+
+    with _custom_stub(tmp_path, max_workers=6, max_concurrent_runs=1) as stub:
+        # (a) normal completion
+        msg = _run_optimize_patched(stub, run_id="slot-ok", fake_optimize=ok_optimize)
+        assert msg.HasField("optimization_complete")
+
+        # (b) exception mid-run -- permit must still be freed
+        msg = _run_optimize_patched(stub, run_id="slot-boom", fake_optimize=boom_optimize)
+        assert msg.HasField("optimization_error")
+        assert _attempt_run(stub, "slot-after-boom") is None, "permit leaked after an exception"
+
+        # (c) explicit cancellation
+        final: list = []
+        t = threading.Thread(target=_blocking_run, args=(stub, "slot-cancel", final))
+        t.start()
+        assert _await_status(stub, "slot-cancel", pb.StatusResponse.RUNNING)
+        assert stub.Cancel(pb.CancelRequest(run_id="slot-cancel"), timeout=5).accepted is True
+        t.join(timeout=10)
+        assert not t.is_alive()
+        assert _attempt_run(stub, "slot-after-cancel") is None, "permit leaked after cancellation"
+
+        # (d) client disconnects mid-stream (generator ends without a result)
+        def disconnecting():
+            def fake_optimize(*, seed_candidate, trainset, adapter, **_):
+                adapter.evaluate(list(trainset), dict(seed_candidate), capture_traces=False)
+                return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+            req_q: queue.Queue = queue.Queue()
+            req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+                run_id="slot-disconnect", seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5,
+            )))
+
+            def gen():
+                msg = req_q.get()
+                yield msg
+                # End the request stream immediately: simulates the client
+                # going away without ever answering the evaluate request.
+
+            with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+                with contextlib.suppress(Exception):
+                    for _ in stub.RunOptimization(gen()):
+                        pass
+
+        d = threading.Thread(target=disconnecting)
+        d.start()
+        d.join(timeout=10)
+        assert not d.is_alive()
+        assert _await_status(stub, "slot-disconnect", pb.StatusResponse.FAILED, tries=500)
+        assert _attempt_run(stub, "slot-after-disconnect") is None, "permit leaked after disconnect"
