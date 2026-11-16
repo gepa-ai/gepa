@@ -113,7 +113,7 @@ src/gepa/rpc/
   sdk/rust/                      gepa-sdk Rust crate
     src/{client,types,error}.rs
     examples/{basic,omni}.rs
-    proto/gepa.proto             synced from ../../proto via scripts/compile_proto.sh
+    proto/gepa.proto             synced from ../../proto via scripts/sync-proto.sh
 tests/test_rpc_integration.py    gRPC integration tests (pytest, skipped without the rpc extra)
 tests/test_rpc_e2e/               real e2e optimization test + shared cache/golden file (Python; TS/Rust equivalents live under each SDK's tests/)
 ```

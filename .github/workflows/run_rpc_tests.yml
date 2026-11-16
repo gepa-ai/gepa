@@ -18,6 +18,48 @@ on:
   workflow_dispatch:
 
 jobs:
+  proto_sync_check:
+    name: Check proto copies and generated code are in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc-codegen
+      - name: Re-sync both SDKs' proto copies from the canonical source
+        run: |
+          bash src/gepa/rpc/sdk/typescript/scripts/sync-proto.sh
+          bash src/gepa/rpc/sdk/rust/scripts/sync-proto.sh
+      - name: Regenerate the committed Python bindings
+        run: bash src/gepa/rpc/scripts/compile_proto.sh
+      - name: Fail if re-running sync and codegen produced any diff
+        run: |
+          if ! git diff --exit-code -- \
+              src/gepa/rpc/proto/gepa.proto \
+              src/gepa/rpc/sdk/typescript/proto/gepa.proto \
+              src/gepa/rpc/sdk/rust/proto/gepa.proto \
+              src/gepa/rpc/generated/; then
+            echo "::error::gepa.proto, one of its SDK copies, or the committed" \
+                 "generated/ bindings are out of sync. Run" \
+                 "sdk/typescript/scripts/sync-proto.sh," \
+                 "sdk/rust/scripts/sync-proto.sh and scripts/compile_proto.sh," \
+                 "then commit the result."
+            exit 1
+          fi
+
   rpc_test:
     name: Run RPC Tests
     runs-on: ubuntu-latest
@@ -77,6 +119,16 @@ jobs:
         env:
           GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: npm run test:e2e
+      - name: Run non-Omni wire-protocol test (mocked optimizer, no LLM cache)
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:optimize-mocked
+      - name: Run cancellation tests (close/AbortSignal/timeoutMs)
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:cancellation
 
   rpc_rust_test:
     name: Run RPC Rust SDK Tests
@@ -106,11 +158,16 @@ jobs:
       - name: Check
         working-directory: src/gepa/rpc/sdk/rust
         run: cargo check --all-targets
-      - name: Run e2e test
+      - name: Run e2e test (Omni, recorded LLM cache)
         working-directory: src/gepa/rpc/sdk/rust
         env:
           GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: cargo test --test e2e
+      - name: Run non-Omni wire-protocol test (mocked optimizer, no LLM cache)
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test optimize_mocked
 
   # llm_call_test:
   #   name: Run Tests with Real LM

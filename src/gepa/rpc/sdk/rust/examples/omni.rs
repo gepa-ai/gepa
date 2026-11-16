@@ -5,12 +5,14 @@ use gepa_sdk::{Client, Example, OmniEvalResult, OmniOptimizeOpts};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let make_example = |id: &str, text: &str, label: &str| Example {
-        id: id.to_string(),
-        fields: HashMap::from([
-            ("text".to_string(), text.to_string()),
-            ("label".to_string(), label.to_string()),
-        ]),
+    let make_example = |id: &str, text: &str, label: &str| {
+        Example::new(
+            id,
+            HashMap::from([
+                ("text".to_string(), text.to_string()),
+                ("label".to_string(), label.to_string()),
+            ]),
+        )
     };
 
     let dataset = vec![
@@ -20,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         make_example("4", "Worst purchase I have ever made.", "negative"),
     ];
 
-    let client = Client::new("localhost:50051");
+    let client = Client::new("localhost:50051")?;
 
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
 
@@ -34,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dataset: Some(dataset),
             valset: None,
             objective: Some("Maximize accuracy of sentiment classification.".to_string()),
+            background: None,
             reflection_lm: Some("openai/gpt-4o-mini".to_string()),
             engine: None, // defaults to "gepa"
             max_evals: 30,
@@ -51,10 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|_| if is_classification_prompt { 1.0 } else { 0.0 })
                     .collect();
 
-                Ok(OmniEvalResult {
-                    scores,
-                    side_infos: None,
-                })
+                Ok(OmniEvalResult::new(scores, None))
             },
 
             on_progress: Some(Box::new(|u| {

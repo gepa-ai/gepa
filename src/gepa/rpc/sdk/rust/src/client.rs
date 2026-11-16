@@ -2,7 +2,7 @@ use std::future::Future;
 
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
 use crate::error::GEPAError;
@@ -10,11 +10,13 @@ use crate::generated::{
     client_message::Payload as ClientPayload, gepa_service_client::GepaServiceClient,
     omni_client_message::Payload as OmniClientPayload,
     omni_server_message::Payload as OmniServerPayload,
-    server_message::Payload as ServerPayload, ClientMessage, EvaluateBatchResponse,
+    optimization_error::ErrorKind, server_message::Payload as ServerPayload, ClientMessage,
+    EvaluateBatchResponse,
     Example as ProtoExample, OmniBestEval as ProtoOmniBestEval, OmniClientMessage,
     OmniEvaluateBatchResponse, OmniOptimizationState as ProtoOmniOptState, OmniStartRequest,
-    ReflectiveComponentData, ReflectiveDatasetResponse, ReflectiveEntry as ProtoEntry,
-    StartRequest, Trajectory as ProtoTrajectory,
+    OptimizationError as ProtoOptimizationError, ReflectiveComponentData,
+    ReflectiveDatasetResponse, ReflectiveEntry as ProtoEntry, StartRequest,
+    Trajectory as ProtoTrajectory,
 };
 use crate::types::{
     Candidate, EvalRequest, EvalResult, Example, OmniBestEval, OmniEvalRequest, OmniEvalResult,
@@ -23,15 +25,53 @@ use crate::types::{
     Trajectory,
 };
 
+/// Maps a server-reported OptimizationError onto the right GEPAError variant,
+/// so "your callback was wrong" is distinguishable from "the server failed"
+/// without parsing the message text.
+fn error_from_optimization_error(e: ProtoOptimizationError) -> GEPAError {
+    match ErrorKind::try_from(e.error_kind) {
+        Ok(ErrorKind::EvaluatorError) => GEPAError::EvaluatorError(e.message),
+        _ => GEPAError::OptimizationFailed(e.message),
+    }
+}
+
 pub struct Client {
-    target: String,
+    // One Channel, built once and reused by every call. tonic's Channel is
+    // cheap to clone (an internal handle, not a new socket), and
+    // connect_lazy() means constructing it neither blocks nor requires the
+    // server to be up yet -- the first real RPC establishes the connection.
+    // Previously optimize()/optimize_omni() each ran
+    // Channel::from_shared(..).connect().await on *every* invocation,
+    // reconnecting from scratch each time.
+    channel: Channel,
 }
 
 impl Client {
-    pub fn new(target: impl Into<String>) -> Self {
-        Self {
-            target: target.into(),
-        }
+    /// Connects over plaintext HTTP/2. For a server started with
+    /// --tls-cert/--tls-key, use [`Client::new_with_tls`].
+    pub fn new(target: impl Into<String>) -> Result<Self, GEPAError> {
+        let target = target.into();
+        let channel = Channel::from_shared(format!("http://{target}"))
+            .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
+            .connect_lazy();
+        Ok(Self { channel })
+    }
+
+    /// Connects over TLS. `tls_config` carries any custom CA (e.g. for a
+    /// self-signed server certificate) via
+    /// `ClientTlsConfig::new().ca_certificate(..)`; pass
+    /// `ClientTlsConfig::new()` to trust the platform's default roots.
+    pub fn new_with_tls(
+        target: impl Into<String>,
+        tls_config: ClientTlsConfig,
+    ) -> Result<Self, GEPAError> {
+        let target = target.into();
+        let channel = Channel::from_shared(format!("https://{target}"))
+            .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
+            .tls_config(tls_config)
+            .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
+            .connect_lazy();
+        Ok(Self { channel })
     }
 
     pub async fn optimize<E, M, EFut, MFut>(
@@ -44,12 +84,7 @@ impl Client {
         M: FnMut(ReflectiveRequest) -> MFut,
         MFut: Future<Output = Result<ReflectiveResult, GEPAError>> + Send,
     {
-        let channel = Channel::from_shared(format!("http://{}", self.target))
-            .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
-            .connect()
-            .await?;
-
-        let mut grpc_client = GepaServiceClient::new(channel);
+        let mut grpc_client = GepaServiceClient::new(self.channel.clone());
 
         let (tx, rx) = mpsc::channel::<ClientMessage>(32);
         let stream = ReceiverStream::new(rx);
@@ -66,7 +101,7 @@ impl Client {
                     .iter()
                     .map(example_to_proto)
                     .collect(),
-                reflection_lm: String::new(),
+                reflection_lm: opts.reflection_lm.clone().unwrap_or_default(),
                 max_metric_calls: opts.max_metric_calls,
             })),
         })
@@ -159,7 +194,7 @@ impl Client {
                     });
                 }
                 Some(ServerPayload::OptimizationError(e)) => {
-                    return Err(GEPAError::OptimizationFailed(e.message));
+                    return Err(error_from_optimization_error(e));
                 }
             }
         }
@@ -173,12 +208,7 @@ impl Client {
         E: FnMut(OmniEvalRequest) -> EFut,
         EFut: Future<Output = Result<OmniEvalResult, GEPAError>> + Send,
     {
-        let channel = Channel::from_shared(format!("http://{}", self.target))
-            .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
-            .connect()
-            .await?;
-
-        let mut grpc_client = GepaServiceClient::new(channel);
+        let mut grpc_client = GepaServiceClient::new(self.channel.clone());
 
         let (tx, rx) = mpsc::channel::<OmniClientMessage>(32);
         let stream = ReceiverStream::new(rx);
@@ -188,6 +218,7 @@ impl Client {
                 run_id: opts.run_id.clone(),
                 seed_candidate: opts.seed_candidate.clone().unwrap_or_default(),
                 objective: opts.objective.clone().unwrap_or_default(),
+                background: opts.background.clone().unwrap_or_default(),
                 dataset: opts
                     .dataset
                     .as_deref()
@@ -258,7 +289,7 @@ impl Client {
                     });
                 }
                 Some(OmniServerPayload::OptimizationError(e)) => {
-                    return Err(GEPAError::OptimizationFailed(e.message));
+                    return Err(error_from_optimization_error(e));
                 }
             }
         }

@@ -1,6 +1,8 @@
 export { Client } from "./client";
+export { OptimizationError } from "./types";
 export type {
   ClientOptions,
+  ErrorKind,
   EvaluateBatchArgs,
   EvaluateBatchResult,
   Example,

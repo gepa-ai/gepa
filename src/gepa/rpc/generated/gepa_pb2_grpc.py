@@ -27,7 +27,13 @@ if _version_not_supported:
 
 
 class GEPAServiceStub:
-    """Missing associated documentation comment in .proto file."""
+    """"Omni" (RunOptimizationOmni, OmniStartRequest, ...) is this API's shorthand
+    for gepa's "Optimize Anything" entry point
+    (gepa.optimize_anything.optimize_anything / OptimizeAnythingConfig), which
+    can route to any of several optimizer backends (gepa, autoresearch,
+    best_of_n, meta_harness) -- as distinct from RunOptimization/StartRequest,
+    which wrap the original gepa.optimize entry point specifically.
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -58,7 +64,13 @@ class GEPAServiceStub:
 
 
 class GEPAServiceServicer:
-    """Missing associated documentation comment in .proto file."""
+    """"Omni" (RunOptimizationOmni, OmniStartRequest, ...) is this API's shorthand
+    for gepa's "Optimize Anything" entry point
+    (gepa.optimize_anything.optimize_anything / OptimizeAnythingConfig), which
+    can route to any of several optimizer backends (gepa, autoresearch,
+    best_of_n, meta_harness) -- as distinct from RunOptimization/StartRequest,
+    which wrap the original gepa.optimize entry point specifically.
+    """
 
     def RunOptimization(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
@@ -121,7 +133,13 @@ def add_GEPAServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class GEPAService:
-    """Missing associated documentation comment in .proto file."""
+    """"Omni" (RunOptimizationOmni, OmniStartRequest, ...) is this API's shorthand
+    for gepa's "Optimize Anything" entry point
+    (gepa.optimize_anything.optimize_anything / OptimizeAnythingConfig), which
+    can route to any of several optimizer backends (gepa, autoresearch,
+    best_of_n, meta_harness) -- as distinct from RunOptimization/StartRequest,
+    which wrap the original gepa.optimize entry point specifically.
+    """
 
     @staticmethod
     def RunOptimization(request_iterator,

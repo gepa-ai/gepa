@@ -52,7 +52,7 @@ class ServerMessage(_message.Message):
     def __init__(self, evaluate_batch_request: _Optional[_Union[EvaluateBatchRequest, _Mapping]] = ..., reflective_dataset_request: _Optional[_Union[ReflectiveDatasetRequest, _Mapping]] = ..., progress_update: _Optional[_Union[ProgressUpdate, _Mapping]] = ..., optimization_complete: _Optional[_Union[OptimizationComplete, _Mapping]] = ..., optimization_error: _Optional[_Union[OptimizationError, _Mapping]] = ...) -> None: ...
 
 class OmniStartRequest(_message.Message):
-    __slots__ = ("run_id", "seed_candidate", "objective", "dataset", "valset", "max_evals", "reflection_lm", "engine")
+    __slots__ = ("run_id", "seed_candidate", "objective", "dataset", "valset", "max_evals", "reflection_lm", "engine", "background")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     SEED_CANDIDATE_FIELD_NUMBER: _ClassVar[int]
     OBJECTIVE_FIELD_NUMBER: _ClassVar[int]
@@ -61,6 +61,7 @@ class OmniStartRequest(_message.Message):
     MAX_EVALS_FIELD_NUMBER: _ClassVar[int]
     REFLECTION_LM_FIELD_NUMBER: _ClassVar[int]
     ENGINE_FIELD_NUMBER: _ClassVar[int]
+    BACKGROUND_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     seed_candidate: str
     objective: str
@@ -69,7 +70,8 @@ class OmniStartRequest(_message.Message):
     max_evals: int
     reflection_lm: str
     engine: str
-    def __init__(self, run_id: _Optional[str] = ..., seed_candidate: _Optional[str] = ..., objective: _Optional[str] = ..., dataset: _Optional[_Iterable[_Union[Example, _Mapping]]] = ..., valset: _Optional[_Iterable[_Union[Example, _Mapping]]] = ..., max_evals: _Optional[int] = ..., reflection_lm: _Optional[str] = ..., engine: _Optional[str] = ...) -> None: ...
+    background: str
+    def __init__(self, run_id: _Optional[str] = ..., seed_candidate: _Optional[str] = ..., objective: _Optional[str] = ..., dataset: _Optional[_Iterable[_Union[Example, _Mapping]]] = ..., valset: _Optional[_Iterable[_Union[Example, _Mapping]]] = ..., max_evals: _Optional[int] = ..., reflection_lm: _Optional[str] = ..., engine: _Optional[str] = ..., background: _Optional[str] = ...) -> None: ...
 
 class StartRequest(_message.Message):
     __slots__ = ("run_id", "seed_candidate", "trainset", "valset", "reflection_lm", "max_metric_calls")
@@ -256,12 +258,22 @@ class OptimizationComplete(_message.Message):
     def __init__(self, run_id: _Optional[str] = ..., best_candidate: _Optional[_Mapping[str, str]] = ..., best_score: _Optional[float] = ...) -> None: ...
 
 class OptimizationError(_message.Message):
-    __slots__ = ("run_id", "message")
+    __slots__ = ("run_id", "message", "error_kind")
+    class ErrorKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        UNSPECIFIED: _ClassVar[OptimizationError.ErrorKind]
+        EVALUATOR_ERROR: _ClassVar[OptimizationError.ErrorKind]
+        INTERNAL_ERROR: _ClassVar[OptimizationError.ErrorKind]
+    UNSPECIFIED: OptimizationError.ErrorKind
+    EVALUATOR_ERROR: OptimizationError.ErrorKind
+    INTERNAL_ERROR: OptimizationError.ErrorKind
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_KIND_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     message: str
-    def __init__(self, run_id: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
+    error_kind: OptimizationError.ErrorKind
+    def __init__(self, run_id: _Optional[str] = ..., message: _Optional[str] = ..., error_kind: _Optional[_Union[OptimizationError.ErrorKind, str]] = ...) -> None: ...
 
 class StatusRequest(_message.Message):
     __slots__ = ("run_id",)

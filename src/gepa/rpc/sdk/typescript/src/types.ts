@@ -1,5 +1,24 @@
 import type { ChannelCredentials } from "@grpc/grpc-js";
 
+/** Distinguishes the client's own evaluator mistake from a server/transport
+ * failure -- mirrors OptimizationError.error_kind in gepa.proto. */
+export type ErrorKind = "evaluator_error" | "internal_error" | "unspecified";
+
+/** Thrown by optimize()/optimizeOmni() when the server reports an
+ * optimization_error. `errorKind` lets a caller tell its own callback's bug
+ * apart from a server-side failure without parsing the message string. */
+export class OptimizationError extends Error {
+  readonly runId: string;
+  readonly errorKind: ErrorKind;
+
+  constructor(runId: string, message: string, errorKind: ErrorKind) {
+    super(`optimization ${runId || "(unknown)"} failed: ${message}`);
+    this.name = "OptimizationError";
+    this.runId = runId;
+    this.errorKind = errorKind;
+  }
+}
+
 export interface Example {
   id: string;
   fields: Record<string, string>;
@@ -59,6 +78,14 @@ export interface OptimizeOptions {
     args: ReflectiveDatasetArgs,
   ) => Promise<ReflectiveDatasetResult>;
   onProgress?: (update: ProgressUpdate) => void;
+
+  /** Aborts the call: rejects the returned promise and cancels the underlying
+   * stream. The server keeps running until it notices -- use Client.cancel()
+   * to ask it to stop too. */
+  signal?: AbortSignal;
+  /** Milliseconds to wait for the whole call before rejecting. Affects only
+   * what this client observes; the server is unaffected. */
+  timeoutMs?: number;
 }
 
 export interface OptimizeResult {
@@ -116,6 +143,9 @@ export interface OptimizeOmniOptions {
   dataset?: Example[];
   valset?: Example[];
   objective?: string;
+  /** Long-form task context (problem statement, evaluation rules) passed
+   * straight through to optimize_anything's own `background` parameter. */
+  background?: string;
   reflectionLm?: string;
   /**
    * Optimize Anything backend: "gepa" (default), "autoresearch", "best_of_n",
@@ -128,6 +158,14 @@ export interface OptimizeOmniOptions {
 
   evaluate: (args: OmniEvaluateBatchArgs) => Promise<OmniEvaluateBatchResult>;
   onProgress?: (update: OmniProgressUpdate) => void;
+
+  /** Aborts the call: rejects the returned promise and cancels the underlying
+   * stream. The server keeps running until it notices -- use Client.cancel()
+   * to ask it to stop too. */
+  signal?: AbortSignal;
+  /** Milliseconds to wait for the whole call before rejecting. Affects only
+   * what this client observes; the server is unaffected. */
+  timeoutMs?: number;
 }
 
 export interface OptimizeOmniResult {

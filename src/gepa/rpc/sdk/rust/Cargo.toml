@@ -7,7 +7,7 @@ description = "Rust client SDK for the GEPA optimization server"
 license = "MIT"
 
 [dependencies]
-tonic = "0.12"
+tonic = { version = "0.12", features = ["tls"] }
 prost = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1"
@@ -15,6 +15,9 @@ thiserror = "2"
 
 [build-dependencies]
 tonic-build = "0.12"
+# Ships a protoc binary so `cargo build` doesn't require the end user to have
+# the protobuf compiler installed -- build.rs points tonic_build at it.
+protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["process", "net", "time"] }

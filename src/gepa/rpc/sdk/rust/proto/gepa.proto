@@ -1,5 +1,12 @@
 syntax = "proto3";
 package gepa_rpc;
+
+// "Omni" (RunOptimizationOmni, OmniStartRequest, ...) is this API's shorthand
+// for gepa's "Optimize Anything" entry point
+// (gepa.optimize_anything.optimize_anything / OptimizeAnythingConfig), which
+// can route to any of several optimizer backends (gepa, autoresearch,
+// best_of_n, meta_harness) -- as distinct from RunOptimization/StartRequest,
+// which wrap the original gepa.optimize entry point specifically.
 service GEPAService {
   rpc RunOptimization(stream ClientMessage) returns (stream ServerMessage);
   rpc RunOptimizationOmni(stream OmniClientMessage) returns (stream OmniServerMessage);
@@ -54,6 +61,12 @@ message OmniStartRequest {
   // currently gets reflection_lm applied and streams OmniProgressUpdate;
   // other engines run to completion and report OmniOptimizationComplete only.
   string engine = 8;
+  // Long-form task context -- problem statement, evaluation rules, anything
+  // the optimizer or reflection step needs beyond seed_candidate and
+  // objective. Passed straight through to optimize_anything's own
+  // `background` parameter, which also uses it to bootstrap a first
+  // candidate when seed_candidate is empty. Optional; empty means none.
+  string background = 9;
 }
 message StartRequest {
   string run_id = 1;
@@ -75,12 +88,12 @@ message OmniOptimizationState {
   repeated OmniBestEval best_example_evals = 1;
 }
 message OmniBestEval {
-  float score = 1;
+  double score = 1;
   string side_info = 2;
 }
 message OmniEvaluateBatchResponse {
   string request_id = 1;
-  repeated float scores = 2;
+  repeated double scores = 2;
   repeated string side_infos = 3;
 }
 message EvaluateBatchRequest {
@@ -92,7 +105,7 @@ message EvaluateBatchRequest {
 message EvaluateBatchResponse {
   string request_id = 1;
   repeated string outputs = 2;
-  repeated float scores = 3;
+  repeated double scores = 3;
   repeated Trajectory trajectories = 4;
 }
 message ReflectiveDatasetRequest {
@@ -108,29 +121,40 @@ message ReflectiveDatasetResponse {
 message OmniProgressUpdate {
   int32 evals_used = 1;
   int32 max_evals = 2;
-  float best_score = 3;
+  double best_score = 3;
   string best_candidate = 4;
 }
 message OmniOptimizationComplete {
   string run_id = 1;
   string best_candidate = 2;
-  float best_score = 3;
+  double best_score = 3;
   int32 total_evals = 4;
 }
 message ProgressUpdate {
   int32 metric_calls_used = 1;
   int32 max_metric_calls = 2;
-  float best_score = 3;
+  double best_score = 3;
   map<string, string> best_candidate = 4;
 }
 message OptimizationComplete {
   string run_id = 1;
   map<string, string> best_candidate = 2;
-  float best_score = 3;
+  double best_score = 3;
 }
 message OptimizationError {
+  enum ErrorKind {
+    UNSPECIFIED = 0;
+    // The client's own evaluate / reflective-dataset callback raised, or
+    // returned something malformed (e.g. a mismatched score count).
+    // Actionable by the client without the server's logs.
+    EVALUATOR_ERROR = 1;
+    // Everything else: a server, transport or optimizer failure not caused
+    // by the client's callback.
+    INTERNAL_ERROR = 2;
+  }
   string run_id = 1;
   string message = 2;
+  ErrorKind error_kind = 3;
 }
 message StatusRequest {
   string run_id = 1;

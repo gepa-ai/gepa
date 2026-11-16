@@ -2,6 +2,12 @@
   "name": "@gepa/sdk",
   "version": "0.1.0",
   "description": "TypeScript client for the GEPA cross-language gRPC optimizer.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gepa-ai/gepa.git",
+    "directory": "src/gepa/rpc/sdk/typescript"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -12,13 +18,16 @@
   },
   "files": [
     "dist",
-    "proto"
+    "proto",
+    "LICENSE"
   ],
   "scripts": {
     "sync-proto": "bash scripts/sync-proto.sh",
     "build": "npm run sync-proto && tsc",
     "prepublishOnly": "npm run build",
-    "test:e2e": "tsx tests/e2e.ts"
+    "test:e2e": "tsx tests/e2e.ts",
+    "test:optimize-mocked": "tsx tests/optimize_mocked.ts",
+    "test:cancellation": "tsx tests/cancellation.ts"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.0",

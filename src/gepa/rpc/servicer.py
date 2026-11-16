@@ -434,7 +434,11 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 # overwrite it with "failed".
                 outbound.put(
                     pb.ServerMessage(
-                        optimization_error=pb.OptimizationError(run_id=run_id, message=str(exc))
+                        optimization_error=pb.OptimizationError(
+                            run_id=run_id,
+                            message=str(exc),
+                            error_kind=pb.OptimizationError.INTERNAL_ERROR,
+                        )
                     )
                 )
             except EvaluatorResponseError as exc:
@@ -444,7 +448,11 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 run_status["message"] = message
                 outbound.put(
                     pb.ServerMessage(
-                        optimization_error=pb.OptimizationError(run_id=run_id, message=message)
+                        optimization_error=pb.OptimizationError(
+                            run_id=run_id,
+                            message=message,
+                            error_kind=pb.OptimizationError.EVALUATOR_ERROR,
+                        )
                     )
                 )
             except Exception as exc:
@@ -460,7 +468,11 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 run_status["message"] = message
                 outbound.put(
                     pb.ServerMessage(
-                        optimization_error=pb.OptimizationError(run_id=run_id, message=message)
+                        optimization_error=pb.OptimizationError(
+                            run_id=run_id,
+                            message=message,
+                            error_kind=pb.OptimizationError.INTERNAL_ERROR,
+                        )
                     )
                 )
             finally:
@@ -630,6 +642,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                     dataset=dataset or None,
                     valset=valset,
                     objective=start_req.objective or None,
+                    background=start_req.background or None,
                     config=OptimizeAnythingConfig(
                         engine=engine,
                         max_evals=max_evals,
@@ -669,7 +682,10 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             except RunCancelledError as exc:
                 logger.info("omni optimization run %s cancelled: %s", run_id, exc)
                 outbound.put(pb.OmniServerMessage(
-                    optimization_error=pb.OptimizationError(run_id=run_id, message=str(exc))
+                    optimization_error=pb.OptimizationError(
+                        run_id=run_id, message=str(exc),
+                        error_kind=pb.OptimizationError.INTERNAL_ERROR,
+                    )
                 ))
             except EvaluatorResponseError as exc:
                 logger.exception("omni optimization run %s failed (client response error)", run_id)
@@ -677,7 +693,10 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 run_status["status"] = "failed"
                 run_status["message"] = message
                 outbound.put(pb.OmniServerMessage(
-                    optimization_error=pb.OptimizationError(run_id=run_id, message=message)
+                    optimization_error=pb.OptimizationError(
+                        run_id=run_id, message=message,
+                        error_kind=pb.OptimizationError.EVALUATOR_ERROR,
+                    )
                 ))
             except Exception as exc:
                 logger.exception("omni optimization run %s failed", run_id)
@@ -685,7 +704,10 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 run_status["status"] = "failed"
                 run_status["message"] = message
                 outbound.put(pb.OmniServerMessage(
-                    optimization_error=pb.OptimizationError(run_id=run_id, message=message)
+                    optimization_error=pb.OptimizationError(
+                        run_id=run_id, message=message,
+                        error_kind=pb.OptimizationError.INTERNAL_ERROR,
+                    )
                 ))
             finally:
                 outbound.put(None)

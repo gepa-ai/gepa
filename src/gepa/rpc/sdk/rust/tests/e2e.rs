@@ -48,7 +48,7 @@ async fn wait_for_port(port: u16, timeout_ms: u64) {
     }
 }
 
-fn grade(answer: &str, accepted_labels: &str) -> f32 {
+fn grade(answer: &str, accepted_labels: &str) -> f64 {
     let first_word = answer
         .trim()
         .split_whitespace()
@@ -99,12 +99,14 @@ async fn kill(mut child: Child) {
 }
 
 fn dataset() -> Vec<Example> {
-    let ex = |id: &str, text: &str, label: &str| Example {
-        id: id.to_string(),
-        fields: HashMap::from([
-            ("text".to_string(), text.to_string()),
-            ("label".to_string(), label.to_string()),
-        ]),
+    let ex = |id: &str, text: &str, label: &str| {
+        Example::new(
+            id,
+            HashMap::from([
+                ("text".to_string(), text.to_string()),
+                ("label".to_string(), label.to_string()),
+            ]),
+        )
     };
     vec![
         ex("1", "I love this product!", "positive"),
@@ -207,7 +209,7 @@ async fn run_test(
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
-    let client = Client::new(format!("localhost:{server_port}"));
+    let client = Client::new(format!("localhost:{server_port}"))?;
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
 
     let result = client
@@ -217,6 +219,7 @@ async fn run_test(
             dataset: Some(dataset()),
             valset: None,
             objective: Some("Maximize accuracy of sentiment classification.".to_string()),
+            background: None,
             reflection_lm: Some(REFLECTION_MODEL.to_string()),
             engine: None,
             max_evals: 30,
@@ -232,10 +235,7 @@ async fn run_test(
                             .map_err(|e| gepa_sdk::GEPAError::OptimizationFailed(e.to_string()))?;
                         scores.push(grade(&answer, label));
                     }
-                    Ok(OmniEvalResult {
-                        scores,
-                        side_infos: None,
-                    })
+                    Ok(OmniEvalResult::new(scores, None))
                 }
             },
             on_progress: None,

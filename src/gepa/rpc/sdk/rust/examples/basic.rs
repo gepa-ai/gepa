@@ -5,12 +5,14 @@ use gepa_sdk::{Client, EvalResult, Example, OptimizeOpts, ReflectiveEntry, Refle
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let make_example = |id: &str, input: &str, answer: &str| Example {
-        id: id.to_string(),
-        fields: HashMap::from([
-            ("input".to_string(), input.to_string()),
-            ("answer".to_string(), answer.to_string()),
-        ]),
+    let make_example = |id: &str, input: &str, answer: &str| {
+        Example::new(
+            id,
+            HashMap::from([
+                ("input".to_string(), input.to_string()),
+                ("answer".to_string(), answer.to_string()),
+            ]),
+        )
     };
 
     let trainset = vec![
@@ -19,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         make_example("3", "Color of the sky?", "blue"),
     ];
 
-    let client = Client::new("localhost:50051");
+    let client = Client::new("localhost:50051")?;
 
     let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
 
@@ -32,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )]),
             trainset,
             valset: None,
+            reflection_lm: None,
             max_metric_calls: 20,
 
             evaluate: |req: gepa_sdk::EvalRequest| async move {
@@ -51,25 +54,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     let correct = output == expected;
                     if req.capture_traces {
-                        trajectories.push(gepa_sdk::Trajectory {
-                            input_fields: ex.fields.clone(),
-                            output: output.clone(),
-                            feedback: if correct {
+                        trajectories.push(gepa_sdk::Trajectory::new(
+                            ex.fields.clone(),
+                            output.clone(),
+                            if correct {
                                 format!("Correct: produced \"{}\".", expected)
                             } else {
                                 format!("Wrong: expected \"{}\" but got \"{}\".", expected, output)
                             },
-                        });
+                        ));
                     }
                     outputs.push(output);
                     scores.push(if correct { 1.0 } else { 0.0 });
                 }
 
-                Ok(EvalResult {
+                Ok(EvalResult::new(
                     outputs,
                     scores,
-                    trajectories: if req.capture_traces { Some(trajectories) } else { None },
-                })
+                    if req.capture_traces { Some(trajectories) } else { None },
+                ))
             },
 
             make_reflective_dataset: |req: gepa_sdk::ReflectiveRequest| async move {
@@ -78,10 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let entries = req
                         .trajectories
                         .iter()
-                        .map(|t| ReflectiveEntry {
-                            inputs: t.input_fields.clone(),
-                            generated_output: t.output.clone(),
-                            feedback: t.feedback.clone(),
+                        .map(|t| {
+                            ReflectiveEntry::new(
+                                t.input_fields.clone(),
+                                t.output.clone(),
+                                t.feedback.clone(),
+                            )
                         })
                         .collect();
                     result.insert(comp.clone(), entries);
