@@ -151,7 +151,9 @@ jobs:
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install Python dependencies
         run: uv sync -p .venv --locked --extra dev --extra rpc
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      # No protobuf-compiler apt install needed: build.rs uses a vendored
+      # protoc, which is the point of that change -- leaving the apt step in
+      # would mean CI never exercised the path real users take.
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 'stable'

@@ -7,14 +7,19 @@ description = "Rust client SDK for the GEPA optimization server"
 license = "MIT"
 
 [dependencies]
-tonic = { version = "0.12", features = ["tls"] }
-prost = "0.13"
+tonic = { version = "0.14", features = ["tls-ring"] }
+# tonic 0.14 split the prost codec out of the core crate; the generated code
+# references it, so it's a direct runtime dependency now.
+tonic-prost = "0.14"
+prost = "0.14"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1"
 thiserror = "2"
 
 [build-dependencies]
-tonic-build = "0.12"
+# tonic 0.14 moved prost codegen out of tonic-build into tonic-prost-build;
+# tonic_build::configure() no longer exists.
+tonic-prost-build = "0.14"
 # Ships a protoc binary so `cargo build` doesn't require the end user to have
 # the protobuf compiler installed -- build.rs points tonic_build at it.
 protoc-bin-vendored = "3"
