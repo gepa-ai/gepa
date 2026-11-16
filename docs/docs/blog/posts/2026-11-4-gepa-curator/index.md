@@ -44,11 +44,16 @@ When GEPA-Curator is applied upon GEPA, it is capable of the following:
 
 <!-- more -->
 
-<figure>
-  <video controls playsinline preload="metadata" aria-label="GEPA-Curator overview" style="width: 100%; height: auto;">
-    <source src="../../../../2026-11-4-gepa-curator/images/gepa-curator.mp4" type="video/mp4">
-    Your browser does not support embedded video. <a href="../../../../2026-11-4-gepa-curator/images/gepa-curator.mp4">Download the GEPA-Curator video</a>.
-  </video>
+<figure style="width: 100%;">
+  <iframe
+    src="https://www.youtube.com/embed/yQfEHVDiVDQ"
+    title="GEPA-Curator overview"
+    loading="lazy"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="display: block; width: 100%; aspect-ratio: 16 / 9; border: 0;">
+  </iframe>
 </figure>
 
 ## When Failure Isn't the Prompt's Fault
@@ -188,13 +193,13 @@ We ablate each component on the GitLab subset (520 train / 200 eval tasks), keep
 
 | Method | Success (%) |
 |---|---|
-| Seed | 78.2 |
+| Seed | 79.2 |
 | GEPA | 82.8 |
 | Task curation only | 84.2 |
 | Prior success retrieval only | 84.7 |
 | **GEPA-Curator (full)** | **88.6** |
 
-Each component alone beats GEPA by under 2 points; together they add nearly 6. This fits the intuition: **task curation decides which failures the Reflector sees, and success retrieval improves how it reasons about them.**
+Each component alone improves upon GEPA by about 2 points, but together they add nearly 6 points—about 61% more than GEPA’s improvement over the seed prompt. This fits the intuition: **task curation decides which failures the Reflector sees, and success retrieval improves how it reasons about them.**
 
 ### Success/failure counts alone aren't enough
 
