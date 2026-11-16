@@ -105,137 +105,10 @@ jobs:
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
-  rpc_test:
-    name: Run RPC Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            **/pyproject.toml
-            **/uv.lock
-      - name: Create and activate virtual environment
-        run: |
-          uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
-      - name: Install dependencies
-        run: uv sync -p .venv --locked --extra dev --extra rpc
-      - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv tests/test_rpc_integration.py tests/test_rpc_e2e/
-
-  rpc_typescript_test:
-    name: Run RPC TypeScript SDK Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            **/pyproject.toml
-            **/uv.lock
-      - name: Create and activate virtual environment
-        run: |
-          uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
-      - name: Install Python dependencies
-        run: uv sync -p .venv --locked --extra dev --extra rpc
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install npm dependencies
-        working-directory: src/gepa/rpc/sdk/typescript
-        run: npm ci
-      - name: Build
-        working-directory: src/gepa/rpc/sdk/typescript
-        run: npm run build
-      - name: Run e2e test
-        working-directory: src/gepa/rpc/sdk/typescript
-        env:
-          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
-        run: npm run test:e2e
-
-  rpc_rust_test:
-    name: Run RPC Rust SDK Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            **/pyproject.toml
-            **/uv.lock
-      - name: Create and activate virtual environment
-        run: |
-          uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
-      - name: Install Python dependencies
-        run: uv sync -p .venv --locked --extra dev --extra rpc
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 'stable'
-      - name: Check
-        working-directory: src/gepa/rpc/sdk/rust
-        run: cargo check --all-targets
-      - name: Run e2e test
-        working-directory: src/gepa/rpc/sdk/rust
-        env:
-          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
-        run: cargo test --test e2e
-
-  # llm_call_test:
-  #   name: Run Tests with Real LM
-  #   runs-on: ubuntu-latest
-  #   services:
-  #     ollama:
-  #       image: ollama/ollama:latest
-  #       ports:
-  #         - 11434:11434
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-python@v5
-  #       with:
-  #         python-version: 3.11
-  #     - name: Install uv with caching
-  #       uses: astral-sh/setup-uv@v5
-  #       with:
-  #         enable-cache: true
-  #         cache-dependency-glob: |
-  #           **/pyproject.toml
-  #           **/uv.lock
-  #     - name: Create and activate virtual environment
-  #       run: |
-  #         uv venv .venv
-  #         echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
-  #     - name: Install dependencies
-  #       run: |
-  #         uv sync --dev -p .venv --extra dev
-  #         uv pip list
-  #     - name: Pull LLM
-  #       run: |
-  #         timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
-  #         curl -X POST http://localhost:11434/api/pull \
-  #           -H "Content-Type: application/json" \
-  #           -d '{"name": "llama3.2:3b"}'
-  #         echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
-  #     - name: Run tests
-  #       run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
+  # rpc_test, rpc_typescript_test and rpc_rust_test moved to
+  # run_rpc_tests.yml -- see that file's header for why. This workflow is
+  # what build_and_release.yml's verify-ci gate calls before every core
+  # PyPI release, so it must stay free of the npm/apt/cargo toolchains.
 
   build_package:
     name: Build Package
@@ -264,10 +137,22 @@ jobs:
         run: uv sync -p .venv --locked --extra dev
       - name: Build
         run: uv run -p .venv python -m build
-      - name: Install built package
-        run: uv pip install dist/*.whl -p .venv
+      - name: Install built package (wheel only, no rpc extra)
+        run: uv pip install "$(ls dist/*.whl)[dev]" -p .venv
       - name: Test import gepa
         run: uv run -p .venv python -c "import gepa"
+      # Proves the artifact that actually ships to PyPI -- not just the source
+      # checkout -- installs and tests clean with zero dependency on npm,
+      # cargo, apt or the rpc extra. The --ignore flags are
+      # belt-and-suspenders: the rpc tests already self-skip via
+      # pytest.importorskip("grpc") since this venv never installs the rpc
+      # extra, but excluding them explicitly keeps this release-gating job
+      # from ever implicitly depending on rpc.
+      - name: Run tests against the installed wheel
+        run: >-
+          uv run -p .venv pytest -vv tests/
+          --ignore=tests/test_rpc_integration.py
+          --ignore=tests/test_rpc_e2e
       # Ensure gepa[dspy] does not bring in new packages
       - name: Install dependencies
         run: |
