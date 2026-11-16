@@ -19,6 +19,7 @@ import queue
 import re
 import threading
 import uuid
+from collections.abc import Collection
 from typing import Any
 
 import grpc
@@ -166,18 +167,46 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
         runs_dir: str = DEFAULT_RUNS_DIR,
         max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
         callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+        allowed_engines: Collection[str] | None = None,
+        allowed_reflection_lms: Collection[str] | None = None,
+        default_reflection_lm: str | None = None,
     ):
         self._runs_dir = runs_dir
         self._runs: dict[str, dict[str, Any]] = {}
         self._runs_lock = threading.Lock()
         self._max_concurrent_runs = max_concurrent_runs
         self._callback_timeout = callback_timeout
+        # None means no restriction (every engine / reflection_lm allowed),
+        # preserving prior behavior. Non-None restricts to that explicit
+        # allowlist: without it, any client reaching the port could select
+        # engine="autoresearch"/"meta_harness" (which spawn a Claude Code
+        # agent subprocess server-side) or point reflection_lm at an
+        # arbitrary model, spending the operator's LLM budget.
+        self._allowed_engines = frozenset(allowed_engines) if allowed_engines is not None else None
+        self._allowed_reflection_lms = (
+            frozenset(allowed_reflection_lms) if allowed_reflection_lms is not None else None
+        )
+        self._default_reflection_lm = default_reflection_lm or DEFAULT_REFLECTION_LM
         # Acquired non-blocking at the very top of each streaming RPC, before
         # any other work, so a burst of excess connection attempts is
         # rejected cheaply rather than queueing behind real work. Released
         # exactly once per admitted run, in that run's runner() finally
         # block, however the run ends.
         self._run_slots = threading.Semaphore(max_concurrent_runs)
+
+    def _check_reflection_lm(self, reflection_lm: str, context: grpc.ServicerContext) -> bool:
+        if self._allowed_reflection_lms is not None and reflection_lm not in self._allowed_reflection_lms:
+            context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+            context.set_details(f"reflection_lm {reflection_lm!r} is not on this server's allowlist")
+            return False
+        return True
+
+    def _check_engine(self, engine: str, context: grpc.ServicerContext) -> bool:
+        if self._allowed_engines is not None and engine not in self._allowed_engines:
+            context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+            context.set_details(f"engine {engine!r} is not on this server's allowlist")
+            return False
+        return True
 
     def _register_run(
         self,
@@ -299,6 +328,10 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             release_slot()
             return
         run_dir = os.path.join(self._runs_dir, run_id)
+        reflection_lm = start_req.reflection_lm or self._default_reflection_lm
+        if not self._check_reflection_lm(reflection_lm, context):
+            release_slot()
+            return
 
         fingerprint = (
             dict(start_req.seed_candidate),
@@ -375,7 +408,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                     trainset=trainset,
                     valset=valset,
                     adapter=adapter,
-                    reflection_lm=start_req.reflection_lm or DEFAULT_REFLECTION_LM,
+                    reflection_lm=reflection_lm,
                     max_metric_calls=max_metric_calls,
                     run_dir=run_dir,
                     callbacks=[callback],  # type: ignore[arg-type]
@@ -482,6 +515,13 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             return
         run_dir = os.path.join(self._runs_dir, run_id)
         engine = start_req.engine or "gepa"
+        if not self._check_engine(engine, context):
+            release_slot()
+            return
+        reflection_lm = start_req.reflection_lm or self._default_reflection_lm
+        if not self._check_reflection_lm(reflection_lm, context):
+            release_slot()
+            return
 
         fingerprint = (
             start_req.seed_candidate,
@@ -578,7 +618,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                     callback = _OmniProgressCallback(outbound, start_req.max_evals, run_status)
                     engine_config = {
                         "reflection": {
-                            "reflection_lm": start_req.reflection_lm or DEFAULT_REFLECTION_LM,
+                            "reflection_lm": reflection_lm,
                         },
                         "callbacks": [callback],
                     }
@@ -594,6 +634,18 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                         engine=engine,
                         max_evals=max_evals,
                         run_dir=run_dir,
+                        # OptimizeAnythingConfig has two distinct directory
+                        # fields: run_dir (the engine's workspace, set above)
+                        # and output_dir (where the eval server writes
+                        # per-eval JSON, progress_log.jsonl and summary.json,
+                        # defaulting to a timestamped path under the server's
+                        # CWD when left None). Only run_dir was ever passed,
+                        # so Omni runs wrote eval output under the server's
+                        # CWD regardless of --runs-dir. Route it into this
+                        # run's own directory, under a subdirectory so it
+                        # can't collide with what gepa's engine writes
+                        # directly into run_dir.
+                        output_dir=os.path.join(run_dir, "eval_output"),
                         # sandbox left at gepa's default (True): autoresearch/meta_harness
                         # need it to jail their Claude Code agent subprocess.
                         engine_config=engine_config,

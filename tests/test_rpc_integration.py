@@ -54,7 +54,10 @@ def stub(tmp_path):
 
 
 @contextlib.contextmanager
-def _custom_stub(tmp_path, *, max_workers=4, max_concurrent_runs=8, callback_timeout=300.0):
+def _custom_stub(
+    tmp_path, *, max_workers=4, max_concurrent_runs=8, callback_timeout=300.0,
+    allowed_engines=None, allowed_reflection_lms=None, default_reflection_lm=None,
+):
     """Like the `stub` fixture, but exposing GEPAServicer's concurrency and
     timeout knobs. A plain contextmanager, not a fixture, since different
     tests need different combinations."""
@@ -65,6 +68,9 @@ def _custom_stub(tmp_path, *, max_workers=4, max_concurrent_runs=8, callback_tim
             runs_dir=str(tmp_path / "runs"),
             max_concurrent_runs=max_concurrent_runs,
             callback_timeout=callback_timeout,
+            allowed_engines=allowed_engines,
+            allowed_reflection_lms=allowed_reflection_lms,
+            default_reflection_lm=default_reflection_lm,
         ),
         server,
     )
@@ -1384,3 +1390,242 @@ def test_run_slot_released_on_every_exit_path(tmp_path):
         assert not d.is_alive()
         assert _await_status(stub, "slot-disconnect", pb.StatusResponse.FAILED, tries=500)
         assert _attempt_run(stub, "slot-after-disconnect") is None, "permit leaked after disconnect"
+
+
+# ------------------------------------------------------- tests: security surface
+
+
+@contextlib.contextmanager
+def _real_server(tmp_path, **kwargs):
+    """Spin up a server via gepa.rpc.server.build_server (not a bare
+    GEPAServicer) so the host/TLS/auth-interceptor wiring is really
+    exercised. Yields the bound port."""
+    from gepa.rpc.server import build_server
+
+    port = _free_port()
+    kwargs.setdefault("runs_dir", str(tmp_path / "runs"))
+    kwargs.setdefault("max_workers", 8)
+    kwargs.setdefault("max_concurrent_runs", 4)
+    server = build_server(port=port, **kwargs)
+    server.start()
+    try:
+        yield port
+    finally:
+        server.stop(grace=0)
+
+
+def test_default_host_is_loopback():
+    """Binding without an explicit --host must stay off the wildcard."""
+    from gepa.rpc.server import DEFAULT_HOST
+
+    assert DEFAULT_HOST == "127.0.0.1"
+
+
+def test_auth_token_rejects_missing_or_wrong_token(tmp_path):
+    """Without the configured token every RPC is UNAUTHENTICATED -- unary and
+    streaming alike (the interceptor must match the RPC's cardinality)."""
+    import grpc as grpc_module
+
+    with _real_server(tmp_path, auth_token="s3cret") as port:
+        channel = grpc_module.insecure_channel(f"localhost:{port}")
+        stub = pb_grpc.GEPAServiceStub(channel)
+        try:
+            with pytest.raises(grpc_module.RpcError) as ei:
+                stub.GetStatus(pb.StatusRequest(run_id="whatever"))
+            assert ei.value.code() == grpc_module.StatusCode.UNAUTHENTICATED
+
+            with pytest.raises(grpc_module.RpcError) as ei:
+                stub.GetStatus(pb.StatusRequest(run_id="x"), metadata=(("authorization", "wrong"),))
+            assert ei.value.code() == grpc_module.StatusCode.UNAUTHENTICATED
+
+            req_q: queue.Queue = queue.Queue()
+            req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+                run_id="r", seed_candidate=_SEED, trainset=_TRAINSET)))
+
+            def gen():
+                while True:
+                    msg = req_q.get()
+                    if msg is None:
+                        return
+                    yield msg
+
+            with pytest.raises(grpc_module.RpcError) as ei:
+                list(stub.RunOptimization(gen()))
+            req_q.put(None)
+            assert ei.value.code() == grpc_module.StatusCode.UNAUTHENTICATED
+        finally:
+            channel.close()
+
+
+def test_auth_token_allows_correct_token(tmp_path):
+    """The correct token in `authorization` metadata is accepted."""
+    import grpc as grpc_module
+
+    with _real_server(tmp_path, auth_token="s3cret") as port:
+        channel = grpc_module.insecure_channel(f"localhost:{port}")
+        stub = pb_grpc.GEPAServiceStub(channel)
+        try:
+            resp = stub.GetStatus(
+                pb.StatusRequest(run_id="whatever"), metadata=(("authorization", "s3cret"),)
+            )
+            # No such run, but the request itself authenticated.
+            assert resp.status == pb.StatusResponse.UNKNOWN
+        finally:
+            channel.close()
+
+
+def test_tls_handshake_succeeds_with_configured_cert(tmp_path):
+    """A server given --tls-cert/--tls-key accepts a TLS connection from a
+    client that trusts that certificate."""
+    import shutil
+    import subprocess
+
+    import grpc as grpc_module
+
+    if shutil.which("openssl") is None:
+        pytest.skip("openssl CLI unavailable to generate a test certificate")
+
+    cert_path = tmp_path / "server.crt"
+    key_path = tmp_path / "server.key"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+         "-keyout", str(key_path), "-out", str(cert_path),
+         "-days", "1", "-subj", "/CN=localhost"],
+        check=True, capture_output=True,
+    )
+
+    with _real_server(tmp_path, tls_cert_path=str(cert_path), tls_key_path=str(key_path)) as port:
+        creds = grpc_module.ssl_channel_credentials(root_certificates=cert_path.read_bytes())
+        channel = grpc_module.secure_channel(f"localhost:{port}", creds)
+        stub = pb_grpc.GEPAServiceStub(channel)
+        try:
+            assert stub.GetStatus(pb.StatusRequest(run_id="x"), timeout=5).status == pb.StatusResponse.UNKNOWN
+        finally:
+            channel.close()
+
+
+def test_build_server_requires_both_tls_args():
+    """One half of the TLS pair is a config error, not a silently-plaintext
+    server."""
+    from gepa.rpc.server import build_server
+
+    with pytest.raises(ValueError, match="tls_cert_path and tls_key_path"):
+        build_server(port=_free_port(), tls_cert_path="/tmp/irrelevant.crt")
+
+
+def test_engine_allowlist_rejects_disallowed_engine(tmp_path):
+    """An Omni request for an engine off the allowlist is PERMISSION_DENIED
+    before any work starts."""
+    import grpc as grpc_module
+
+    with _custom_stub(tmp_path, allowed_engines=["gepa"]) as stub:
+        req_q: queue.Queue = queue.Queue()
+        req_q.put(pb.OmniClientMessage(start_request=pb.OmniStartRequest(
+            run_id="disallowed-engine", seed_candidate="x", engine="autoresearch")))
+
+        def gen():
+            while True:
+                msg = req_q.get()
+                if msg is None:
+                    return
+                yield msg
+
+        try:
+            list(stub.RunOptimizationOmni(gen()))
+            req_q.put(None)
+            pytest.fail("expected RpcError")
+        except grpc_module.RpcError as e:
+            req_q.put(None)
+            assert e.code() == grpc_module.StatusCode.PERMISSION_DENIED
+
+
+def test_engine_allowlist_allows_listed_engine(tmp_path):
+    """An engine that *is* allowlisted proceeds normally."""
+    from gepa.optimize_anything import Result
+
+    def fake(*, seed_candidate, **_):
+        return Result(best_candidate=seed_candidate or "", best_score=1.0, total_evals=1)
+
+    with _custom_stub(tmp_path, allowed_engines=["gepa"]) as stub:
+        msg = _run_optimize_omni(stub, run_id="allowed-engine", fake_optimize_anything=fake)
+        assert msg is not None
+        assert msg.HasField("optimization_complete")
+
+
+def test_reflection_lm_allowlist_rejects_disallowed_value(tmp_path):
+    """A reflection_lm off the allowlist is PERMISSION_DENIED before any work."""
+    import grpc as grpc_module
+
+    with _custom_stub(tmp_path, allowed_reflection_lms=["openai/gpt-5.1"]) as stub:
+        req_q: queue.Queue = queue.Queue()
+        req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+            run_id="disallowed-lm", seed_candidate=_SEED, trainset=_TRAINSET,
+            reflection_lm="some/other-model")))
+
+        def gen():
+            while True:
+                msg = req_q.get()
+                if msg is None:
+                    return
+                yield msg
+
+        try:
+            list(stub.RunOptimization(gen()))
+            req_q.put(None)
+            pytest.fail("expected RpcError")
+        except grpc_module.RpcError as e:
+            req_q.put(None)
+            assert e.code() == grpc_module.StatusCode.PERMISSION_DENIED
+
+
+def test_reflection_lm_allowlist_applies_to_configured_default(tmp_path):
+    """When the client omits reflection_lm, the server's configured default is
+    what gets allowlist-checked -- and passes when it's listed."""
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    with _custom_stub(
+        tmp_path, allowed_reflection_lms=["openai/gpt-5.1"], default_reflection_lm="openai/gpt-5.1",
+    ) as stub:
+        with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+            msg = _run_optimize(stub, run_id="allowed-lm", reflection_lm="")
+        assert msg is not None
+        assert msg.HasField("optimization_complete")
+
+
+# ------------------------------------------------------- tests: Omni output_dir
+
+
+def test_omni_output_dir_routes_under_run_dir(stub):
+    """OptimizeAnythingConfig.output_dir must land under the server's runs_dir
+    rather than being left None, which defaults it to a path under the
+    server's CWD regardless of --runs-dir."""
+    from gepa.optimize_anything import Result
+
+    captured: dict = {}
+
+    def fake(*, seed_candidate, config, **_):
+        captured["output_dir"] = config.output_dir
+        captured["run_dir"] = config.run_dir
+        return Result(best_candidate=seed_candidate or "", best_score=0.0, total_evals=0)
+
+    with patch("gepa.rpc.servicer.optimize_anything", side_effect=fake):
+        req_q: queue.Queue = queue.Queue()
+        req_q.put(pb.OmniClientMessage(start_request=pb.OmniStartRequest(
+            run_id="output-dir-check", seed_candidate="x")))
+
+        def gen():
+            while True:
+                msg = req_q.get()
+                if msg is None:
+                    return
+                yield msg
+
+        for msg in stub.RunOptimizationOmni(gen()):
+            if msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                req_q.put(None)
+                break
+
+    assert captured["output_dir"] is not None
+    assert captured["run_dir"] is not None
+    assert str(captured["output_dir"]).startswith(str(captured["run_dir"]))
