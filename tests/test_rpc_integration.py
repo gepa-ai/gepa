@@ -63,14 +63,20 @@ _TRAINSET = [
 _SEED = {"instructions": "Answer the question."}
 
 
-def _run_optimize(stub, *, run_id: str, fake_optimize, seed=None, trainset=None, max_metric_calls=20):
+def _run_optimize(stub, *, run_id: str, seed=None, trainset=None, max_metric_calls=20, reflection_lm="fake"):
     """Drive a full RunOptimization round-trip with a mock optimizer.
-
-    The fake_optimize callable receives the same kwargs the servicer passes to
-    gepa.optimize. It must return a GEPAResult-shaped namespace.
 
     The test client automatically responds to EvaluateBatchRequest messages
     with score=1.0 for every example.
+
+    Does NOT patch gepa.optimize itself -- the caller is responsible for that
+    (via `_run_optimize_patched` for single-threaded use, or its own patch
+    applied once outside any thread it spawns). This keeps "what's patched"
+    and "who's reading the stream" decoupled, which matters for concurrent
+    callers: `unittest.mock.patch` context managers are not reentrant or
+    thread-safe, so having this helper apply its own patch meant every
+    concurrent caller raced to install and restore the same patch on the
+    same shared object.
     """
     seed = seed if seed is not None else _SEED
     trainset = trainset if trainset is not None else _TRAINSET
@@ -82,7 +88,7 @@ def _run_optimize(stub, *, run_id: str, fake_optimize, seed=None, trainset=None,
             seed_candidate=seed,
             trainset=trainset,
             max_metric_calls=max_metric_calls,
-            reflection_lm="fake",
+            reflection_lm=reflection_lm,
         )
     ))
 
@@ -94,24 +100,34 @@ def _run_optimize(stub, *, run_id: str, fake_optimize, seed=None, trainset=None,
             yield msg
 
     final = None
-    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
-        call = stub.RunOptimization(gen())
-        for msg in call:
-            if msg.HasField("evaluate_batch_request"):
-                req = msg.evaluate_batch_request
-                req_q.put(pb.ClientMessage(
-                    evaluate_batch_response=pb.EvaluateBatchResponse(
-                        request_id=req.request_id,
-                        outputs=["ok"] * len(req.batch),
-                        scores=[1.0] * len(req.batch),
-                    )
-                ))
-            elif msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
-                final = msg
-                req_q.put(None)
-                break
+    call = stub.RunOptimization(gen())
+    for msg in call:
+        if msg.HasField("evaluate_batch_request"):
+            req = msg.evaluate_batch_request
+            req_q.put(pb.ClientMessage(
+                evaluate_batch_response=pb.EvaluateBatchResponse(
+                    request_id=req.request_id,
+                    outputs=["ok"] * len(req.batch),
+                    scores=[1.0] * len(req.batch),
+                )
+            ))
+        elif msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+            final = msg
+            req_q.put(None)
+            break
 
     return final
+
+
+def _run_optimize_patched(stub, *, fake_optimize, **kwargs):
+    """`_run_optimize`, patching gepa.optimize for the duration of the call.
+
+    For single-threaded call sites only -- see `_run_optimize`'s docstring
+    for why concurrent callers must patch once, outside their threads,
+    instead of using this wrapper.
+    """
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        return _run_optimize(stub, **kwargs)
 
 
 def _run_optimize_omni(stub, *, run_id: str, fake_optimize_anything, dataset=None, engine=None):
@@ -174,7 +190,7 @@ def test_optimize_returns_complete(stub):
             val_aggregate_scores=[0.75],
         )
 
-    msg = _run_optimize(stub, run_id="opt-happy", fake_optimize=fake_optimize)
+    msg = _run_optimize_patched(stub, run_id="opt-happy", fake_optimize=fake_optimize)
 
     assert msg is not None
     assert msg.HasField("optimization_complete")
@@ -198,7 +214,7 @@ def test_optimize_evaluate_proxied(stub):
             val_aggregate_scores=[sum(result.scores) / len(result.scores)],
         )
 
-    _run_optimize(stub, run_id="opt-proxy", fake_optimize=fake_optimize)
+    _run_optimize_patched(stub, run_id="opt-proxy", fake_optimize=fake_optimize)
 
     assert len(received_batches) == 1
     batch, scores = received_batches[0]
@@ -211,7 +227,7 @@ def test_optimize_error_propagated(stub):
     def fake_optimize(**_):
         raise RuntimeError("boom")
 
-    msg = _run_optimize(stub, run_id="opt-err", fake_optimize=fake_optimize)
+    msg = _run_optimize_patched(stub, run_id="opt-err", fake_optimize=fake_optimize)
 
     assert msg is not None
     assert msg.HasField("optimization_error")
@@ -229,7 +245,7 @@ def test_get_status_complete(stub):
         )
 
     run_id = "status-test"
-    _run_optimize(stub, run_id=run_id, fake_optimize=fake_optimize)
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
 
     resp = stub.GetStatus(pb.StatusRequest(run_id=run_id))
     assert resp.status == pb.StatusResponse.COMPLETE
@@ -493,7 +509,7 @@ def test_optimize_empty_trainset(stub):
     def fake_optimize(**_):
         return SimpleNamespace(candidates=[{"instructions": "x"}], best_idx=0, val_aggregate_scores=[0.0])
 
-    msg = _run_optimize(stub, run_id="opt-empty", fake_optimize=fake_optimize, trainset=[])
+    msg = _run_optimize_patched(stub, run_id="opt-empty", fake_optimize=fake_optimize, trainset=[])
     assert msg is not None
     assert msg.HasField("optimization_complete")
 
@@ -577,7 +593,7 @@ def test_get_status_failed(stub):
         raise RuntimeError("internal details that must not leak")
 
     run_id = "status-fail"
-    _run_optimize(stub, run_id=run_id, fake_optimize=fake_optimize)
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
 
     resp = stub.GetStatus(pb.StatusRequest(run_id=run_id))
     assert resp.status == pb.StatusResponse.FAILED
@@ -603,7 +619,7 @@ def test_duplicate_run_id_rejected(stub):
     first_result: list = []
 
     def run_first():
-        msg = _run_optimize(stub, run_id="dup-run", fake_optimize=fake_optimize)
+        msg = _run_optimize_patched(stub, run_id="dup-run", fake_optimize=fake_optimize)
         first_result.append(msg)
 
     t = threading.Thread(target=run_first)
@@ -824,14 +840,27 @@ def test_concurrent_runs_different_ids_succeed(stub):
     results: dict = {}
 
     def run_one(run_id):
-        with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
-            results[run_id] = _run_optimize(stub, run_id=run_id, fake_optimize=fake_optimize)
+        results[run_id] = _run_optimize(stub, run_id=run_id)
 
-    threads = [threading.Thread(target=run_one, args=(f"concurrent-{i}",)) for i in range(3)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=10)
+    # Patch exactly once, before any thread starts, and patch the *name*
+    # `gepa` inside servicer's module namespace rather than `.optimize` on
+    # the real shared `gepa` package object. `gepa.rpc.servicer.gepa` IS that
+    # shared module object (servicer.py does `import gepa` then calls
+    # `gepa.optimize(...)`), so patching its `.optimize` attribute is exactly
+    # equivalent to patching the process-global `gepa.optimize` -- doing that
+    # from 3 threads at once is what made this test flaky (mock.patch context
+    # managers aren't thread-safe, so the 3 enter/exit calls can restore the
+    # attribute out of order and leave `gepa.optimize` permanently mocked for
+    # the rest of the session, breaking unrelated tests depending on order).
+    # Rebinding the `gepa` name itself, once, before the threads start, means
+    # they only ever read an already-stable reference.
+    fake_gepa = SimpleNamespace(optimize=fake_optimize)
+    with patch("gepa.rpc.servicer.gepa", fake_gepa):
+        threads = [threading.Thread(target=run_one, args=(f"concurrent-{i}",)) for i in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
 
     assert len(results) == 3
     for run_id, msg in results.items():
@@ -915,14 +944,14 @@ def test_max_runs_eviction_prefers_finished(stub):
         return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
 
     with patch("gepa.rpc.servicer._MAX_RUNS", 2):
-        _run_optimize(stub, run_id="evict-1", fake_optimize=fake_optimize)
-        _run_optimize(stub, run_id="evict-2", fake_optimize=fake_optimize)
+        _run_optimize_patched(stub, run_id="evict-1", fake_optimize=fake_optimize)
+        _run_optimize_patched(stub, run_id="evict-2", fake_optimize=fake_optimize)
 
         assert stub.GetStatus(pb.StatusRequest(run_id="evict-1")).status == pb.StatusResponse.COMPLETE
         assert stub.GetStatus(pb.StatusRequest(run_id="evict-2")).status == pb.StatusResponse.COMPLETE
 
         # A third run should evict the oldest finished entry (evict-1), not error out.
-        _run_optimize(stub, run_id="evict-3", fake_optimize=fake_optimize)
+        _run_optimize_patched(stub, run_id="evict-3", fake_optimize=fake_optimize)
 
         assert stub.GetStatus(pb.StatusRequest(run_id="evict-1")).status == pb.StatusResponse.UNKNOWN
         assert stub.GetStatus(pb.StatusRequest(run_id="evict-3")).status == pb.StatusResponse.COMPLETE

@@ -76,6 +76,15 @@ dev = [
     "build>=1.0.3",
     "ruff>=0.3.0"
 ]
+rpc-codegen = [
+    # Only needed to regenerate src/gepa/rpc/generated/ via
+    # scripts/compile_proto.sh -- gepa.rpc itself only needs the runtime
+    # grpcio/protobuf floors declared in the `rpc` extra, not the compiler.
+    # Kept out of `dev` deliberately: `dev` is what the release path installs
+    # (`gepa[dev]`), and that path should never pull in RPC-SDK-adjacent
+    # build tooling that core releases don't need.
+    "grpcio-tools>=1.83.1",
+]
 gskill = [
     "gepa[full]",
     "swesmith",
@@ -91,8 +100,17 @@ langchain = [
 ]
 
 rpc = [
-    "grpcio>=1.80.0",
-    "grpcio-tools>=1.80.0",
+    # The committed generated code (src/gepa/rpc/generated/) declares its own
+    # floors at the top of each file: GRPC_GENERATED_VERSION in
+    # gepa_pb2_grpc.py, and a ValidateProtobufRuntimeVersion(..., 7, 35, 1, ...)
+    # check in gepa_pb2.py. A declared floor below either lets pip/uv resolve
+    # a grpcio/protobuf pair that fails `import gepa.rpc` with a VersionError
+    # at runtime -- match the generated code's real requirement here (re-check
+    # after every `scripts/compile_proto.sh` regeneration, since the floor it
+    # stamps in tracks whatever grpcio-tools generated the code, not the
+    # grpcio release gepa.rpc happened to be developed against).
+    "grpcio>=1.83.1",
+    "protobuf>=7.35.1",
     # reflection_lm goes through litellm; see the litellm cap comment in the
     # `full` extra above for why it's bounded at <1.92.
     "litellm>=1.83.0,<1.92",
