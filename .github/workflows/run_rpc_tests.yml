@@ -20,14 +20,15 @@ on:
 jobs:
   proto_sync_check:
     name: Check proto copies and generated code are in sync
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -62,14 +63,15 @@ jobs:
 
   rpc_test:
     name: Run RPC Tests
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -86,14 +88,15 @@ jobs:
 
   rpc_typescript_test:
     name: Run RPC TypeScript SDK Tests
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -105,9 +108,11 @@ jobs:
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install Python dependencies
         run: uv sync -p .venv --locked --extra dev --extra rpc
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/gepa/rpc/sdk/typescript/package-lock.json
       - name: Install npm dependencies
         working-directory: src/gepa/rpc/sdk/typescript
         run: npm ci
@@ -132,14 +137,15 @@ jobs:
 
   rpc_rust_test:
     name: Run RPC Rust SDK Tests
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install uv with caching
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -154,9 +160,13 @@ jobs:
       # No protobuf-compiler apt install needed: build.rs uses a vendored
       # protoc, which is the point of that change -- leaving the apt step in
       # would mean CI never exercised the path real users take.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: 'stable'
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          workspaces: src/gepa/rpc/sdk/rust
       - name: Check
         working-directory: src/gepa/rpc/sdk/rust
         run: cargo check --all-targets
@@ -180,12 +190,12 @@ jobs:
   #       ports:
   #         - 11434:11434
   #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-python@v5
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
   #       with:
   #         python-version: 3.11
   #     - name: Install uv with caching
-  #       uses: astral-sh/setup-uv@v5
+  #       uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
   #       with:
   #         enable-cache: true
   #         cache-dependency-glob: |

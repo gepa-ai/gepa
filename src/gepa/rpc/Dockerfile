@@ -1,4 +1,6 @@
-FROM python:3.11-slim
+# Digest-pinned so a rebuild can't silently pick up a different base image.
+# Refresh with: docker buildx imagetools inspect python:3.11-slim
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
 # Unbuffered stdout/stderr so `docker logs` shows output promptly (Python
 # fully-buffers stdout when it's not a TTY, which a container's is not).
@@ -10,15 +12,32 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git \
- && pip install --no-cache-dir ".[rpc]" \
- && apt-get purge -y --auto-remove git \
- && rm -rf /var/lib/apt/lists/*
+# uv.lock was previously copied in but never used -- `pip install ".[rpc]"`
+# re-resolves from pyproject.toml, so image contents drifted from the locked
+# versions CI tests against. Export the locked set and install exactly that.
+#
+# --no-default-groups and --no-dev keep this production-only: the project has
+# no PEP 735 dependency-groups today, but being explicit means adding one
+# later can't silently pull test/lint tooling into the runtime image.
+# --no-emit-project excludes gepa itself, which is installed --no-deps after,
+# so nothing gets re-resolved.
+# uv pinned, and installed from PyPI rather than pulled from a second
+# registry, so the image has exactly one dependency source.
+RUN pip install --no-cache-dir "uv==0.11.1" \
+ && uv export --locked --extra rpc --no-default-groups --no-dev \
+        --no-emit-project -o /tmp/requirements.txt \
+ && pip install --no-cache-dir -r /tmp/requirements.txt \
+ && pip install --no-cache-dir --no-deps . \
+ && pip uninstall -y uv \
+ && rm -f /tmp/requirements.txt
 
 RUN useradd --no-create-home --shell /bin/false appuser && chown appuser /app
 USER appuser
 
 EXPOSE 50051
 
-ENTRYPOINT ["gepa-rpc", "--port", "50051"]
+# Loopback-only by default (see server.py's DEFAULT_HOST). A container needs
+# 0.0.0.0 to be reachable via published ports at all, so set it explicitly
+# here rather than silently inheriting a default that can't work in Docker --
+# pair with --auth-token and/or --tls-cert when exposing the port.
+ENTRYPOINT ["gepa-rpc", "--port", "50051", "--host", "0.0.0.0"]

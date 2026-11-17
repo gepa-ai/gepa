@@ -83,7 +83,7 @@ rpc-codegen = [
     # Kept out of `dev` deliberately: `dev` is what the release path installs
     # (`gepa[dev]`), and that path should never pull in RPC-SDK-adjacent
     # build tooling that core releases don't need.
-    "grpcio-tools>=1.83.1",
+    "grpcio-tools>=1.85.1",
 ]
 gskill = [
     "gepa[full]",

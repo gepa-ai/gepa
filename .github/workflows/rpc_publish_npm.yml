@@ -1,25 +1,102 @@
 name: gepa.rpc - Publish @gepa/sdk to npm
 
+# Publishing safeguards, mirroring build_and_release.yml's posture for PyPI:
+#  * repository-owner check, so a fork pushing this tag can't publish
+#  * the tagged commit must be an ancestor of main
+#  * the tag version must match package.json
+#  * the SDK's own tests must pass in this job before `npm publish` runs --
+#    git ancestry alone proves nothing about CI having been green
+#  * an `environment:` so a human approval gate can be attached in repo
+#    settings (the reviewer list is configured there, not here)
 on:
   push:
     tags:
       - 'rpc-sdk-ts-v*'
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: src/gepa/rpc/sdk/typescript
+    timeout-minutes: 20
+    if: github.repository_owner == 'gepa-ai'
+    environment:
+      name: npm-publish
+    permissions:
+      contents: read
+      # Needed for npm trusted publishing (OIDC). Harmless when falling back
+      # to NODE_AUTH_TOKEN.
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # fetch-depth: 0 -- `git merge-base --is-ancestor` needs real history.
+      # A shallow clone, or a guessed --depth, can miss the actual merge base
+      # and reject a legitimate tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify the tagged commit is reachable from main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Tag ${{ github.ref_name }} is not an ancestor of main -- refusing to publish."
+            exit 1
+          fi
+
+      - name: Verify the tag version matches package.json
+        working-directory: src/gepa/rpc/sdk/typescript
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#rpc-sdk-ts-v}"
+          PKG_VERSION="$(node -p 'require("./package.json").version')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != package.json version ($PKG_VERSION)."
+            exit 1
+          fi
+          echo "version check OK: $PKG_VERSION"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --access public
+          cache: 'npm'
+          cache-dependency-path: src/gepa/rpc/sdk/typescript/package-lock.json
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Install the Python server the SDK tests drive
+        run: |
+          uv venv .venv
+          uv sync -p .venv --locked --extra dev --extra rpc
+
+      - name: Install and build the SDK
+        working-directory: src/gepa/rpc/sdk/typescript
+        run: |
+          npm ci
+          npm run build
+
+      # Gate the publish on the SDK's own tests actually passing here. Tag
+      # ancestry says the commit is on main; it does not say CI was ever green
+      # for it.
+      - name: Run SDK tests before publishing
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: |
+          npm run test:optimize-mocked
+          npm run test:cancellation
+          npm run test:e2e
+
+      - name: Publish to npm
+        working-directory: src/gepa/rpc/sdk/typescript
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

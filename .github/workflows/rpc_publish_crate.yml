@@ -1,23 +1,94 @@
 name: gepa.rpc - Publish gepa-sdk to crates.io
 
+# Same safeguards as rpc_publish_npm.yml -- see that file's header.
 on:
   push:
     tags:
       - 'rpc-sdk-rust-v*'
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/gepa/rpc/sdk/rust
+    timeout-minutes: 30
+    if: github.repository_owner == 'gepa-ai'
+    environment:
+      name: crates-publish
+    permissions:
+      contents: read
+      # Needed for crates.io trusted publishing (OIDC). Harmless when falling
+      # back to CARGO_REGISTRY_TOKEN.
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@stable
+      # fetch-depth: 0 -- `git merge-base --is-ancestor` needs real history.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify the tagged commit is reachable from main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Tag ${{ github.ref_name }} is not an ancestor of main -- refusing to publish."
+            exit 1
+          fi
+
+      - name: Verify the tag version matches Cargo.toml
+        working-directory: src/gepa/rpc/sdk/rust
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#rpc-sdk-rust-v}"
+          PKG_VERSION="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != Cargo.toml version ($PKG_VERSION)."
+            exit 1
+          fi
+          echo "version check OK: $PKG_VERSION"
+
+      # No protobuf-compiler apt install: build.rs vendors protoc, and this
+      # job should build the way a real crates.io consumer does.
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: 'stable'
-      - run: cargo check
-      - run: cargo publish
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          workspaces: src/gepa/rpc/sdk/rust
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Install the Python server the SDK tests drive
+        run: |
+          uv venv .venv
+          uv sync -p .venv --locked --extra dev --extra rpc
+
+      # Gate the publish on the SDK's own tests actually passing here. Tag
+      # ancestry says the commit is on main; it does not say CI was ever
+      # green for it.
+      - name: Run SDK tests before publishing
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: |
+          cargo check --all-targets
+          cargo test --test optimize_mocked
+          cargo test --test e2e
+
+      - name: Verify the packaged crate builds standalone
+        working-directory: src/gepa/rpc/sdk/rust
+        run: cargo publish --dry-run
+
+      - name: Publish to crates.io
+        working-directory: src/gepa/rpc/sdk/rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
