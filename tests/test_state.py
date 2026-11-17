@@ -477,6 +477,30 @@ def test_agent_state_sanitizes_component_names(run_dir):
         assert (comp_dir / fname).read_text() == seed[real_name]
 
 
+def test_agent_state_components_are_written_as_utf8(run_dir, monkeypatch):
+    """Component files must not depend on the platform default encoding (cp1252 on Windows)."""
+    real_open = open
+
+    def cp1252_default_open(file, mode="r", *args, encoding=None, **kwargs):
+        if "b" not in mode and encoding is None:
+            encoding = "cp1252"
+        return real_open(file, mode, *args, encoding=encoding, **kwargs)
+
+    monkeypatch.setattr(state_mod, "open", cp1252_default_open, raising=False)
+
+    text = "Réponds en 日本語 → ok\nsecond line\n"
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None
+    )
+    state = state_mod.GEPAState({"prompt": text}, valset_out)
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir, write_agent_state=True)
+
+    comp_dir = Path(str(run_dir)) / "iterations" / "seed" / "components"
+    assert (comp_dir / "prompt.txt").read_text(encoding="utf-8") == text
+
+
 def _state_with_accepted_and_rejected_exports():
     evaluation = ValsetEvaluation(outputs_by_val_id={0: "output"}, scores_by_val_id={0: 0.5})
     state = state_mod.GEPAState({"prompt": "seed text"}, evaluation)

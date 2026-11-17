@@ -398,7 +398,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if parent:
             os.makedirs(parent, exist_ok=True)
         tmp_path = target_path + ".tmp"
-        with open(tmp_path, "w") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(data)
         os.replace(tmp_path, target_path)
 
