@@ -254,23 +254,76 @@ def test_optimize_evaluate_proxied(stub):
     assert scores == [1.0] * len(_TRAINSET)
 
 
-def test_optimize_error_propagated(stub):
-    """An exception in the optimizer thread becomes an actionable OptimizationError.
+def test_optimize_unexpected_error_is_sanitized(stub):
+    """An *unexpected* server-side exception must not forward str(exc).
 
-    Forwards the real exception type and message rather than a generic
-    "optimization failed" string, so a client can act on it -- recognizing
-    its own malformed-response mistakes, say -- without the server's logs.
-    The full traceback stays server-side via logger.exception; only this one
-    line reaches the client.
+    str(exc) on an arbitrary internal failure can carry provider URLs,
+    filesystem paths, even an API key echoed back by a connection error. The
+    client gets the exception type (useful, low-risk) plus the run_id to
+    correlate against the server log, which holds the full traceback.
+    Contrast test_optimize_client_fault_error_is_forwarded, where the client
+    caused the failure and the detail is safe and actionable.
     """
+    secret = "sk-proj-SUPERSECRET123456"
+
     def fake_optimize(**_):
-        raise RuntimeError("boom")
+        raise ConnectionError(
+            f"HTTPSConnectionPool(host='api.openai.com', port=443): "
+            f"auth failure for key {secret} /Users/operator/secrets/creds.json"
+        )
 
     msg = _run_optimize_patched(stub, run_id="opt-err", fake_optimize=fake_optimize)
 
     assert msg is not None
     assert msg.HasField("optimization_error")
-    assert msg.optimization_error.message == "RuntimeError: boom"
+    body = msg.optimization_error.message
+    assert secret not in body
+    assert "/Users/operator" not in body
+    assert "api.openai.com" not in body
+    assert "ConnectionError" in body and "opt-err" in body
+    assert msg.optimization_error.error_kind == pb.OptimizationError.INTERNAL_ERROR
+    # GetStatus must not become a side channel for the same payload.
+    status_msg = stub.GetStatus(pb.StatusRequest(run_id="opt-err")).message
+    assert secret not in status_msg and "/Users/operator" not in status_msg
+
+
+def test_optimize_client_fault_error_is_forwarded(stub):
+    """A fault the *client* caused is still forwarded in full detail -- the
+    actionable-errors behavior, which sanitizing internals must not regress.
+    These messages originate in our own adapter code, not arbitrary
+    third-party exception text."""
+    def fake_optimize(*, seed_candidate, trainset, adapter, **_):
+        adapter.evaluate(list(trainset), dict(seed_candidate), capture_traces=False)
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id="client-fault", seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5)))
+
+    def gen():
+        while True:
+            m = req_q.get()
+            if m is None:
+                return
+            yield m
+
+    final = None
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        for msg in stub.RunOptimization(gen()):
+            if msg.HasField("evaluate_batch_request"):
+                req = msg.evaluate_batch_request
+                # 1 score for a 2-example batch -> EvaluatorResponseError.
+                req_q.put(pb.ClientMessage(evaluate_batch_response=pb.EvaluateBatchResponse(
+                    request_id=req.request_id, outputs=["ok"], scores=[1.0])))
+            elif msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                final = msg
+                req_q.put(None)
+                break
+
+    assert final is not None
+    assert final.HasField("optimization_error")
+    assert final.optimization_error.message.startswith("EvaluatorResponseError: ")
+    assert final.optimization_error.error_kind == pb.OptimizationError.EVALUATOR_ERROR
 
 
 def test_get_status_complete(stub):
@@ -500,7 +553,9 @@ def test_optimize_omni_error_propagated(stub):
 
     assert msg is not None
     assert msg.HasField("optimization_error")
-    assert msg.optimization_error.message == "ValueError: omni boom"
+    assert "omni boom" not in msg.optimization_error.message
+    assert "ValueError" in msg.optimization_error.message
+    assert msg.optimization_error.error_kind == pb.OptimizationError.INTERNAL_ERROR
 
 
 # ------------------------------------------------------------------ edge case tests
@@ -627,14 +682,15 @@ def test_optimize_omni_invalid_run_id_rejected(stub):
 def test_get_status_failed(stub):
     """GetStatus for a failed run returns FAILED with the real error forwarded."""
     def fake_optimize(**_):
-        raise RuntimeError("some actionable detail")
+        raise RuntimeError("internal detail that should not escape")
 
     run_id = "status-fail"
     _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
 
     resp = stub.GetStatus(pb.StatusRequest(run_id=run_id))
     assert resp.status == pb.StatusResponse.FAILED
-    assert resp.message == "RuntimeError: some actionable detail"
+    assert "internal detail that should not escape" not in resp.message
+    assert "RuntimeError" in resp.message
 
 
 def test_duplicate_run_id_rejected(stub):
@@ -1629,3 +1685,118 @@ def test_omni_output_dir_routes_under_run_dir(stub):
     assert captured["output_dir"] is not None
     assert captured["run_dir"] is not None
     assert str(captured["output_dir"]).startswith(str(captured["run_dir"]))
+
+
+# ------------------------------------------------- tests: cancellation state machine
+
+
+def test_cancel_reports_cancelling_until_optimizer_actually_stops(tmp_path):
+    """Cancel must not claim a terminal CANCELLED while the optimizer is
+    still running.
+
+    The gepa engine only honors <run_dir>/gepa.stop at its next checkpoint,
+    so there is a real window where cancellation is requested but work
+    continues. Previously GetStatus reported terminal CANCELLED immediately,
+    which told a client the run was over while it was still consuming its
+    run slot and budget. That window is now CANCELLING (non-terminal).
+    """
+    import threading
+    import time
+
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def slow_optimize(*, seed_candidate, **_):
+        started.set()
+        release.wait(timeout=10)  # ignores gepa.stop: work between checkpoints
+        finished.set()
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[1.0])
+
+    with _custom_stub(tmp_path, max_workers=8, max_concurrent_runs=2) as stub:
+        run_id = "cancelling-window"
+
+        def drive():
+            with patch("gepa.rpc.servicer.gepa.optimize", side_effect=slow_optimize):
+                _run_optimize(stub, run_id=run_id)
+
+        t = threading.Thread(target=drive)
+        t.start()
+        assert started.wait(5)
+
+        assert stub.Cancel(pb.CancelRequest(run_id=run_id), timeout=5).accepted is True
+        # The optimizer has NOT returned yet.
+        assert not finished.is_set()
+        assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == pb.StatusResponse.CANCELLING
+
+        # A second Cancel is a no-op, reported as such rather than re-issued.
+        again = stub.Cancel(pb.CancelRequest(run_id=run_id), timeout=5)
+        assert again.accepted is False
+        assert "already" in again.message
+
+        release.set()
+        t.join(timeout=10)
+        assert not t.is_alive()
+        # It completed on its own before honoring the stop, so COMPLETE is the
+        # honest terminal state -- and it must not flip afterwards.
+        final = stub.GetStatus(pb.StatusRequest(run_id=run_id)).status
+        assert final in (pb.StatusResponse.COMPLETE, pb.StatusResponse.CANCELLED)
+        time.sleep(0.3)
+        assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == final
+
+
+def test_terminal_status_is_never_overwritten(tmp_path):
+    """A completed run's status must survive a racing Cancel, and vice versa.
+
+    Regression for an observed CANCELLED -> COMPLETE flip: Cancel marked the
+    run cancelled, then the runner's success path unconditionally wrote
+    "complete" over it. Hammering the race is the only way to catch it, so
+    this drives many short runs with a Cancel fired alongside each.
+    """
+    import threading
+
+    def fast_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[1.0])
+
+    with _custom_stub(tmp_path, max_workers=10, max_concurrent_runs=4) as stub:
+        for i in range(25):
+            run_id = f"race-terminal-{i}"
+            with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fast_optimize):
+                t = threading.Thread(target=lambda r=run_id: _run_optimize(stub, run_id=r))
+                t.start()
+                try:
+                    stub.Cancel(pb.CancelRequest(run_id=run_id), timeout=2)
+                except Exception:
+                    pass
+                t.join(timeout=10)
+                assert not t.is_alive()
+
+            first = stub.GetStatus(pb.StatusRequest(run_id=run_id)).status
+            # Whatever it settled on must be terminal and stable -- never
+            # CANCELLING, and never changing on a later read.
+            assert first in (
+                pb.StatusResponse.COMPLETE,
+                pb.StatusResponse.CANCELLED,
+                pb.StatusResponse.FAILED,
+            ), f"{run_id} settled on non-terminal {first}"
+            assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == first
+
+
+def test_cancelled_run_reports_cancelled_error_kind(stub):
+    """A cancelled run's OptimizationError carries error_kind=CANCELLED, so a
+    client can tell a deliberate stop from a genuine failure."""
+    import threading
+
+    run_id = "cancel-kind"
+    final: list = []
+    t = threading.Thread(target=_blocking_run, args=(stub, run_id, final))
+    t.start()
+    assert _await_status(stub, run_id, pb.StatusResponse.RUNNING)
+    assert stub.Cancel(pb.CancelRequest(run_id=run_id), timeout=5).accepted is True
+    t.join(timeout=10)
+    assert not t.is_alive()
+
+    assert len(final) == 1
+    assert final[0].HasField("optimization_error")
+    assert final[0].optimization_error.error_kind == pb.OptimizationError.CANCELLED
+    assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == pb.StatusResponse.CANCELLED

@@ -2,7 +2,7 @@ import type { ChannelCredentials } from "@grpc/grpc-js";
 
 /** Distinguishes the client's own evaluator mistake from a server/transport
  * failure -- mirrors OptimizationError.error_kind in gepa.proto. */
-export type ErrorKind = "evaluator_error" | "internal_error" | "unspecified";
+export type ErrorKind = "evaluator_error" | "internal_error" | "cancelled" | "unspecified";
 
 /** Thrown by optimize()/optimizeOmni() when the server reports an
  * optimization_error. `errorKind` lets a caller tell its own callback's bug

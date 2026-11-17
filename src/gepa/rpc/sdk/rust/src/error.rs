@@ -25,6 +25,9 @@ pub enum GEPAError {
     /// own bug from a server-side one without parsing the message string.
     #[error("evaluator callback error: {0}")]
     EvaluatorError(String),
+    /// The run was stopped by an explicit Cancel RPC, not by a failure.
+    #[error("run cancelled: {0}")]
+    Cancelled(String),
     #[error("channel send error")]
     ChannelSend,
 }

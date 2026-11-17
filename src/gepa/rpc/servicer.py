@@ -31,6 +31,7 @@ from gepa.rpc.adapter import (
     EvaluatorResponseError,
     OmniRemoteEvaluator,
     RemoteAdapter,
+    RemoteAdapterTimeoutError,
     RunCancelledError,
 )
 from gepa.rpc.conversions import RemoteExample
@@ -158,7 +159,50 @@ class _OmniProgressCallback:
 
 _MAX_RUNS = 1000
 
+# Terminal: once a run reaches one of these its status never changes again.
+# "cancelling" is deliberately NOT terminal -- cancellation has been requested
+# but the optimizer may still be working, and the run ends up "cancelled",
+# "complete" or "failed" depending on what actually happens.
 _FINISHED_STATUSES = ("complete", "failed", "cancelled")
+
+
+def _finish(run_status: dict[str, Any], status: str, message: str = "") -> bool:
+    """Record a terminal status, refusing to overwrite an existing one.
+
+    Without this guard the runner's success path could clobber a cancellation
+    (and vice versa), which is exactly what produced an observable
+    CANCELLED -> COMPLETE flip: Cancel marked the run cancelled, then the
+    optimizer finished its current step and unconditionally set "complete".
+
+    Returns True if this call set the status, False if the run was already
+    terminal and nothing changed.
+    """
+    if run_status.get("status") in _FINISHED_STATUSES:
+        return False
+    run_status["status"] = status
+    if message:
+        run_status["message"] = message
+    return True
+
+
+def _sanitized_internal_error(run_id: str, exc: BaseException) -> str:
+    """Message for an *unexpected* server-side failure.
+
+    Forwarding str(exc) for these leaks whatever the exception happens to
+    carry -- provider URLs, filesystem paths, and in the observed case an API
+    key echoed by a connection error. Clients get the exception type (useful
+    for deciding whether to retry, and low-risk since it's a class name) plus
+    the run_id to correlate with the server log, where logger.exception has
+    already recorded the full traceback.
+
+    Errors the *client* caused and can act on -- a malformed evaluate
+    response, a callback timeout -- are raised by our own code with messages
+    we control, and are forwarded verbatim; they do not come through here.
+    """
+    return (
+        f"internal server error ({type(exc).__name__}) in run {run_id}; "
+        "see the server log for details"
+    )
 
 
 class GEPAServicer(pb_grpc.GEPAServiceServicer):
@@ -262,6 +306,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             "complete": pb.StatusResponse.COMPLETE,
             "failed": pb.StatusResponse.FAILED,
             "cancelled": pb.StatusResponse.CANCELLED,
+            "cancelling": pb.StatusResponse.CANCELLING,
         }
         return pb.StatusResponse(
             run_id=request.run_id,
@@ -277,6 +322,11 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             if entry is None:
                 return pb.CancelResponse(accepted=False, message=f"unknown run_id {request.run_id!r}")
             status_str = entry.get("status", "")
+            if status_str == "cancelling":
+                return pb.CancelResponse(
+                    accepted=False,
+                    message=f"cancellation was already requested for run {request.run_id!r}",
+                )
             if status_str != "running":
                 return pb.CancelResponse(
                     accepted=False,
@@ -289,6 +339,9 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
         if cancel_fn is None:
             return pb.CancelResponse(accepted=False, message="run has no cancel handler (internal error)")
         cancel_fn()
+        # "requested", not "cancelled": the run is now CANCELLING and only
+        # becomes CANCELLED once the optimizer actually stops. Poll GetStatus
+        # for the terminal state.
         return pb.CancelResponse(accepted=True, message="cancellation requested")
 
     # ----------------------------------------------------------- optimization
@@ -359,7 +412,12 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             if cancel_requested.is_set():
                 return
             cancel_requested.set()
-            run_status["status"] = "cancelled"
+            # Non-terminal: the optimizer has only been *asked* to stop and
+            # may still be mid-step. The runner records the terminal
+            # "cancelled" when it actually unwinds -- or the run may still
+            # legitimately finish as complete/failed if it got there first.
+            if run_status.get("status") == "running":
+                run_status["status"] = "cancelling"
             # Effect 1: unblock whatever this run's adapter is waiting on
             # right now. This alone does NOT stop gepa.optimize from issuing
             # more work -- that's effect 2 below.
@@ -418,7 +476,10 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 best_idx = result.best_idx
                 best_candidate = result.candidates[best_idx]
                 best_score = result.val_aggregate_scores[best_idx]
-                run_status["status"] = "complete"
+                # Guarded: if a Cancel already drove this run terminal, don't
+                # clobber it (the old code's unconditional write is what made
+                # status flip CANCELLED -> COMPLETE).
+                _finish(run_status, "complete")
                 outbound.put(
                     pb.ServerMessage(
                         optimization_complete=pb.OptimizationComplete(
@@ -430,22 +491,24 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 )
             except RunCancelledError as exc:
                 logger.info("optimization run %s cancelled: %s", run_id, exc)
-                # do_cancel() already set status to "cancelled" -- don't
-                # overwrite it with "failed".
+                # Only now is the run really stopped, so record the terminal
+                # state here rather than when cancellation was requested.
+                _finish(run_status, "cancelled", str(exc))
                 outbound.put(
                     pb.ServerMessage(
                         optimization_error=pb.OptimizationError(
                             run_id=run_id,
                             message=str(exc),
-                            error_kind=pb.OptimizationError.INTERNAL_ERROR,
+                            error_kind=pb.OptimizationError.CANCELLED,
                         )
                     )
                 )
-            except EvaluatorResponseError as exc:
-                logger.exception("optimization run %s failed (client response error)", run_id)
-                run_status["status"] = "failed"
+            except (EvaluatorResponseError, RemoteAdapterTimeoutError) as exc:
+                # Raised by our own adapter code with messages we control, and
+                # caused by the client -- safe and useful to forward verbatim.
+                logger.exception("optimization run %s failed (client-side fault)", run_id)
                 message = f"{type(exc).__name__}: {exc}"
-                run_status["message"] = message
+                _finish(run_status, "failed", message)
                 outbound.put(
                     pb.ServerMessage(
                         optimization_error=pb.OptimizationError(
@@ -456,16 +519,13 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                     )
                 )
             except Exception as exc:
+                # Unexpected: sanitize. str(exc) on an arbitrary internal
+                # failure can carry provider URLs, filesystem paths, even an
+                # API key echoed back by a connection error. The traceback is
+                # already in the server log via logger.exception.
                 logger.exception("optimization run %s failed", run_id)
-                # Forward the real exception type and message instead of a
-                # hardcoded "optimization failed", so clients can act on
-                # their own mistakes (a malformed evaluate response, say)
-                # without needing the server's logs. The full traceback stays
-                # server-side via logger.exception above; this is the one line
-                # of context a caller actually needs.
-                run_status["status"] = "failed"
-                message = f"{type(exc).__name__}: {exc}"
-                run_status["message"] = message
+                message = _sanitized_internal_error(run_id, exc)
+                _finish(run_status, "failed", message)
                 outbound.put(
                     pb.ServerMessage(
                         optimization_error=pb.OptimizationError(
@@ -565,7 +625,9 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             if cancel_requested.is_set():
                 return
             cancel_requested.set()
-            run_status["status"] = "cancelled"
+            # See RunOptimization.do_cancel: non-terminal on purpose.
+            if run_status.get("status") == "running":
+                run_status["status"] = "cancelling"
             # Effect 1 (see RunOptimization.do_cancel for the full
             # explanation): unblock whatever the evaluator is waiting on.
             evaluator.cancel(RunCancelledError(f"run {run_id!r} cancelled by client request"))
@@ -665,7 +727,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                     ),
                 )
 
-                run_status["status"] = "complete"
+                _finish(run_status, "complete")
                 raw_best = result.best_candidate
                 if isinstance(raw_best, dict):
                     best_str = next(iter(raw_best.values()), "") if len(raw_best) == 1 else str(raw_best)
@@ -681,17 +743,17 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 ))
             except RunCancelledError as exc:
                 logger.info("omni optimization run %s cancelled: %s", run_id, exc)
+                _finish(run_status, "cancelled", str(exc))
                 outbound.put(pb.OmniServerMessage(
                     optimization_error=pb.OptimizationError(
                         run_id=run_id, message=str(exc),
-                        error_kind=pb.OptimizationError.INTERNAL_ERROR,
+                        error_kind=pb.OptimizationError.CANCELLED,
                     )
                 ))
-            except EvaluatorResponseError as exc:
-                logger.exception("omni optimization run %s failed (client response error)", run_id)
+            except (EvaluatorResponseError, RemoteAdapterTimeoutError) as exc:
+                logger.exception("omni optimization run %s failed (client-side fault)", run_id)
                 message = f"{type(exc).__name__}: {exc}"
-                run_status["status"] = "failed"
-                run_status["message"] = message
+                _finish(run_status, "failed", message)
                 outbound.put(pb.OmniServerMessage(
                     optimization_error=pb.OptimizationError(
                         run_id=run_id, message=message,
@@ -699,10 +761,10 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                     )
                 ))
             except Exception as exc:
+                # See RunOptimization's handler: sanitized on purpose.
                 logger.exception("omni optimization run %s failed", run_id)
-                message = f"{type(exc).__name__}: {exc}"
-                run_status["status"] = "failed"
-                run_status["message"] = message
+                message = _sanitized_internal_error(run_id, exc)
+                _finish(run_status, "failed", message)
                 outbound.put(pb.OmniServerMessage(
                     optimization_error=pb.OptimizationError(
                         run_id=run_id, message=message,

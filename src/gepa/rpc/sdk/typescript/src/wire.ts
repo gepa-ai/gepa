@@ -53,7 +53,7 @@ export interface WireOptimizationComplete {
 export interface WireOptimizationError {
   run_id: string;
   message: string;
-  error_kind: "UNSPECIFIED" | "EVALUATOR_ERROR" | "INTERNAL_ERROR";
+  error_kind: "UNSPECIFIED" | "EVALUATOR_ERROR" | "INTERNAL_ERROR" | "CANCELLED";
 }
 
 export interface WireServerMessage {

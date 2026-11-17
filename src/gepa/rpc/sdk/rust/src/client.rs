@@ -31,6 +31,7 @@ use crate::types::{
 fn error_from_optimization_error(e: ProtoOptimizationError) -> GEPAError {
     match ErrorKind::try_from(e.error_kind) {
         Ok(ErrorKind::EvaluatorError) => GEPAError::EvaluatorError(e.message),
+        Ok(ErrorKind::Cancelled) => GEPAError::Cancelled(e.message),
         _ => GEPAError::OptimizationFailed(e.message),
     }
 }

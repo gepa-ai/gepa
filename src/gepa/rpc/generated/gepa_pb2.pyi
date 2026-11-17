@@ -264,9 +264,11 @@ class OptimizationError(_message.Message):
         UNSPECIFIED: _ClassVar[OptimizationError.ErrorKind]
         EVALUATOR_ERROR: _ClassVar[OptimizationError.ErrorKind]
         INTERNAL_ERROR: _ClassVar[OptimizationError.ErrorKind]
+        CANCELLED: _ClassVar[OptimizationError.ErrorKind]
     UNSPECIFIED: OptimizationError.ErrorKind
     EVALUATOR_ERROR: OptimizationError.ErrorKind
     INTERNAL_ERROR: OptimizationError.ErrorKind
+    CANCELLED: OptimizationError.ErrorKind
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
     ERROR_KIND_FIELD_NUMBER: _ClassVar[int]
@@ -290,11 +292,13 @@ class StatusResponse(_message.Message):
         COMPLETE: _ClassVar[StatusResponse.Status]
         FAILED: _ClassVar[StatusResponse.Status]
         CANCELLED: _ClassVar[StatusResponse.Status]
+        CANCELLING: _ClassVar[StatusResponse.Status]
     UNKNOWN: StatusResponse.Status
     RUNNING: StatusResponse.Status
     COMPLETE: StatusResponse.Status
     FAILED: StatusResponse.Status
     CANCELLED: StatusResponse.Status
+    CANCELLING: StatusResponse.Status
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]

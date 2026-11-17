@@ -144,13 +144,18 @@ message OptimizationComplete {
 message OptimizationError {
   enum ErrorKind {
     UNSPECIFIED = 0;
+    // Added below EVALUATOR_ERROR/INTERNAL_ERROR to keep their numbers
+    // stable.
     // The client's own evaluate / reflective-dataset callback raised, or
     // returned something malformed (e.g. a mismatched score count).
     // Actionable by the client without the server's logs.
     EVALUATOR_ERROR = 1;
     // Everything else: a server, transport or optimizer failure not caused
-    // by the client's callback.
+    // by the client's callback. `message` is deliberately sanitized for this
+    // kind -- see servicer.py's _sanitized_internal_error.
     INTERNAL_ERROR = 2;
+    // The run was stopped by an explicit Cancel RPC.
+    CANCELLED = 3;
   }
   string run_id = 1;
   string message = 2;
@@ -166,6 +171,12 @@ message StatusResponse {
     COMPLETE = 2;
     FAILED = 3;
     CANCELLED = 4;
+    // Cancellation has been requested but the optimizer has not stopped yet.
+    // Non-terminal: it still holds its run slot and may still be doing work
+    // (the gepa engine only honors the stop at its next checkpoint). A run in
+    // this state ends up CANCELLED if the stop takes effect, or COMPLETE /
+    // FAILED if it finished on its own first.
+    CANCELLING = 5;
   }
   string run_id = 1;
   Status status = 2;

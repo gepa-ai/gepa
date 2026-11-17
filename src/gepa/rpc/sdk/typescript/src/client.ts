@@ -84,6 +84,8 @@ function errorKindFromWire(kind: WireOptimizationError["error_kind"] | undefined
       return "evaluator_error";
     case "INTERNAL_ERROR":
       return "internal_error";
+    case "CANCELLED":
+      return "cancelled";
     default:
       return "unspecified";
   }
