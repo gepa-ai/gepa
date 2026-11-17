@@ -109,24 +109,35 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         candidate: dict[str, str],
         capture_traces: bool = False,
     ) -> EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput]:
-        outputs: list[DefaultRolloutOutput] = []
-        scores: list[float] = []
-        objective_scores: list[dict[str, float] | None] = []
-        trajectories: list[DefaultTrajectory] | None = [] if capture_traces else None
+        return self.batch_evaluate([(candidate, batch)], capture_traces=capture_traces)[0]
 
-        system_content = next(iter(candidate.values()))
+    def batch_evaluate(
+        self,
+        items: list[tuple[dict[str, str], list[DefaultDataInst]]],
+        *,
+        capture_traces: bool = True,
+    ) -> list[EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput]]:
+        """Evaluate many (candidate, batch) pairs with one ``batch_complete`` call.
 
+        Sharing one request pool across candidates fills ``max_litellm_workers``,
+        where the engine's sequential ``default_batch_evaluate`` fallback would
+        issue one call per item. A custom model callable is still called once per
+        example, in order.
+        """
         litellm_requests = []
 
-        for data in batch:
-            user_content = f"{data['input']}"
+        for candidate, batch in items:
+            system_content = next(iter(candidate.values()))
 
-            messages: list[ChatMessage] = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": user_content},
-            ]
+            for data in batch:
+                user_content = f"{data['input']}"
 
-            litellm_requests.append(messages)
+                messages: list[ChatMessage] = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content},
+                ]
+
+                litellm_requests.append(messages)
 
         if self._lm is not None:
             responses = self._lm.batch_complete(
@@ -136,42 +147,56 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             model_fn = cast(ChatCompletionCallable, self.model)
             responses = [model_fn(messages) for messages in litellm_requests]
 
-        for data, assistant_response in zip(batch, responses, strict=True):
-            eval_result = self.evaluator(data, assistant_response)
-            score = eval_result.score
-            feedback = eval_result.feedback
-            obj_scores = eval_result.objective_scores
+        results: list[EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput]] = []
+        offset = 0
+        for _candidate, batch in items:
+            item_responses = responses[offset : offset + len(batch)]
+            offset += len(batch)
 
-            output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
+            outputs: list[DefaultRolloutOutput] = []
+            scores: list[float] = []
+            objective_scores: list[dict[str, float] | None] = []
+            trajectories: list[DefaultTrajectory] | None = [] if capture_traces else None
 
-            outputs.append(output)
-            scores.append(score)
-            objective_scores.append(obj_scores)
+            for data, assistant_response in zip(batch, item_responses, strict=True):
+                eval_result = self.evaluator(data, assistant_response)
+                score = eval_result.score
+                feedback = eval_result.feedback
+                obj_scores = eval_result.objective_scores
 
-            if trajectories is not None:
-                trajectories.append(
-                    {
-                        "data": data,
-                        "full_assistant_response": assistant_response,
-                        "feedback": feedback,
-                    }
+                output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
+
+                outputs.append(output)
+                scores.append(score)
+                objective_scores.append(obj_scores)
+
+                if trajectories is not None:
+                    trajectories.append(
+                        {
+                            "data": data,
+                            "full_assistant_response": assistant_response,
+                            "feedback": feedback,
+                        }
+                    )
+
+            objective_scores_arg: list[dict[str, float]] | None = None
+            if objective_scores:
+                all_none = all(x is None for x in objective_scores)
+                all_not_none = all(x is not None for x in objective_scores)
+                if not (all_none or all_not_none):
+                    raise ValueError("Objective scores must either be all None or all not None.")
+                if all_not_none:
+                    objective_scores_arg = cast(list[dict[str, float]], objective_scores)
+
+            results.append(
+                EvaluationBatch(
+                    outputs=outputs,
+                    scores=scores,
+                    trajectories=trajectories,
+                    objective_scores=objective_scores_arg,
                 )
-
-        objective_scores_arg: list[dict[str, float]] | None = None
-        if objective_scores:
-            all_none = all(x is None for x in objective_scores)
-            all_not_none = all(x is not None for x in objective_scores)
-            if not (all_none or all_not_none):
-                raise ValueError("Objective scores must either be all None or all not None.")
-            if all_not_none:
-                objective_scores_arg = cast(list[dict[str, float]], objective_scores)
-
-        return EvaluationBatch(
-            outputs=outputs,
-            scores=scores,
-            trajectories=trajectories,
-            objective_scores=objective_scores_arg,
-        )
+            )
+        return results
 
     def make_reflective_dataset(
         self,
