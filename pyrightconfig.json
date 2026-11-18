@@ -6,6 +6,7 @@
   "exclude": [
     "src/gepa/adapters/dspy_adapter",
     "src/gepa/adapters/dspy_full_program_adapter",
+    "src/gepa/adapters/helix.py",
     "src/gepa/examples",
     "src/gepa/adapters/generic_rag_adapter",
     "src/gepa/adapters/anymaths_adapter",
