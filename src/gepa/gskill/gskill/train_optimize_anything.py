@@ -168,7 +168,7 @@ Provide the new skills within a SINGLE ``` block. Only include one ``` block, if
         Matches from the first ``` to the last ``` to handle nested backtick references.
         """
         # Find the first code fence (with optional language tag)
-        first = re.search(r"```(?:\w*\n)?", response_text)
+        first = re.search(r"```(?:\w*[ \t]*\r?\n)?", response_text)
         if not first:
             return response_text.strip()
 

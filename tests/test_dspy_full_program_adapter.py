@@ -16,7 +16,7 @@ import pytest
 
 pytest.importorskip("dspy", reason="dspy is not installed — skipping DspyAdapter tests")
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import dspy
 from dspy.primitives import Example
@@ -200,27 +200,24 @@ class TestReflectionLmProtocol:
     def test_propose_new_texts_calls_lm_correctly(self):
         """propose_new_texts should pass the prompt to reflection_lm and use
         the str return value (not a list)."""
-        mock_lm = MagicMock(return_value="<new_program>\nimport dspy\nprogram = dspy.Predict('q -> a')\n</new_program>")
+        proposed_program = "import dspy\nprogram = dspy.Predict('q -> a')"
+        mock_lm = MagicMock(return_value=f"```python\n{proposed_program}\n```")
         adapter = _make_adapter(reflection_lm=mock_lm)
 
         candidate = {"program": "import dspy\nprogram = dspy.Predict('q -> a')"}
         reflective_dataset = {"program": [{"input": "q1", "output": "a1", "score": 0.5}]}
 
-        # The proposal signature will call lm(prompt) and expect a str back.
-        # We mock the signature's run method to verify the LM is called.
-        with patch(
-            "gepa.adapters.dspy_full_program_adapter.dspy_program_proposal_signature.DSPyProgramProposalSignature.run",
-            return_value={"new_program": "import dspy\nprogram = dspy.Predict('q -> a')"},
-        ) as mock_run:
-            result = adapter.propose_new_texts(candidate, reflective_dataset, ["program"])
-            mock_run.assert_called_once_with(
-                lm=mock_lm,
-                input_dict={
-                    "curr_program": candidate["program"],
-                    "dataset_with_feedback": reflective_dataset["program"],
-                },
-            )
-            assert "program" in result
+        result = adapter.propose_new_texts(candidate, reflective_dataset, ["program"])
+
+        mock_lm.assert_called_once()
+        assert result == {"program": proposed_program}
+
+    def test_propose_new_texts_skips_truncated_program_output(self):
+        adapter = _make_adapter(reflection_lm=MagicMock(return_value="<think>generation stopped"))
+        candidate = {"program": "import dspy\nprogram = dspy.Predict('q -> a')"}
+        reflective_dataset = {"program": [{"input": "q1", "output": "a1", "score": 0.5}]}
+
+        assert adapter.propose_new_texts(candidate, reflective_dataset, ["program"]) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +419,46 @@ class TestSelectTraceInstancesForReflection:
 
         assert selected == trace
         assert [t[2]["answer"] for t in selected] == ["keep-me", "other-session"]
+
+    def test_shared_history_that_records_each_turn_collapses_to_the_last_turn(self):
+        """History-based ReAct passes one History to every turn and appends each turn's outputs to it."""
+        react = object()
+        thoughts = [object(), object(), object()]
+        history = dspy.History(
+            messages=[{"next_thought": t, "tool_calls": f"call {i}"} for i, t in enumerate(thoughts)]
+        )
+        trace = [(react, {"question": "q", "history": history}, {"next_thought": t}) for t in thoughts]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == [trace[-1]]
+
+    def test_shared_history_object_without_the_previous_outputs_is_kept(self):
+        """Independent calls may reuse one constant History; nothing shows the second continues the first."""
+        talk = object()
+        constant = dspy.History(messages=[{"question": "example", "answer": "shown"}])
+        first, second = object(), object()
+        trace = [
+            (talk, {"question": "q1", "history": constant}, {"answer": first}),
+            (talk, {"question": "q2", "history": constant}, {"answer": second}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
+
+    def test_shared_history_matching_only_plain_strings_is_kept(self):
+        """Equal short strings can be the same object in CPython, so they don't link two calls."""
+        talk = object()
+        constant = dspy.History(messages=[{"question": "2+2", "answer": "4"}])
+        trace = [
+            (talk, {"question": "q1", "history": constant}, {"answer": "4"}),
+            (talk, {"question": "q2", "history": constant}, {"answer": "5"}),
+        ]
+
+        selected = _select_trace_instances_for_reflection(trace)
+
+        assert selected == trace
 
     def test_two_independent_react_runs_keep_each_final_step(self):
         react = object()
@@ -641,12 +678,72 @@ class CumulativeProgram(dspy.Module):
             tools=[calculator],
             max_iters=4,
         )
+        # Trace selection does not depend on native CoT reasoning or its wire name.
+        # Keep the scripted rationale explicitly textual across DSPy versions.
+        self.react.extract.predict.signature = self.react.extract.predict.signature.with_updated_fields(
+            "reasoning", type_=str
+        )
 
     def forward(self, question):
         return self.react(question=question)
 
 program = CumulativeProgram()
 '''
+
+
+def _react_has_extract() -> bool:
+    """The trajectory-string ReAct (DSPy before 3.5) ends with an ``extract`` ChainOfThought."""
+    return hasattr(dspy.ReAct("question -> answer", tools=[]), "extract")
+
+
+# History-based ReAct: dspy.ReAct from DSPy 3.5, dspy.ReActV2 before that.
+HISTORY_REACT = "dspy.ReActV2" if _react_has_extract() else "dspy.ReAct"
+requires_trajectory_react = pytest.mark.skipif(
+    not _react_has_extract(), reason="this DSPy's ReAct passes a History, not a trajectory string"
+)
+
+HISTORY_REACT_CANDIDATE = """
+import dspy
+
+def calculator(x: str) -> str:
+    '''Evaluate a python arithmetic expression.'''
+    return str(eval(x, {"__builtins__": {}}, {}))
+
+class HistoryReActProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.react = REACT(signature="question -> answer", tools=[calculator], max_iters=4)
+
+    def forward(self, question):
+        return self.react(question=question)
+
+program = HistoryReActProgram()
+""".replace("REACT", HISTORY_REACT)
+
+TWO_HISTORY_REACT_RUNS_CANDIDATE = """
+import dspy
+
+def calculator(x: str) -> str:
+    '''Evaluate a python arithmetic expression.'''
+    return str(eval(x, {"__builtins__": {}}, {}))
+
+class TwoRunsProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.react = REACT(signature="question -> answer", tools=[calculator], max_iters=4)
+
+    def forward(self, question_a, question_b):
+        first = self.react(question=question_a)
+        second = self.react(question=question_b)
+        return dspy.Prediction(answer_a=first.answer, answer_b=second.answer)
+
+program = TwoRunsProgram()
+""".replace("REACT", HISTORY_REACT)
+
+
+def _tool_turn(thought, name, **args):
+    return {"next_thought": thought, "tool_calls": {"tool_calls": [{"name": name, "args": args}]}}
+
 
 MAP_CANDIDATE = """
 import dspy
@@ -737,6 +834,7 @@ program = HistoryChatProgram()
 
 
 class TestLiveDspyTraceSelection:
+    @requires_trajectory_react
     def test_live_react_collapses_repeated_react_calls(self):
         batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
         program_trace, eval_batch = _reflective_trace_from_live_program(
@@ -761,6 +859,7 @@ class TestLiveDspyTraceSelection:
         react_entries = [entry for entry in program_trace if entry["Called Module"] == "react.react"]
         assert len(react_entries) == 1
 
+    @requires_trajectory_react
     def test_live_react_collapses_three_tool_steps_to_the_final_react_call(self):
         batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
         program_trace, eval_batch = _reflective_trace_from_live_program(
@@ -784,6 +883,45 @@ class TestLiveDspyTraceSelection:
         assert "thought_1" in program_trace[0]["Inputs"]["trajectory"]
         assert "thought_2" in program_trace[1]["Inputs"]["trajectory"]
         assert program_trace[1]["Generated Outputs"]["answer"] == "4"
+
+    def test_live_history_react_collapses_to_the_final_turn(self):
+        batch = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            HISTORY_REACT_CANDIDATE,
+            batch,
+            [
+                _tool_turn("add", "calculator", x="2+2"),
+                _tool_turn("check", "calculator", x="4"),
+                _tool_turn("done", "submit", answer="4"),
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert len({id(entry[1]["history"]) for entry in raw_trace}) == 1
+        assert [entry["Called Module"] for entry in program_trace] == ["react.react"]
+        assert "submit" in program_trace[0]["Generated Outputs"]["tool_calls"]
+        context = program_trace[0]["Inputs"]["Context"]
+        assert all(thought in context for thought in ("add", "check", "done"))
+
+    def test_live_independent_history_react_runs_keep_each_final_turn(self):
+        batch = [Example(question_a="2+2?", question_b="3+3?").with_inputs("question_a", "question_b")]
+        program_trace, eval_batch = _reflective_trace_from_live_program(
+            TWO_HISTORY_REACT_RUNS_CANDIDATE,
+            batch,
+            [
+                _tool_turn("add", "calculator", x="2+2"),
+                _tool_turn("first done", "submit", answer="4"),
+                _tool_turn("second done", "submit", answer="6"),
+            ],
+        )
+
+        raw_trace = eval_batch.trajectories[0]["trace"]
+        assert len(raw_trace) == 3
+        assert [entry["Called Module"] for entry in program_trace] == ["react.react", "react.react"]
+        first_context, second_context = (entry["Inputs"]["Context"] for entry in program_trace)
+        assert "first done" in first_context and "second done" not in first_context
+        assert "second done" in second_context and "add" not in second_context
 
     def test_live_map_keeps_every_independent_classify_call(self):
         batch = [Example(items=["apple", "carrot", "salmon"]).with_inputs("items")]
@@ -905,3 +1043,97 @@ class TestLiveDspyTraceSelection:
         assert raw_trace[2][1]["history"].messages[: lengths[1]] == raw_trace[1][1]["history"].messages
         assert [entry["Called Module"] for entry in program_trace] == ["talk", "talk", "talk"]
         assert [entry["Generated Outputs"]["answer"] for entry in program_trace] == ["hello", "still", "final"]
+
+
+CRASH_CANDIDATE = """
+import dspy
+
+class CrashOnSomeProgram(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.answer = dspy.Predict("question -> answer")
+
+    def forward(self, question):
+        if question == "crash":
+            raise RuntimeError("tool crashed")
+        return self.answer(question=question)
+
+program = CrashOnSomeProgram()
+"""
+
+
+@pytest.mark.parametrize(
+    ("candidate_src", "answers", "expected_modules"),
+    [
+        (
+            'import dspy\nprogram = dspy.Predict("question -> answer")',
+            [{"unexpected": "malformed answer"}] * 4,
+            ["self"],
+        ),
+        (
+            'import dspy\nprogram = dspy.ChainOfThought("question -> answer")',
+            [{"answer": "missing rationale"}] * 4,
+            ["predict"],
+        ),
+        (
+            MATH_CANDIDATE,
+            [{"reasoning": "2+2=4", "answer": "4"}] + [{"unexpected": "malformed answer"}] * 4,
+            ["reasoner", "extractor"],
+        ),
+    ],
+    ids=["predict", "chain-of-thought", "partial-program"],
+)
+def test_failed_program_output_reaches_reflection(candidate_src, answers, expected_modules):
+    """A real parse failure can be both a program output and a trace output."""
+    lm = DummyLM(answers)
+    adapter = _make_adapter(task_lm=lm)
+    candidate = {"program": candidate_src}
+    batch = [Example(question="What is 2+2?").with_inputs("question")]
+
+    with dspy.context(lm=lm):
+        eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
+        assert eval_batch.scores == [0.0]
+        failed = eval_batch.outputs[0]
+        assert isinstance(failed, FailedPrediction)
+        reflective = adapter.make_reflective_dataset(candidate, eval_batch, ["program"])
+
+    assert len(reflective["program"]) == 1
+    example = reflective["program"][0]
+    assert example["Program Inputs"] == {"question": "What is 2+2?"}
+    assert failed.completion_text in example["Program Outputs"]
+    assert "Couldn't parse the output" in example["Program Outputs"]
+    trace = example["Program Trace"]
+    assert [entry["Called Module"] for entry in trace] == expected_modules
+    assert trace[-1]["Generated Outputs"] == example["Program Outputs"]
+    if len(trace) > 1:
+        assert trace[0]["Generated Outputs"] == {"reasoning": "2+2=4", "answer": "4"}
+
+
+class TestEvaluateKeepsBatchAlignment:
+    """bootstrap_trace_data drops examples whose program raised; evaluate() must still
+    return batch-aligned outputs, scores, and trajectories (see #513)."""
+
+    def test_crashed_example_keeps_its_position(self):
+        lm = DummyLM([{"answer": "4"}] * 4)
+        dspy.configure(lm=lm)
+        adapter = DspyAdapter(
+            task_lm=lm,
+            metric_fn=lambda example, pred, trace=None: 1.0,
+            reflection_lm=MagicMock(spec=LanguageModel),
+            failure_score=0.0,
+            num_threads=1,
+        )
+        batch = [Example(question=q).with_inputs("question") for q in ("crash", "ok")]
+
+        result = adapter.evaluate(batch, {"program": CRASH_CANDIDATE}, capture_traces=True)
+
+        assert result.scores == [0.0, 1.0]
+        assert result.outputs[0] is None
+        assert result.outputs[1]["answer"] == "4"
+        assert [t["example"].question for t in result.trajectories] == ["crash", "ok"]
+        assert result.trajectories[0]["trace"] == []
+
+        reflective = adapter.make_reflective_dataset(
+            candidate={"program": CRASH_CANDIDATE}, eval_batch=result, components_to_update=["program"]
+        )
+        assert [item["Program Inputs"]["question"] for item in reflective["program"]] == ["ok"]

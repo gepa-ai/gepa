@@ -804,15 +804,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Evaluate seed candidate on valset (after on_optimization_start callback).
-        # Policies may narrow the seed evaluation via the optional get_seed_eval_batch
-        # hook; the state does not exist yet, so get_eval_batch cannot be used here.
-        seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
-        seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
-        seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
-
-        # Initialize state with pre-computed seed evaluation
+        # A saved state already holds the seed's valset scores, so a resumed run
+        # skips the seed evaluation instead of spending metric calls on a result
+        # that initialize_gepa_state would discard.
         resumed = self.run_dir is not None and os.path.exists(os.path.join(self.run_dir, "gepa_state.bin"))
+        seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId] | None = None
+        if not resumed:
+            # Evaluate seed candidate on valset (after on_optimization_start callback).
+            # Policies may narrow the seed evaluation via the optional get_seed_eval_batch
+            # hook; the state does not exist yet, so get_eval_batch cannot be used here.
+            seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
+            seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
+            seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
+
+        # Initialize state with pre-computed seed evaluation, or load the saved state on resume
         state = initialize_gepa_state(
             run_dir=self.run_dir,
             logger=self.logger,
@@ -825,7 +830,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Fresh runs: record the seed valset eval in the cache. On resume the seed scores already
         # live in state; writing the re-computed seed eval would desynchronize cache from
         # prog_candidate_val_subscores.
-        if not resumed and state.evaluation_cache is not None:
+        if seed_valset_evaluation is not None and state.evaluation_cache is not None:
             seed_ids = list(seed_valset_evaluation.scores_by_val_id)
             seed_obj = (
                 [seed_valset_evaluation.objective_scores_by_val_id[eid] for eid in seed_ids]
@@ -842,8 +847,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             )
 
         # Seed uses the reserved iteration id — outputs/trajectories go under
-        # iterations/seed/ alongside subsequent loop iterations.
-        self._write_agent_iteration_files(SEED_ITERATION_ID, seed_valset_evaluation)
+        # iterations/seed/ alongside subsequent loop iterations. A resumed run
+        # keeps the files written by the original run.
+        if seed_valset_evaluation is not None:
+            self._write_agent_iteration_files(SEED_ITERATION_ID, seed_valset_evaluation)
 
         # Restore adapter state from persisted state (only has effect on resume)
         self._sync_state_to_adapter(state)
@@ -901,7 +908,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ValsetEvaluatedEvent(
                 iteration=0,
                 candidate_idx=0,
-                candidate=self.seed_candidate,
+                candidate=state.program_candidates[0],
                 scores_by_val_id=dict(seed_scores),
                 average_score=base_val_avg,
                 num_examples_evaluated=len(seed_scores),
@@ -930,6 +937,29 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Merge scheduling
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
+
+        # Resume with a different seed: add it like a minibatch-accepted child of
+        # the saved seed (index 0). A seed already in the pool (saved seed or a
+        # previously ingested one) keeps the #453 skip path.
+        if resumed and self.seed_candidate not in state.program_candidates:
+            state.i += 1
+            state.full_program_trace.append({"i": state.i, "iteration_id": new_iteration_id()})
+            new_idx, _ = self._run_full_eval_and_add(
+                new_program=self.seed_candidate,
+                state=state,
+                parent_program_idx=[0],
+            )
+            state.full_program_trace[-1]["proposal_accepted"] = True
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_accepted",
+                CandidateAcceptedEvent(
+                    iteration=state.i + 1,
+                    new_candidate_idx=new_idx,
+                    new_score=self.val_evaluation_policy.get_valset_score(new_idx, state),
+                    parent_ids=[0],
+                ),
+            )
 
         # Main loop
         last_pbar_val = 0

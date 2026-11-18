@@ -15,7 +15,7 @@ authors = [
   { name = "Lakshya A Agrawal", email = "lakshyaaagrawal@berkeley.edu" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.10, <3.15"
+requires-python = ">=3.10, <3.16"
 
 dependencies = []
 
@@ -25,15 +25,22 @@ gepa-rpc = "gepa.rpc.cli:main"
 [project.optional-dependencies]
 full = [
     # Common dependencies (all Python versions)
-    # litellm 1.92.0 introduced a native extension and publishes manylinux
-    # wheels only (cp310-cp313): no macOS, no Windows, no cp314. Everyone else
-    # falls back to the sdist, which needs Cargo >= 1.85 (edition2024) and a
-    # PyO3 that caps at Python 3.13 — so fresh installs break on macOS/Windows
-    # (all Pythons) and on 3.14 (all platforms). Cap unconditionally; lift once
-    # litellm ships a complete wheel matrix (or a pure-Python build) — check
-    # https://pypi.org/pypi/litellm/<version>/json artifact list first.
-    "litellm>=1.83.0,<1.92",
-    "tqdm>=4.66.1",
+    # litellm 1.92.0 added a native extension and shipped manylinux wheels only.
+    # Later releases publish Linux (manylinux + musl), macOS (x86_64 and
+    # arm64), and Windows amd64 wheels, including Python 3.14 (cp314 from
+    # 1.93.2, cp310-abi3 from 1.96.2; requires-python >=3.10,<3.15). These
+    # releases still omit macOS and musl wheels, and 1.92.0, 1.92.1, and
+    # 1.93.0 omit Windows too, so pip builds an sdist that needs Rust:
+    #   1.92.0, 1.92.1, 1.93.0, 1.93.1, 1.94.0, 1.94.1, 1.95.0
+    # 1.92.2 stays allowed: full platform wheels and requires-python <3.14.
+    # No win_arm64 wheel exists; Windows on ARM still builds from source.
+    # Re-check https://pypi.org/pypi/litellm/<version>/json before dropping
+    # an exclusion.
+    "litellm>=1.83.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0",
+    # gepa.lm.LM passes num_retries to litellm, whose retry path imports tenacity
+    # without declaring it as a dependency.
+    "tenacity>=8.0.0",
+    "tqdm>=4.66",
     "cloudpickle>=3.0.0",
     # Python < 3.14
     "datasets>=2.14.6; python_version < '3.14'",
@@ -50,15 +57,19 @@ full = [
 ]
 confidence = [
     "llm-structured-confidence>=0.4.5",
-    # See the litellm cap comment in the `full` extra (incomplete 1.92 wheels).
-    "litellm>=1.64.0,<1.92; python_version < '3.14'",
-    "litellm>=1.81.0,<1.92; python_version >= '3.14'",
+    # See the litellm comment in the `full` extra (exclude incomplete wheels).
+    "litellm>=1.64.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0; python_version < '3.14'",
+    "litellm>=1.81.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0; python_version >= '3.14'",
+    "tenacity>=8.0.0",
 ]
 dspy = []
 test = [
     "gepa[full]",
     "pytest",
-    "pyright"
+    "pyright",
+    # Exercises the psutil-backed child-process cleanup in
+    # gepa.utils.code_execution (see tests/test_code_execution.py).
+    "psutil>=5.9.0"
 ]
 build = [
     "setuptools>=77.0.1",
@@ -83,7 +94,7 @@ rpc-codegen = [
     # Kept out of `dev` deliberately: `dev` is what the release path installs
     # (`gepa[dev]`), and that path should never pull in RPC-SDK-adjacent
     # build tooling that core releases don't need.
-    "grpcio-tools>=1.85.1",
+    "grpcio-tools>=1.85.3",
 ]
 gskill = [
     "gepa[full]",
@@ -109,11 +120,13 @@ rpc = [
     # after every `scripts/compile_proto.sh` regeneration, since the floor it
     # stamps in tracks whatever grpcio-tools generated the code, not the
     # grpcio release gepa.rpc happened to be developed against).
-    "grpcio>=1.85.1",
+    "grpcio>=1.85.3",
     "protobuf>=7.35.1",
-    # reflection_lm goes through litellm; see the litellm cap comment in the
-    # `full` extra above for why it's bounded at <1.92.
-    "litellm>=1.83.0,<1.92",
+    # reflection_lm goes through litellm. Mirrors the `full` extra's exclusion
+    # list exactly -- a blanket <1.92 cap here would re-impose the ceiling
+    # upstream deliberately replaced with per-release exclusions, dragging
+    # litellm back down for anyone installing gepa[rpc].
+    "litellm>=1.83.0,!=1.92.0,!=1.92.1,!=1.93.0,!=1.93.1,!=1.94.0,!=1.94.1,!=1.95.0",
     # litellm's completion_with_retries lazily imports tenacity but never
     # declares it as a dependency; without it, reflection LM retries silently
     # no-op instead of retrying.
@@ -132,6 +145,10 @@ gepa = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "llm_live: calls a live language model; skipped by default CI",
+    "extra: needs optional extra dependencies; skipped by default CI",
+]
 
 [tool.ruff]
 include = ["src/**/*.py"]

@@ -239,7 +239,7 @@ Several options:
 
 ### Can I continue optimization from a previous run?
 
-Yes! Set `run_dir` in `EngineConfig` — GEPA saves state to disk and automatically resumes:
+Yes! Set `run_dir` — GEPA saves `gepa_state.bin` and resumes from it:
 
 ```python
 config = GEPAConfig(engine=EngineConfig(
@@ -247,7 +247,14 @@ config = GEPAConfig(engine=EngineConfig(
     max_metric_calls=500,
 ))
 result = optimize_anything(..., config=config)
+# or: gepa.optimize(..., run_dir="./runs/my_exp")
 ```
+
+On resume:
+
+- The saved seed is not re-evaluated on the valset.
+- A different `seed_candidate` is full-valset-evaluated and added as a child of the saved seed (like an accepted proposal).
+- The same `seed_candidate` does no extra seed eval.
 
 
 ### My smaller model produces malformed outputs frequently — can GEPA fix this?
@@ -564,7 +571,7 @@ optimized = optimizer.compile(program, trainset=train_data, valset=val_data)
 
 Without a separate valset, GEPA will tend to overfit the training data. Follow the standard 80/20 train/val split.
 
-**2. Prompt-level overfitting** — the optimized prompt contains specific keywords, phrases, or examples from your training data. This improves training scores but fails on new inputs. Fix this by injecting anti-overfit constraints into your reflective dataset — see [GEPA copied specific keywords from my training examples — how do I prevent this?](#gepa-copied-specific-keywords-or-phrases-from-my-training-examples-into-the-prompt----how-do-i-prevent-this)
+**2. Prompt-level overfitting** — the optimized prompt contains specific keywords, phrases, or examples from your training data. This improves training scores but fails on new inputs. Fix this by injecting anti-overfit constraints into your reflective dataset — see [GEPA copied specific keywords from my training examples — how do I prevent this?](#gepa-copied-specific-keywords-or-phrases-from-my-training-examples-into-the-prompt-how-do-i-prevent-this)
 
 ### How do I use GEPA for agentic systems with expensive rollouts?
 

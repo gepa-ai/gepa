@@ -49,9 +49,8 @@ def test_unknown_key_fails_fast():
 
 
 def test_legacy_gepa_config_call_returns_gepa_result():
-    """A v0.1.x-style call — legacy imports, ``GEPAConfig`` — still runs through
-    the converted gepa-engine path but returns the launcher's ``GEPAResult``,
-    so old examples using ``result.candidates`` / ``best_idx`` /
+    """A v0.1.x-style call — legacy imports, ``GEPAConfig`` — runs the launcher
+    directly and returns its ``GEPAResult``, so old examples using ``result.candidates`` / ``best_idx`` /
     ``val_aggregate_scores`` run unmodified."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
@@ -74,9 +73,9 @@ def test_legacy_gepa_config_call_returns_gepa_result():
 
 
 def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
-    """Budget smaller than the seed's valset pass: the engine has no GEPAResult
-    to stash, so the legacy path synthesizes a single-candidate one — legacy
-    callers must never see the omni Result."""
+    """Budget smaller than the seed's valset pass: the launcher still evaluates
+    the seed and returns a ``GEPAResult`` — legacy callers must never see the
+    omni Result."""
     from gepa.core.result import GEPAResult
     from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
@@ -97,32 +96,116 @@ def test_legacy_gepa_config_returns_gepa_result_even_when_budget_dies_early():
     assert result.val_aggregate_scores[result.best_idx] == max(result.val_aggregate_scores)
 
 
-def test_legacy_max_workers_sizes_the_eval_server():
-    """``EngineConfig.max_workers`` becomes the eval server's
-    ``max_concurrency``; without the mapping every legacy run is silently
-    gated at the server default regardless of the requested width."""
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+def test_unknown_config_type_raises_type_error():
+    from gepa.optimize_anything import optimize_anything
 
-    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=512)))
-    assert converted.max_concurrency == 512
+    with pytest.raises(TypeError, match="OptimizeAnythingConfig or GEPAConfig"):
+        optimize_anything(seed_candidate="short", evaluator=_evaluator, config={"max_evals": 4})  # type: ignore[arg-type]
 
 
-def test_legacy_parallel_false_maps_to_sequential_eval_server():
-    """``parallel=False`` meant sequential evaluation in the launcher."""
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+def test_legacy_result_keeps_eval_log_and_budget_metadata():
+    """The legacy path has no eval server but still returns its bookkeeping:
+    one ``eval_log`` entry per evaluator call and the budget / cost / wall-time
+    metadata. ``total_evals`` is the launcher's ``total_metric_calls``."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
-    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(parallel=False, max_workers=512)))
-    assert converted.max_concurrency == 1
+    calls = []
+
+    def evaluator(candidate, example):
+        calls.append(example)
+        return float(len(candidate)) / 100.0, {"cost": 0.5}
+
+    result = optimize_anything(
+        seed_candidate="short",
+        evaluator=evaluator,
+        dataset=[1, 2, 3],
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=7), reflection=ReflectionConfig(reflection_lm=_FakeLM())
+        ),
+    )
+    assert [e["eval"] for e in result.eval_log] == list(range(1, len(calls) + 1))
+    assert result.eval_log[-1]["cumulative_cost"] == 0.5 * len(calls)
+    assert result.metadata["budget"] == {
+        "exhausted": True,
+        "max_evals": 7,
+        "used": len(calls),
+        "remaining_evals": 0,
+    }
+    assert result.metadata["total_cost"] == 0.5 * len(calls)
+    assert result.metadata["engine"] == "gepa"
+    assert result.metadata["wall_time"] >= 0
+    assert result.eval_server_calls is None
+    assert result.total_evals == result.total_metric_calls
 
 
-def test_legacy_max_workers_none_falls_back_to_cpu_count():
-    """``max_workers=None`` mirrors the field's own default factory."""
-    import os
+def test_legacy_reflection_lm_string_is_not_written_back(monkeypatch):
+    """Building the reflection LM up front (to read its cost) happens on a copy."""
+    import gepa.lm
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, _from_legacy_config
+    monkeypatch.setattr(gepa.lm.LM, "__call__", lambda self, *a, **k: _FakeLM()())
+    config = GEPAConfig(engine=EngineConfig(max_metric_calls=4), reflection=ReflectionConfig(reflection_lm="openai/x"))
+    optimize_anything(seed_candidate="short", evaluator=_evaluator, objective="maximize length", config=config)
+    assert config.reflection.reflection_lm == "openai/x"
 
-    converted = _from_legacy_config(GEPAConfig(engine=EngineConfig(max_workers=None)))
-    assert converted.max_concurrency == (os.cpu_count() or 32)
+
+def test_legacy_run_dir_matches_v014_layout(tmp_path, monkeypatch):
+    """A legacy config runs the launcher directly, so ``run_dir`` holds only
+    what v0.1.4 wrote there: ``gepa_state.bin`` at the root and no eval-server
+    records. Nothing is created under the current directory (#448)."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    run_dir = tmp_path / "run"
+    monkeypatch.chdir(tmp_path)
+    optimize_anything(
+        seed_candidate="short",
+        evaluator=_evaluator,
+        objective="maximize length",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4, run_dir=str(run_dir)),
+            reflection=ReflectionConfig(reflection_lm=_FakeLM()),
+        ),
+    )
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["run"]
+    assert (run_dir / "gepa_state.bin").exists()
+    assert not (run_dir / "eval_server").exists()
+    assert not (run_dir / "summary.json").exists()
+
+
+def test_legacy_cap_finishes_the_iteration_like_v014(tmp_path, monkeypatch):
+    """#448: a cap that lands mid-iteration stops at the iteration boundary, as
+    in v0.1.4, instead of discarding the in-flight child. Repro from the issue:
+    cap 7 gives 8 evaluator calls and 2 candidates, no ``_budget`` reaches the
+    reflection prompt, and nothing is written under the current directory."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    monkeypatch.chdir(tmp_path)
+    calls, prompts = [], []
+
+    def evaluator(candidate, example):
+        calls.append(example)
+        return (1.0 if "improved" in candidate else 0.2), {"note": f"scored {example}"}
+
+    def reflection_lm(prompt):
+        prompts.append(prompt)
+        return f"improved candidate v{len(prompts)}"
+
+    data = [f"ex{i}" for i in range(4)]
+    config = GEPAConfig(
+        engine=EngineConfig(max_metric_calls=7, cache_evaluation=True, parallel=False, seed=0),
+        reflection=ReflectionConfig(reflection_lm=reflection_lm, reflection_minibatch_size=2),
+    )
+    for _ in range(2):  # reusing the config must not resume or mutate the first run
+        calls.clear()
+        prompts.clear()
+        result = optimize_anything(seed_candidate="seed", evaluator=evaluator, dataset=data, valset=data, config=config)
+        assert len(calls) == 8
+        assert result.val_aggregate_scores == [0.2, 1.0]
+        assert prompts and not any("_budget" in str(p) for p in prompts)
+    assert config.engine.run_dir is None
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_legacy_gepa_config_accepts_test_set():

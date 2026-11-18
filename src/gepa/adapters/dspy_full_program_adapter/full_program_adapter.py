@@ -1,3 +1,4 @@
+import logging
 import random
 from typing import Any, Callable
 
@@ -9,18 +10,29 @@ from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
+from gepa.strategies.instruction_proposal import run_proposal
+
+logger = logging.getLogger(__name__)
 
 # One DSPy trace entry: (predictor, inputs, outputs). outputs may be a FailedPrediction.
 _TraceInstance = tuple[Any, dict[str, Any], Any]
+
+
+def _format_failed_prediction(prediction: FailedPrediction) -> str:
+    """Keep malformed completions visible as feedback instead of treating them as mappings."""
+    return (
+        "Couldn't parse the output as per the expected output format. The model's raw response was:\n"
+        f"```\n{prediction.completion_text}\n```\n\n"
+    )
 
 
 def _trajectory_field_grew(key: str, prev: Any, curr: Any) -> bool:
     """True when ReAct's ``trajectory`` input grew as a strict prefix extension.
 
     Other string fields are not treated as cumulative. Independent calls that append a
-    newline section to ``context`` or ``document`` must stay in the trace. History objects
-    are also left alone: an empty or shared-prefix History is a valid independent input,
-    and prefix matching cannot tell that apart from a later turn of the same conversation.
+    newline section to ``context`` or ``document`` must stay in the trace. History contents
+    are not prefix-matched either: an empty or shared-prefix History is a valid independent
+    input. History-based ReAct is handled by :func:`_history_records_previous_call`.
     """
     if key.lower() != "trajectory":
         return False
@@ -29,8 +41,32 @@ def _trajectory_field_grew(key: str, prev: Any, curr: Any) -> bool:
     return prev != curr and curr.startswith(prev)
 
 
+# Python may share instances of these between unrelated values, so identity says nothing about them.
+_SHAREABLE_TYPES = (str, int, float, bool, type(None))
+
+
+def _history_records_previous_call(prev: _TraceInstance, curr: _TraceInstance) -> bool:
+    """True when both calls got the same History object and it holds an output object of ``prev``.
+
+    History-based ReAct (``dspy.ReAct`` from DSPy 3.5, ``dspy.ReActV2`` before that) passes one
+    History to every turn and appends each turn's outputs to it, so the trace holds the same
+    object, already grown to the final conversation, on every call. Independent calls, even
+    with empty or shared-prefix histories, get distinct History objects and are kept.
+    """
+    if not hasattr(prev[2], "values"):
+        return False
+    for key, history in prev[1].items():
+        if not isinstance(history, History) or curr[1].get(key) is not history:
+            continue
+        outputs = [v for v in prev[2].values() if type(v) not in _SHAREABLE_TYPES]
+        for message in history.messages:
+            if isinstance(message, dict) and any(v is out for v in message.values() for out in outputs):
+                return True
+    return False
+
+
 def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:
-    """True when curr is the same predictor continuing a growing ReAct trajectory."""
+    """True when curr is the same predictor continuing a ReAct run (a growing trajectory or a shared History)."""
     if prev[0] is not curr[0]:
         return False
     if isinstance(prev[2], FailedPrediction) or isinstance(curr[2], FailedPrediction):
@@ -41,14 +77,15 @@ def _is_cumulative_repeat(prev: _TraceInstance, curr: _TraceInstance) -> bool:
     for key in prev_inputs.keys() & curr_inputs.keys():
         if _trajectory_field_grew(key, prev_inputs[key], curr_inputs[key]):
             return True
-    return False
+    return _history_records_previous_call(prev, curr)
 
 
 def _select_trace_instances_for_reflection(trace_instances: list[_TraceInstance]) -> list[_TraceInstance]:
     """Choose which predictor calls to send to the reflection LM.
 
     Walk the trace in execution order. Consecutive calls to the same predictor are collapsed
-    to the last call only when ReAct's ``trajectory`` string grew as a prefix. Independent
+    to the last call only when ReAct's ``trajectory`` string grew as a prefix, or when both
+    calls share one History object that records the earlier call's outputs. Independent
     map calls, interleaved draft-critique-revise (A, B, A) calls, History inputs (including
     empty, shared-prefix, and growing conversations), and prefix-related ``context`` /
     ``document`` strings are kept.
@@ -156,18 +193,27 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
             )
-            scores = []
-            outputs = []
+            # bootstrap_trace_data drops examples whose program raised, but GEPA indexes results by
+            # batch position, so keep outputs, scores, and trajectories batch-sized. A dropped example
+            # scores failure_score and gets an empty trace, which make_reflective_dataset skips.
+            trajectories: list[dict[str, Any]] = [
+                {"example": example, "prediction": Prediction(), "trace": [], "example_ind": i, "score": None}
+                for i, example in enumerate(batch)
+            ]
+            outputs: list[Any] = [None] * len(batch)
             for t in trajs:
-                outputs.append(t["prediction"])
-                if hasattr(t["prediction"], "__class__") and t.get("score") is None:
+                trajectories[t["example_ind"]] = t
+                outputs[t["example_ind"]] = t["prediction"]
+            scores = []
+            for t in trajectories:
+                score = t.get("score")
+                if score is None:
                     scores.append(self.failure_score)
                 else:
-                    score = t["score"]
                     if hasattr(score, "score"):
                         score = score["score"]
                     scores.append(score)
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
         else:
             evaluator = Evaluate(
                 devset=batch,
@@ -188,10 +234,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         """Build reflection examples from captured DSPy traces.
 
         Each example includes program-level inputs and outputs plus a ``Program Trace``.
-        Consecutive ReAct calls whose ``trajectory`` string grew as a prefix are collapsed
-        to the last call of that run. Independent repeats, History inputs, and interleaved
-        calls are kept in execution order. A FailedPrediction stays in the trace and is
-        not merged into a neighboring call.
+        Consecutive ReAct calls (a ``trajectory`` string that grew as a prefix, or one shared
+        History that records each turn) are collapsed to the last call of that run.
+        Independent repeats, History inputs, and interleaved calls are kept in execution order. A FailedPrediction stays in the trace and is
+        not merged into a neighboring call. Failed program outputs also retain the raw
+        completion as parse-error feedback.
         """
         proposed_program, _ = self.build_program(candidate)
 
@@ -211,7 +258,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             example = data["example"]
             example_data["Program Inputs"] = {**example.inputs()}
             prediction = data["prediction"]
-            example_data["Program Outputs"] = {**prediction}
+            example_data["Program Outputs"] = (
+                _format_failed_prediction(prediction) if isinstance(prediction, FailedPrediction) else {**prediction}
+            )
             module_score = data["score"]
 
             if hasattr(module_score, "feedback"):
@@ -266,11 +315,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     new_inputs[input_key] = str(input_val)
 
                 if isinstance(outputs, FailedPrediction):
-                    s = "Couldn't parse the output as per the expected output format. The model's raw response was:\n"
-                    s += "```\n"
-                    s += outputs.completion_text + "\n"
-                    s += "```\n\n"
-                    new_outputs = s
+                    new_outputs = _format_failed_prediction(outputs)
                 else:
                     for output_key, output_val in outputs.items():
                         new_outputs[output_key] = str(output_val)
@@ -316,8 +361,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for name in components_to_update:
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
-            new_texts[name] = DSPyProgramProposalSignature.run(
+            parsed, _prompt, _raw_output = run_proposal(
+                DSPyProgramProposalSignature,
                 lm=self.reflection_lm,
                 input_dict={"curr_program": base_instruction, "dataset_with_feedback": dataset_with_feedback},
-            )["new_program"]
+            )
+            if parsed.text is None:
+                logger.warning(
+                    "Skipping malformed full-program reflection output for component %r: %s", name, parsed.error
+                )
+                continue
+            new_texts[name] = parsed.text
         return new_texts

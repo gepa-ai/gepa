@@ -52,31 +52,32 @@ def is_dominated(y, programs, program_at_pareto_front_valset):
 
 
 def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
-    freq = {}
-    for front in program_at_pareto_front_valset.values():
+    program_fronts = {}
+    remaining_counts = {}
+    for key, front in program_at_pareto_front_valset.items():
+        remaining_counts[key] = len(front)
         for p in front:
-            freq[p] = freq.get(p, 0) + 1
+            program_fronts.setdefault(p, []).append(key)
 
     dominated = set()
-    programs = list(freq.keys())
+    programs = list(program_fronts)
 
     if scores is None:
         scores = dict.fromkeys(programs, 1)
 
     programs = sorted(programs, key=lambda x: scores[x], reverse=False)
 
-    found_to_remove = True
-    while found_to_remove:
-        found_to_remove = False
-        for y in programs:
-            if y in dominated:
-                continue
-            if is_dominated(y, set(programs).difference({y}).difference(dominated), program_at_pareto_front_valset):
-                dominated.add(y)
-                found_to_remove = True
-                break
+    # A program is removable while every front it covers has another survivor.
+    # Once it is the sole survivor of a front, later removals cannot make it
+    # removable again, so a single pass preserves the repeated-scan policy.
+    for y in programs:
+        fronts = program_fronts[y]
+        if all(remaining_counts[key] > 1 for key in fronts):
+            dominated.add(y)
+            for key in fronts:
+                remaining_counts[key] -= 1
 
-    dominators = [p for p in programs if p not in dominated]
+    dominators = {p for p in programs if p not in dominated}
     for front in program_at_pareto_front_valset.values():
         if not front:
             continue

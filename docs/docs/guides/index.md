@@ -60,6 +60,8 @@ GEPA employs two complementary strategies, selected adaptively:
 
 **System-Aware Merge**: Sample two candidates from the frontier and strategically combine modules from each based on their evolution history. If a module was refined in candidate A but left unchanged in candidate B, the merge selects from A for that module. This creates hybrid candidates that combine complementary strengths — for example, merging a candidate that excels on algebraic problems with one that handles geometry well.
 
+Eligible common ancestors are sampled in proportion to their validation scores when those scores are nonnegative and at least one is positive. If any eligible ancestor has a negative score, or all scores are zero, GEPA samples uniformly among eligible ancestors. This allows rewards such as negative loss without treating negative scores as sampling weights.
+
 Strategy selection and candidate sampling use novelty-weighted approaches to balance exploration (trying diverse strategies) and exploitation (refining the best candidates).
 
 ### When to Use GEPA

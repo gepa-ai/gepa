@@ -14,7 +14,7 @@ import pytest
 # message that surfaces this exact variable name.
 os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
 
-from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker  # noqa: E402
+from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
 
 
 def has_wandb():
@@ -208,7 +208,7 @@ class TestExperimentTrackerIntegration:
         tracker = ExperimentTracker(
             use_wandb=False,
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -243,7 +243,7 @@ class TestExperimentTrackerIntegration:
         # Check that metrics were stored in the mlflow tracking store
         from mlflow.tracking import MlflowClient
 
-        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        client = MlflowClient(tracking_uri=(Path(temp_dir) / "mlflow").as_uri())
 
         # Get the experiment
         experiment = client.get_experiment_by_name("test-experiment")
@@ -275,7 +275,7 @@ class TestExperimentTrackerIntegration:
                 "dir": temp_dir,
             },
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -315,7 +315,7 @@ class TestExperimentTrackerIntegration:
         # Verify mlflow metrics were stored
         from mlflow.tracking import MlflowClient
 
-        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        client = MlflowClient(tracking_uri=(Path(temp_dir) / "mlflow").as_uri())
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])
         assert len(runs) > 0
@@ -361,7 +361,7 @@ class TestExperimentTrackerIntegration:
         tracker = ExperimentTracker(
             use_wandb=False,
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -384,7 +384,7 @@ class TestExperimentTrackerIntegration:
                 "dir": temp_dir,
             },
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -406,7 +406,7 @@ class TestExperimentTrackerIntegration:
         # Verify mlflow metrics were stored
         from mlflow.tracking import MlflowClient
 
-        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        client = MlflowClient(tracking_uri=(Path(temp_dir) / "mlflow").as_uri())
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])
         assert len(runs) > 0
@@ -447,7 +447,7 @@ class TestExperimentTrackerIntegration:
         tracker = ExperimentTracker(
             use_wandb=False,
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -462,7 +462,7 @@ class TestExperimentTrackerIntegration:
         tracker = ExperimentTracker(
             use_wandb=False,
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -521,7 +521,7 @@ class TestExperimentTrackerIntegration:
         import mlflow
 
         # Start an outer mlflow run
-        mlflow.set_tracking_uri(f"file://{temp_dir}/mlflow")
+        mlflow.set_tracking_uri((Path(temp_dir) / "mlflow").as_uri())
         mlflow.set_experiment("test-experiment")
 
         with mlflow.start_run() as outer_run:
@@ -531,7 +531,7 @@ class TestExperimentTrackerIntegration:
             tracker = ExperimentTracker(
                 use_wandb=False,
                 use_mlflow=True,
-                mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+                mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
                 mlflow_experiment_name="test-experiment",
             )
 
@@ -557,7 +557,7 @@ class TestExperimentTrackerIntegration:
         # Verify both metrics were logged
         from mlflow.tracking import MlflowClient
 
-        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        client = MlflowClient(tracking_uri=(Path(temp_dir) / "mlflow").as_uri())
         run_data = client.get_run(outer_run_id)
         assert "inner_metric" in run_data.data.metrics
         assert "outer_metric" in run_data.data.metrics
@@ -568,7 +568,7 @@ class TestExperimentTrackerIntegration:
         tracker = ExperimentTracker(
             use_wandb=False,
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -587,7 +587,7 @@ class TestExperimentTrackerIntegration:
         # Verify all metrics were logged to mlflow
         from mlflow.tracking import MlflowClient
 
-        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        client = MlflowClient(tracking_uri=(Path(temp_dir) / "mlflow").as_uri())
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])
         assert len(runs) > 0
@@ -616,7 +616,7 @@ class TestExperimentTrackerIntegration:
         tracker = ExperimentTracker(
             use_wandb=False,
             use_mlflow=True,
-            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_tracking_uri=(Path(temp_dir) / "mlflow").as_uri(),
             mlflow_experiment_name="test-experiment",
         )
 
@@ -639,7 +639,7 @@ class TestExperimentTrackerIntegration:
         # Verify only numeric metrics were logged to mlflow
         from mlflow.tracking import MlflowClient
 
-        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        client = MlflowClient(tracking_uri=(Path(temp_dir) / "mlflow").as_uri())
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])
         assert len(runs) > 0

@@ -99,9 +99,13 @@ class StdioMCPClient(BaseMCPClient):
         self.process.stdin.write(request_str.encode())
         await self.process.stdin.drain()
 
-        # Read response
-        response_line = await self.process.stdout.readline()
-        response = json.loads(response_line.decode())
+        # Notifications can arrive before the response on the same stream.
+        while True:
+            response_line = await self.process.stdout.readline()
+            response = json.loads(response_line.decode())
+            if "method" in response and "id" not in response:
+                continue
+            break
 
         if "error" in response:
             raise Exception(f"MCP error: {response['error']}")

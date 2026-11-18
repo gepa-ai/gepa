@@ -522,7 +522,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             components: dict[str, str] | None,
             val_subscores: dict[DataId, float] | None,
         ) -> None:
-            self._atomic_write_json(run_dir, f"{base}/meta.json", meta)
             if components is not None:
                 self._save_components_dir(run_dir, base, components)
             if val_subscores is not None:
@@ -531,6 +530,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     f"{base}/val_scores.json",
                     {str(k): v for k, v in val_subscores.items()},
                 )
+            # meta.json marks this directory complete; leave failed exports retryable.
+            self._atomic_write_json(run_dir, f"{base}/meta.json", meta)
 
         # Seed candidate (candidate_idx 0).
         seed_base = f"iterations/{SEED_ITERATION_ID}"
@@ -752,6 +753,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         # handle schema migration
         version = data.get("validation_schema_version")
+        if version is not None and version > GEPAState._VALIDATION_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported GEPAState validation schema version {version}; "
+                f"max supported is {GEPAState._VALIDATION_SCHEMA_VERSION}. "
+                "This checkpoint was saved by a newer version of GEPA; upgrade GEPA "
+                "(`pip install -U gepa`) to load it."
+            )
         if version is None or version < 2:
             GEPAState._migrate_from_legacy_state_v0(data)
             version = data.get("validation_schema_version")
@@ -969,6 +977,15 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         num_metric_calls_by_discovery_of_new_program: int,
         iteration_id: str | None = None,
     ) -> ProgramIdx:
+        # Reject incomplete evaluations before changing candidates, frontiers,
+        # or best-output artifacts. The engine may continue after this error.
+        if self.frontier_type in ("objective", "hybrid", "cartesian"):
+            if not valset_evaluation.objective_scores_by_val_id:
+                raise ValueError(
+                    f"frontier_type='{self.frontier_type}' requires objective_scores to be provided by the evaluator, "
+                    f"but none were found in the evaluation result."
+                )
+
         # ``iteration_id`` is the on-disk iteration id for the proposal that
         # produced this candidate — the random anchor stamped on its trace
         # entry at slot creation. Falls back to the current slot's id when the
@@ -1004,13 +1021,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             )
 
         self._update_objective_pareto_front(objective_scores, new_program_idx)
-
-        if self.frontier_type in ("objective", "hybrid", "cartesian"):
-            if not valset_evaluation.objective_scores_by_val_id:
-                raise ValueError(
-                    f"frontier_type='{self.frontier_type}' requires objective_scores to be provided by the evaluator, "
-                    f"but none were found in the evaluation result."
-                )
 
         if self.frontier_type == "cartesian":
             assert valset_evaluation.objective_scores_by_val_id is not None  # Validated above
@@ -1113,11 +1123,16 @@ def initialize_gepa_state(
     run_dir: str | None,
     logger: LoggerProtocol,
     seed_candidate: dict[str, str],
-    seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
+    seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId] | None,
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
 ) -> GEPAState[RolloutOutput, DataId]:
+    """Load the saved state from ``run_dir`` if one exists, otherwise build a fresh state.
+
+    ``seed_valset_evaluation`` is only read on the fresh path. Callers that know the
+    state will be loaded may pass ``None`` and skip evaluating the seed candidate.
+    """
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
@@ -1138,6 +1153,8 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
+        if seed_valset_evaluation is None:
+            raise ValueError("seed_valset_evaluation is required when no saved state exists in run_dir")
         if run_dir is not None:
             write_eval_outputs_to_directory(
                 seed_valset_evaluation.outputs_by_val_id,

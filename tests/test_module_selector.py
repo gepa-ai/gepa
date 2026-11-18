@@ -15,7 +15,7 @@ def common_mocks():
     """Common mock setup for all module selector tests."""
     mock_run_return = Mock(
         program_candidates=[{"test": "value"}],
-        parent_program_for_candidate=[None],
+        parent_program_for_candidate=[[None]],
         program_full_scores_val_set=[0.5],
         prog_candidate_val_subscores=[{}],
         program_at_pareto_front_valset={0: {}},
@@ -23,6 +23,7 @@ def common_mocks():
         prog_candidate_objective_scores=[{}],
         program_at_pareto_front_objectives={},
         objective_pareto_front={},
+        best_outputs_valset=None,
     )
 
     mock_adapter = Mock()

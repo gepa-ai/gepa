@@ -214,6 +214,8 @@ def simple_rag_lm(messages):
 
 def simple_reflection_lm(prompt):
     """Simple reflection that suggests a better prompt."""
+    # Deliberately unfenced: custom reflection LMs historically may return the
+    # proposal directly, and that compatibility is part of the public contract.
     return json.dumps({"answer_generation": PREFERRED_DYNAMIC_PROMPT})
 
 

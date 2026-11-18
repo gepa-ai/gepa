@@ -10,6 +10,10 @@ on:
   workflow_dispatch:
   workflow_call:
 
+# The gepa.rpc SDK jobs (Python rpc tests, TypeScript, Rust, proto drift)
+# live in run_rpc_tests.yml, deliberately NOT here: build_and_release.yml's
+# verify-ci gate calls this workflow, so keeping them out means a core PyPI
+# release never depends on npm, apt or crates.io being reachable.
 jobs:
   fix:
     name: Check Ruff Fix
@@ -70,12 +74,22 @@ jobs:
         run: uv run -p .venv pyright
 
   test:
-    name: Run Tests
-    runs-on: ubuntu-latest
+    name: Run Tests (${{ matrix.python-version }}${{ matrix.os == 'windows-latest' && ', Windows' || '' }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # One Windows leg on the newest Python catches path, encoding, and
+        # file-locking bugs that never show up on Linux.
+        include:
+          - os: windows-latest
+            python-version: "3.14"
+    defaults:
+      run:
+        # Git Bash on Windows, so every step runs the same script on both OSes.
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -91,7 +105,8 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          if [ "$RUNNER_OS" = "Windows" ]; then bin_dir=Scripts; else bin_dir=bin; fi
+          echo "${{ github.workspace }}/.venv/$bin_dir" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
           uv sync -p .venv --locked --extra dev
@@ -99,16 +114,79 @@ jobs:
       - name: Run lint with tests
         run: uv run -p .venv ruff check
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv tests/
+        run: uv run -p .venv pytest -vv -m "not llm_live and not extra" tests/
       # - name: Install optional dependencies
       #   run: uv sync -p .venv --locked --extra dev --extra test_extras
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
-  # rpc_test, rpc_typescript_test and rpc_rust_test moved to
-  # run_rpc_tests.yml -- see that file's header for why. This workflow is
-  # what build_and_release.yml's verify-ci gate calls before every core
-  # PyPI release, so it must stay free of the npm/apt/cargo toolchains.
+  core_python315:
+    name: Python 3.15 Core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Create core-only environment
+        run: |
+          uv venv .venv --python 3.15
+          uv pip install -p .venv pip pytest
+      - name: Install core package and dependency-free DSPy extra
+        # The full/dev extras still depend on third-party Python 3.15 support.
+        # Use pip so the built distribution's Requires-Python is also checked.
+        run: uv run --no-sync -p .venv python -m pip install '.[dspy]'
+      - name: Check imports and core optimization with callable models
+        run: |
+          uv run --no-sync -p .venv python tests/ensure_gepa_dspy_dependency.py
+          uv run --no-sync -p .venv pytest -q tests/test_import.py tests/test_optimize.py tests/test_instruction_proposal.py tests/test_result.py
+
+  dspy_compatibility:
+    name: DSPy Compatibility (pinned)
+    # Pinned DSPy only, so a failure here can only come from the GEPA change
+    # under test. DSPy latest and main run post-merge in dspy_compatibility.yml.
+    uses: ./.github/workflows/dspy_contract.yml
+    with:
+      dspy-versions: '["3.3.1"]'
+
+  # llm_call_test:
+  #   name: Run Tests with Real LM
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     ollama:
+  #       image: ollama/ollama:latest
+  #       ports:
+  #         - 11434:11434
+  #   steps:
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+  #       with:
+  #         python-version: 3.11
+  #     - name: Install uv with caching
+  #       uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+  #       with:
+  #         enable-cache: true
+  #         cache-dependency-glob: |
+  #           **/pyproject.toml
+  #           **/uv.lock
+  #     - name: Create and activate virtual environment
+  #       run: |
+  #         uv venv .venv
+  #         echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+  #     - name: Install dependencies
+  #       run: |
+  #         uv sync --dev -p .venv --extra dev
+  #         uv pip list
+  #     - name: Pull LLM
+  #       run: |
+  #         timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
+  #         curl -X POST http://localhost:11434/api/pull \
+  #           -H "Content-Type: application/json" \
+  #           -d '{"name": "llama3.2:3b"}'
+  #         echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
+  #     - name: Run tests
+  #       run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
 
   build_package:
     name: Build Package
@@ -142,7 +220,7 @@ jobs:
       # Everything below invokes .venv/bin/python directly rather than
       # `uv run`. `uv run` re-syncs the project environment first, which
       # reinstalls gepa from the source tree and silently replaces the wheel
-      # we just installed -- so `uv run python -c "import gepa"` imports
+      # just installed -- so `uv run python -c "import gepa"` imports
       # src/gepa, not the artifact under test. (dependency_canary.yml avoids
       # `uv run` for the same reason, and build_and_release.yml uses
       # `uv run --active --no-sync`.)
@@ -153,7 +231,7 @@ jobs:
           # Put the repo root on sys.path first, which is what pytest's default
           # "prepend" import mode does for tests/. The project is src-layout, so
           # there is no importable `gepa/` at the root and the installed wheel
-          # must still win -- this asserts that rather than assuming it.
+          # must still win -- assert that rather than assuming it.
           sys.path.insert(0, str(pathlib.Path(".").resolve()))
           import gepa
           imported = pathlib.Path(gepa.__file__).resolve()
