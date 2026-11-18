@@ -1,0 +1,230 @@
+name: RPC SDK Tests
+permissions:
+  contents: read
+
+# Split out of run_tests.yml so a core PyPI release never depends on npm,
+# apt, or crates.io being reachable. build_and_release.yml's verify-ci gate
+# calls run_tests.yml as a reusable workflow, and that call has no per-job
+# filtering -- so while these three jobs lived there, every core `gepa`
+# release transitively required `npm ci`, `apt-get install protobuf-compiler`
+# and the crates.io index to all succeed. Normal push/PR triggers below keep
+# exercising the RPC SDKs exactly as before; only the release-gating path
+# stopped including them.
+on:
+  push:
+    branches: [main, release-*]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  proto_sync_check:
+    name: Check proto copies and generated code are in sync
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc-codegen
+      - name: Re-sync both SDKs' proto copies from the canonical source
+        run: |
+          bash src/gepa/rpc/sdk/typescript/scripts/sync-proto.sh
+          bash src/gepa/rpc/sdk/rust/scripts/sync-proto.sh
+      - name: Regenerate the committed Python bindings
+        run: bash src/gepa/rpc/scripts/compile_proto.sh
+      - name: Fail if re-running sync and codegen produced any diff
+        run: |
+          if ! git diff --exit-code -- \
+              src/gepa/rpc/proto/gepa.proto \
+              src/gepa/rpc/sdk/typescript/proto/gepa.proto \
+              src/gepa/rpc/sdk/rust/proto/gepa.proto \
+              src/gepa/rpc/generated/; then
+            echo "::error::gepa.proto, one of its SDK copies, or the committed" \
+                 "generated/ bindings are out of sync. Run" \
+                 "sdk/typescript/scripts/sync-proto.sh," \
+                 "sdk/rust/scripts/sync-proto.sh and scripts/compile_proto.sh," \
+                 "then commit the result."
+            exit 1
+          fi
+
+  rpc_test:
+    name: Run RPC Tests
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      - name: Run tests with pytest
+        run: uv run -p .venv pytest -vv tests/test_rpc_integration.py tests/test_rpc_e2e/
+
+  rpc_typescript_test:
+    name: Run RPC TypeScript SDK Tests
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/gepa/rpc/sdk/typescript/package-lock.json
+      - name: Install npm dependencies
+        working-directory: src/gepa/rpc/sdk/typescript
+        run: npm ci
+      - name: Build
+        working-directory: src/gepa/rpc/sdk/typescript
+        run: npm run build
+      - name: Run e2e test
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:e2e
+      - name: Run non-Omni wire-protocol test (mocked optimizer, no LLM cache)
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:optimize-mocked
+      - name: Run cancellation tests (close/AbortSignal/timeoutMs)
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:cancellation
+      - name: Run auth tests against an --auth-token server
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:auth
+
+  rpc_rust_test:
+    name: Run RPC Rust SDK Tests
+    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: uv sync -p .venv --locked --extra dev --extra rpc
+      # No protobuf-compiler apt install needed: build.rs uses a vendored
+      # protoc, which is the point of that change -- leaving the apt step in
+      # would mean CI never exercised the path real users take.
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: 'stable'
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          workspaces: src/gepa/rpc/sdk/rust
+      - name: Check
+        working-directory: src/gepa/rpc/sdk/rust
+        run: cargo check --all-targets
+      - name: Run e2e test (Omni, recorded LLM cache)
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test e2e
+      - name: Run non-Omni wire-protocol test (mocked optimizer, no LLM cache)
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test optimize_mocked
+      - name: Run auth test against an --auth-token server
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test auth
+
+  # llm_call_test:
+  #   name: Run Tests with Real LM
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     ollama:
+  #       image: ollama/ollama:latest
+  #       ports:
+  #         - 11434:11434
+  #   steps:
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+  #       with:
+  #         python-version: 3.11
+  #     - name: Install uv with caching
+  #       uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+  #       with:
+  #         enable-cache: true
+  #         cache-dependency-glob: |
+  #           **/pyproject.toml
+  #           **/uv.lock
+  #     - name: Create and activate virtual environment
+  #       run: |
+  #         uv venv .venv
+  #         echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+  #     - name: Install dependencies
+  #       run: |
+  #         uv sync --dev -p .venv --extra dev
+  #         uv pip list
+  #     - name: Pull LLM
+  #       run: |
+  #         timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
+  #         curl -X POST http://localhost:11434/api/pull \
+  #           -H "Content-Type: application/json" \
+  #           -d '{"name": "llama3.2:3b"}'
+  #         echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
+  #     - name: Run tests
+  #       run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/

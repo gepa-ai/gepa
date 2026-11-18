@@ -10,6 +10,10 @@ on:
   workflow_dispatch:
   workflow_call:
 
+# The gepa.rpc SDK jobs (Python rpc tests, TypeScript, Rust, proto drift)
+# live in run_rpc_tests.yml, deliberately NOT here: build_and_release.yml's
+# verify-ci gate calls this workflow, so keeping them out means a core PyPI
+# release never depends on npm, apt or crates.io being reachable.
 jobs:
   fix:
     name: Check Ruff Fix
@@ -211,10 +215,48 @@ jobs:
         run: uv sync -p .venv --locked --extra dev
       - name: Build
         run: uv run -p .venv python -m build
-      - name: Install built package
-        run: uv pip install dist/*.whl -p .venv
-      - name: Test import gepa
-        run: uv run -p .venv python -c "import gepa"
+      - name: Install built package (wheel only, no rpc extra)
+        run: uv pip install "$(ls dist/*.whl)[dev]" -p .venv
+      # Everything below invokes .venv/bin/python directly rather than
+      # `uv run`. `uv run` re-syncs the project environment first, which
+      # reinstalls gepa from the source tree and silently replaces the wheel
+      # just installed -- so `uv run python -c "import gepa"` imports
+      # src/gepa, not the artifact under test. (dependency_canary.yml avoids
+      # `uv run` for the same reason, and build_and_release.yml uses
+      # `uv run --active --no-sync`.)
+      - name: Verify the import really comes from the installed wheel
+        run: |
+          .venv/bin/python - <<'PY'
+          import pathlib, sys
+          # Put the repo root on sys.path first, which is what pytest's default
+          # "prepend" import mode does for tests/. The project is src-layout, so
+          # there is no importable `gepa/` at the root and the installed wheel
+          # must still win -- assert that rather than assuming it.
+          sys.path.insert(0, str(pathlib.Path(".").resolve()))
+          import gepa
+          imported = pathlib.Path(gepa.__file__).resolve()
+          workspace = pathlib.Path(".").resolve()
+          print(f"gepa imported from: {imported}")
+          if workspace in imported.parents:
+              raise SystemExit(
+                  f"FAIL: gepa resolved to the source checkout under {workspace}, "
+                  "not the installed wheel -- this job is not testing the "
+                  "release artifact."
+              )
+          print("OK: importing the installed wheel, not the source tree")
+          PY
+      # Proves the artifact that actually ships to PyPI -- not just the source
+      # checkout -- installs and tests clean with zero dependency on npm,
+      # cargo, apt or the rpc extra. The --ignore flags are
+      # belt-and-suspenders: the rpc tests already self-skip via
+      # pytest.importorskip("grpc") since this venv never installs the rpc
+      # extra, but excluding them explicitly keeps this release-gating job
+      # from ever implicitly depending on rpc.
+      - name: Run tests against the installed wheel
+        run: >-
+          .venv/bin/python -m pytest -vv tests/
+          --ignore=tests/test_rpc_integration.py
+          --ignore=tests/test_rpc_e2e
       # Ensure gepa[dspy] does not bring in new packages
       - name: Install dependencies
         run: |

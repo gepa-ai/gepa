@@ -1,0 +1,1 @@
+Classify the sentiment of the following text into categories: positive, negative, or neutral.

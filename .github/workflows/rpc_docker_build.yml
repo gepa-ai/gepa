@@ -1,0 +1,65 @@
+name: gepa.rpc - Build Docker image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/gepa/rpc/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/gepa/rpc/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -f src/gepa/rpc/Dockerfile -t gepa-rpc:latest .
+      # The container must bind 0.0.0.0 for -p to work, so the loopback
+      # default can't protect it. Assert the deployment policy instead: no
+      # credential means refuse to start, and a credential means it listens.
+      - name: Refuse to serve a published port with no credential
+        run: |
+          set -e
+          docker run -d --name gepa-rpc-insecure -p 50051:50051 gepa-rpc:latest
+          # Give it a moment to either start listening (bad) or exit (good).
+          sleep 5
+          if (echo > /dev/tcp/127.0.0.1/50051) 2>/dev/null; then
+            echo "::error::container accepted connections with no --auth-token or TLS" >&2
+            docker logs gepa-rpc-insecure
+            docker rm -f gepa-rpc-insecure
+            exit 1
+          fi
+          docker logs gepa-rpc-insecure 2>&1 | tee /tmp/insecure.log
+          if ! grep -q "refusing to listen" /tmp/insecure.log; then
+            echo "::error::expected the deployment-policy refusal in the logs" >&2
+            docker rm -f gepa-rpc-insecure
+            exit 1
+          fi
+          echo "correctly refused to serve a published port unauthenticated"
+          docker rm -f gepa-rpc-insecure
+
+      - name: Run the image with a token and confirm it starts and listens
+        run: |
+          docker run -d --name gepa-rpc-test -p 50051:50051 \
+            gepa-rpc:latest --auth-token ci-smoke-token
+          for i in $(seq 1 10); do
+            if (echo > /dev/tcp/127.0.0.1/50051) 2>/dev/null; then
+              echo "port 50051 is open, server is listening"
+              docker logs gepa-rpc-test
+              docker rm -f gepa-rpc-test
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server never started listening on port 50051" >&2
+          docker logs gepa-rpc-test
+          docker rm -f gepa-rpc-test
+          exit 1

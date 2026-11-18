@@ -31,3 +31,34 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+
+  # --- Added by gepa.rpc: the SDK toolchains don't exist on main yet. ---
+
+  # TypeScript SDK (src/gepa/rpc/sdk/typescript). Grouped monthly like the uv
+  # lockfile above, so SDK dependency churn doesn't dominate the PR queue.
+  - package-ecosystem: "npm"
+    directory: "/src/gepa/rpc/sdk/typescript"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      rpc-sdk-typescript:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+
+  # Rust SDK (src/gepa/rpc/sdk/rust). Same cadence and grouping.
+  - package-ecosystem: "cargo"
+    directory: "/src/gepa/rpc/sdk/rust"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      rpc-sdk-rust:
+        applies-to: "version-updates"
+        patterns:
+          - "*"

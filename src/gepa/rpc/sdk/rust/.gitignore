@@ -1,0 +1,4 @@
+/target
+# gepa-sdk is a library crate; per Rust convention, libraries don't commit
+# their lockfile (only binaries/applications should).
+Cargo.lock

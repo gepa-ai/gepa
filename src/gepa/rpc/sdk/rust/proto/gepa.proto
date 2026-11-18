@@ -1,0 +1,229 @@
+syntax = "proto3";
+package gepa_rpc;
+
+// "Omni" (RunOptimizationOmni, OmniStartRequest, ...) is this API's shorthand
+// for gepa's "Optimize Anything" entry point
+// (gepa.optimize_anything.optimize_anything / OptimizeAnythingConfig), which
+// can route to any of several optimizer backends (gepa, autoresearch,
+// best_of_n, meta_harness) -- as distinct from RunOptimization/StartRequest,
+// which wrap the original gepa.optimize entry point specifically.
+service GEPAService {
+  rpc RunOptimization(stream ClientMessage) returns (stream ServerMessage);
+  rpc RunOptimizationOmni(stream OmniClientMessage) returns (stream OmniServerMessage);
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+  // Additive, backward-compatible: requests that a running run stop. Two
+  // distinct effects, not necessarily simultaneous: any in-flight
+  // evaluate/reflective-dataset wait on this run is unblocked immediately,
+  // while the optimizer itself is only *asked* to stop and exits at its
+  // next checkpoint. See servicer.py's Cancel handler.
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+}
+message OmniClientMessage {
+  oneof payload {
+    OmniStartRequest start_request = 1;
+    OmniEvaluateBatchResponse evaluate_batch_response = 2;
+    EvaluatorFailure evaluator_failure = 3;
+  }
+}
+message OmniServerMessage {
+  oneof payload {
+    OmniEvaluateBatchRequest evaluate_batch_request = 1;
+    OmniProgressUpdate progress_update = 2;
+    OmniOptimizationComplete optimization_complete = 3;
+    OptimizationError optimization_error = 4;
+  }
+}
+message ClientMessage {
+  oneof payload {
+    StartRequest start_request = 1;
+    EvaluateBatchResponse evaluate_batch_response = 2;
+    ReflectiveDatasetResponse reflective_dataset_response = 3;
+    EvaluatorFailure evaluator_failure = 4;
+  }
+}
+// Sent when the client's own evaluate / make_reflective_dataset callback
+// raises, instead of silently dropping the stream. Without it the server only
+// observes "client stream closed" and has no idea the client's code failed or
+// why -- the operator's log is the one place that information is useful, and
+// it never arrived there.
+message EvaluatorFailure {
+  // Correlates with the request_id the server sent, when the failure is tied
+  // to a specific request. Empty if it isn't.
+  string request_id = 1;
+  // Exception type or error class from the client, e.g. "TypeError".
+  string error_type = 2;
+  // Client-supplied description. The server logs this and echoes it in the
+  // run's error, so clients should not put secrets here.
+  string message = 3;
+}
+message ServerMessage {
+  oneof payload {
+    EvaluateBatchRequest evaluate_batch_request = 1;
+    ReflectiveDatasetRequest reflective_dataset_request = 2;
+    ProgressUpdate progress_update = 3;
+    OptimizationComplete optimization_complete = 4;
+    OptimizationError optimization_error = 5;
+  }
+}
+message OmniStartRequest {
+  string run_id = 1;
+  string seed_candidate = 2;
+  string objective = 3;
+  repeated Example dataset = 4;
+  repeated Example valset = 5;
+  int32 max_evals = 6;
+  string reflection_lm = 7;
+  // Optimize Anything backend to run: "gepa" (default), "autoresearch",
+  // "best_of_n", or "meta_harness". Empty defaults to "gepa". Only "gepa"
+  // currently gets reflection_lm applied and streams OmniProgressUpdate;
+  // other engines run to completion and report OmniOptimizationComplete only.
+  string engine = 8;
+  // Long-form task context -- problem statement, evaluation rules, anything
+  // the optimizer or reflection step needs beyond seed_candidate and
+  // objective. Passed straight through to optimize_anything's own
+  // `background` parameter, which also uses it to bootstrap a first
+  // candidate when seed_candidate is empty. Optional; empty means none.
+  string background = 9;
+}
+message StartRequest {
+  string run_id = 1;
+  map<string, string> seed_candidate = 2;
+  repeated Example trainset = 3;
+  repeated Example valset = 4;
+  string reflection_lm = 5;
+  int32 max_metric_calls = 6;
+}
+message OmniEvaluateBatchRequest {
+  string request_id = 1;
+  string candidate = 2;
+  repeated Example batch = 3;
+  // Per-example warm-start history, aligned 1:1 with batch. Empty when
+  // the engine has no prior evaluations for an example yet.
+  repeated OmniOptimizationState opt_states = 4;
+}
+message OmniOptimizationState {
+  repeated OmniBestEval best_example_evals = 1;
+}
+message OmniBestEval {
+  double score = 1;
+  string side_info = 2;
+}
+message OmniEvaluateBatchResponse {
+  string request_id = 1;
+  repeated double scores = 2;
+  repeated string side_infos = 3;
+}
+message EvaluateBatchRequest {
+  string request_id = 1;
+  map<string, string> candidate = 2;
+  repeated Example batch = 3;
+  bool capture_traces = 4;
+}
+message EvaluateBatchResponse {
+  string request_id = 1;
+  repeated string outputs = 2;
+  repeated double scores = 3;
+  repeated Trajectory trajectories = 4;
+}
+message ReflectiveDatasetRequest {
+  string request_id = 1;
+  map<string, string> candidate = 2;
+  repeated string components_to_update = 3;
+  repeated Trajectory trajectories = 4;
+}
+message ReflectiveDatasetResponse {
+  string request_id = 1;
+  map<string, ReflectiveComponentData> reflective_data = 2;
+}
+message OmniProgressUpdate {
+  int32 evals_used = 1;
+  int32 max_evals = 2;
+  double best_score = 3;
+  string best_candidate = 4;
+}
+message OmniOptimizationComplete {
+  string run_id = 1;
+  string best_candidate = 2;
+  double best_score = 3;
+  int32 total_evals = 4;
+}
+message ProgressUpdate {
+  int32 metric_calls_used = 1;
+  int32 max_metric_calls = 2;
+  double best_score = 3;
+  map<string, string> best_candidate = 4;
+}
+message OptimizationComplete {
+  string run_id = 1;
+  map<string, string> best_candidate = 2;
+  double best_score = 3;
+}
+message OptimizationError {
+  enum ErrorKind {
+    UNSPECIFIED = 0;
+    // Added below EVALUATOR_ERROR/INTERNAL_ERROR to keep their numbers
+    // stable.
+    // The client's own evaluate / reflective-dataset callback raised, or
+    // returned something malformed (e.g. a mismatched score count).
+    // Actionable by the client without the server's logs.
+    EVALUATOR_ERROR = 1;
+    // Everything else: a server, transport or optimizer failure not caused
+    // by the client's callback. `message` is deliberately sanitized for this
+    // kind -- see servicer.py's _sanitized_internal_error.
+    INTERNAL_ERROR = 2;
+    // The run was stopped by an explicit Cancel RPC.
+    CANCELLED = 3;
+  }
+  string run_id = 1;
+  string message = 2;
+  ErrorKind error_kind = 3;
+}
+message StatusRequest {
+  string run_id = 1;
+}
+message StatusResponse {
+  enum Status {
+    UNKNOWN = 0;
+    RUNNING = 1;
+    COMPLETE = 2;
+    FAILED = 3;
+    CANCELLED = 4;
+    // Cancellation has been requested but the optimizer has not stopped yet.
+    // Non-terminal: it still holds its run slot and may still be doing work
+    // (the gepa engine only honors the stop at its next checkpoint). A run in
+    // this state ends up CANCELLED if the stop takes effect, or COMPLETE /
+    // FAILED if it finished on its own first.
+    CANCELLING = 5;
+  }
+  string run_id = 1;
+  Status status = 2;
+  string message = 3;
+  int32 metric_calls_used = 4;
+}
+message CancelRequest {
+  string run_id = 1;
+}
+message CancelResponse {
+  // True if a run matching run_id was found and a cancellation was issued.
+  // False (not an error) if the run_id is unknown or already finished --
+  // cancelling a run that isn't running anymore is a no-op, not a failure.
+  bool accepted = 1;
+  string message = 2;
+}
+message Example {
+  string id = 1;
+  map<string, string> fields = 2;
+}
+message Trajectory {
+  map<string, string> input_fields = 1;
+  string output = 2;
+  string feedback = 3;
+}
+message ReflectiveComponentData {
+  repeated ReflectiveEntry entries = 1;
+}
+message ReflectiveEntry {
+  map<string, string> inputs = 1;
+  string generated_output = 2;
+  string feedback = 3;
+}
