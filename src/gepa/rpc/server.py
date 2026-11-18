@@ -11,7 +11,12 @@ import grpc
 
 from gepa.rpc.adapter import DEFAULT_CALLBACK_TIMEOUT_SECONDS
 from gepa.rpc.generated import gepa_pb2_grpc as pb_grpc
-from gepa.rpc.servicer import DEFAULT_MAX_CONCURRENT_RUNS, DEFAULT_RUNS_DIR, GEPAServicer
+from gepa.rpc.servicer import (
+    DEFAULT_HANDSHAKE_TIMEOUT_SECONDS,
+    DEFAULT_MAX_CONCURRENT_RUNS,
+    DEFAULT_RUNS_DIR,
+    GEPAServicer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +95,7 @@ def build_server(
     max_workers: int = DEFAULT_MAX_WORKERS,
     max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
     callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    handshake_timeout: float = DEFAULT_HANDSHAKE_TIMEOUT_SECONDS,
     tls_cert_path: str | None = None,
     tls_key_path: str | None = None,
     auth_token: str | None = None,
@@ -119,6 +125,7 @@ def build_server(
             runs_dir=runs_dir,
             max_concurrent_runs=max_concurrent_runs,
             callback_timeout=callback_timeout,
+            handshake_timeout=handshake_timeout,
             allowed_engines=allowed_engines,
             allowed_reflection_lms=allowed_reflection_lms,
             default_reflection_lm=default_reflection_lm,
@@ -148,6 +155,7 @@ def serve(
     max_workers: int = DEFAULT_MAX_WORKERS,
     max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
     callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    handshake_timeout: float = DEFAULT_HANDSHAKE_TIMEOUT_SECONDS,
     tls_cert_path: str | None = None,
     tls_key_path: str | None = None,
     auth_token: str | None = None,
@@ -162,6 +170,7 @@ def serve(
         max_workers=max_workers,
         max_concurrent_runs=max_concurrent_runs,
         callback_timeout=callback_timeout,
+        handshake_timeout=handshake_timeout,
         tls_cert_path=tls_cert_path,
         tls_key_path=tls_key_path,
         auth_token=auth_token,

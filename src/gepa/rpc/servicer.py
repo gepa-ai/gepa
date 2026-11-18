@@ -52,6 +52,47 @@ DEFAULT_RUNS_DIR = os.environ.get("GEPA_RPC_RUNS_DIR", "./runs")
 # calls to always have a free thread.
 DEFAULT_MAX_CONCURRENT_RUNS = 8
 
+# How long a client may hold an accepted stream before sending its
+# start_request. The slot is acquired before the first message can be read
+# (gRPC hands us the request iterator, not the first message), so without a
+# bound a client that connects and sends nothing keeps a run slot and a pool
+# thread forever -- N silent connections take the server down with no
+# authentication and no payload. Generous, since this only has to cover
+# "client dialed and is writing its first message".
+DEFAULT_HANDSHAKE_TIMEOUT_SECONDS = 30.0
+
+
+def _first_message_or_timeout(
+    request_iterator: Any, timeout: float
+) -> tuple[Any | None, str | None]:
+    """Pull the first client message, giving up after `timeout` seconds.
+
+    `next(request_iterator)` blocks indefinitely on a silent stream, so the
+    read happens on a worker thread we can abandon. The thread is a daemon
+    and the iterator is left for gRPC to tear down when the RPC ends, so a
+    timed-out handshake doesn't leak anything we have to join on.
+
+    Returns (message, None) on success, or (None, reason) on failure, where
+    reason is "timeout" or "closed".
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as _FTimeout
+
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gepa-rpc-handshake")
+    try:
+        fut = pool.submit(lambda: next(request_iterator, None))
+        try:
+            msg = fut.result(timeout=timeout)
+        except _FTimeout:
+            return None, "timeout"
+        if msg is None:
+            return None, "closed"
+        return msg, None
+    finally:
+        # Don't block on a thread still parked in next(); gRPC unblocks it
+        # when it closes the stream.
+        pool.shutdown(wait=False)
+
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
 
@@ -185,6 +226,20 @@ def _finish(run_status: dict[str, Any], status: str, message: str = "") -> bool:
     return True
 
 
+def _examples_fingerprint(examples) -> tuple:
+    """Content fingerprint for a dataset, not just its ids.
+
+    Fingerprinting ids alone let a resume keep every id and swap every
+    example's *fields*, so a checkpoint could be resumed against different
+    data and silently accepted. Fields are sorted so dict ordering can't
+    produce spurious mismatches.
+    """
+    return tuple(
+        (e.id, tuple(sorted(dict(e.fields).items())))
+        for e in examples
+    )
+
+
 def _sanitized_internal_error(run_id: str, exc: BaseException) -> str:
     """Message for an *unexpected* server-side failure.
 
@@ -211,6 +266,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
         runs_dir: str = DEFAULT_RUNS_DIR,
         max_concurrent_runs: int = DEFAULT_MAX_CONCURRENT_RUNS,
         callback_timeout: float = DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+        handshake_timeout: float = DEFAULT_HANDSHAKE_TIMEOUT_SECONDS,
         allowed_engines: Collection[str] | None = None,
         allowed_reflection_lms: Collection[str] | None = None,
         default_reflection_lm: str | None = None,
@@ -220,6 +276,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
         self._runs_lock = threading.Lock()
         self._max_concurrent_runs = max_concurrent_runs
         self._callback_timeout = callback_timeout
+        self._handshake_timeout = handshake_timeout
         # None means no restriction (every engine / reflection_lm allowed),
         # preserving prior behavior. Non-None restricts to that explicit
         # allowlist: without it, any client reaching the port could select
@@ -361,12 +418,18 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 released = True
                 self._run_slots.release()
 
-        try:
-            first = next(request_iterator)
-        except StopIteration:
+        # Bounded: a silent client must not hold this run slot forever.
+        first, failure = _first_message_or_timeout(request_iterator, self._handshake_timeout)
+        if first is None:
             release_slot()
-            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-            context.set_details("client closed stream before sending start_request")
+            if failure == "timeout":
+                context.set_code(grpc.StatusCode.DEADLINE_EXCEEDED)
+                context.set_details(
+                    f"no start_request within {self._handshake_timeout}s of opening the stream"
+                )
+            else:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("client closed stream before sending start_request")
             return
 
         if not first.HasField("start_request"):
@@ -386,11 +449,15 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
             release_slot()
             return
 
+        # Everything that changes what the optimizer would do. Omitting any
+        # of it means a resume can silently continue a checkpoint under
+        # different conditions than it was built under.
         fingerprint = (
-            dict(start_req.seed_candidate),
-            tuple(e.id for e in start_req.trainset),
-            tuple(e.id for e in start_req.valset),
+            tuple(sorted(dict(start_req.seed_candidate).items())),
+            _examples_fingerprint(start_req.trainset),
+            _examples_fingerprint(start_req.valset),
             start_req.max_metric_calls,
+            reflection_lm,
         )
         run_status: dict[str, Any] = {
             "status": "running",
@@ -566,12 +633,18 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 released = True
                 self._run_slots.release()
 
-        try:
-            first = next(request_iterator)
-        except StopIteration:
+        # Bounded: a silent client must not hold this run slot forever.
+        first, failure = _first_message_or_timeout(request_iterator, self._handshake_timeout)
+        if first is None:
             release_slot()
-            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-            context.set_details("client closed stream before sending start_request")
+            if failure == "timeout":
+                context.set_code(grpc.StatusCode.DEADLINE_EXCEEDED)
+                context.set_details(
+                    f"no start_request within {self._handshake_timeout}s of opening the stream"
+                )
+            else:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("client closed stream before sending start_request")
             return
 
         if not first.HasField("start_request"):
@@ -597,10 +670,13 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
 
         fingerprint = (
             start_req.seed_candidate,
-            tuple(e.id for e in start_req.dataset),
-            tuple(e.id for e in start_req.valset),
+            _examples_fingerprint(start_req.dataset),
+            _examples_fingerprint(start_req.valset),
             start_req.max_evals,
             engine,
+            start_req.objective,
+            start_req.background,
+            reflection_lm,
         )
         run_status: dict[str, Any] = {"status": "running", "metric_calls_used": 0, "message": ""}
         if not self._register_run(run_id, fingerprint, run_status, context):

@@ -56,6 +56,7 @@ def stub(tmp_path):
 @contextlib.contextmanager
 def _custom_stub(
     tmp_path, *, max_workers=4, max_concurrent_runs=8, callback_timeout=300.0,
+    handshake_timeout=30.0,
     allowed_engines=None, allowed_reflection_lms=None, default_reflection_lm=None,
 ):
     """Like the `stub` fixture, but exposing GEPAServicer's concurrency and
@@ -68,6 +69,7 @@ def _custom_stub(
             runs_dir=str(tmp_path / "runs"),
             max_concurrent_runs=max_concurrent_runs,
             callback_timeout=callback_timeout,
+            handshake_timeout=handshake_timeout,
             allowed_engines=allowed_engines,
             allowed_reflection_lms=allowed_reflection_lms,
             default_reflection_lm=default_reflection_lm,
@@ -1800,3 +1802,189 @@ def test_cancelled_run_reports_cancelled_error_kind(stub):
     assert final[0].HasField("optimization_error")
     assert final[0].optimization_error.error_kind == pb.OptimizationError.CANCELLED
     assert stub.GetStatus(pb.StatusRequest(run_id=run_id)).status == pb.StatusResponse.CANCELLED
+
+
+# ------------------------------------------- tests: silent-stream admission (DoS)
+
+
+def _open_silent_stream(stub, stop_event):
+    """Open a RunOptimization stream and never send anything, until told."""
+    q: queue.Queue = queue.Queue()
+
+    def gen():
+        while not stop_event.is_set():
+            try:
+                m = q.get(timeout=0.1)
+            except Exception:
+                continue
+            if m is None:
+                return
+            yield m
+
+    try:
+        for _ in stub.RunOptimization(gen()):
+            pass
+    except Exception:
+        pass
+
+
+def test_silent_streams_do_not_starve_the_server(tmp_path):
+    """A client that opens a stream and sends nothing must not hold a run slot
+    indefinitely.
+
+    The slot is acquired before the first message can be read (gRPC hands us
+    an iterator, not a message), so without a bounded handshake N silent
+    connections take the server down with no auth and no payload -- which is
+    exactly what this reproduced before the fix: two silent streams at
+    max_concurrent_runs=2 made a legitimate run fail RESOURCE_EXHAUSTED.
+    """
+    import threading
+    import time
+
+    def fast_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[1.0])
+
+    stop = threading.Event()
+    with _custom_stub(
+        tmp_path, max_workers=8, max_concurrent_runs=2, handshake_timeout=1.0,
+    ) as stub:
+        threads = [threading.Thread(target=_open_silent_stream, args=(stub, stop), daemon=True)
+                   for _ in range(2)]
+        for t in threads:
+            t.start()
+        time.sleep(0.3)  # both silent streams are open and holding slots
+
+        # Before the handshake deadline, capacity is genuinely consumed.
+        assert _attempt_run(stub, "during-handshake") is not None
+
+        # After it, the slots are reclaimed and real work is admitted again.
+        time.sleep(1.5)
+        try:
+            with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fast_optimize):
+                msg = _run_optimize(stub, run_id="after-handshake-timeout")
+            assert msg is not None
+            assert msg.HasField("optimization_complete"), "slot was not reclaimed from silent streams"
+        finally:
+            stop.set()
+            for t in threads:
+                t.join(timeout=5)
+
+
+def test_handshake_timeout_returns_deadline_exceeded(tmp_path):
+    """The abandoned handshake is reported as DEADLINE_EXCEEDED, not a generic
+    failure, so a slow client can tell what happened."""
+    import threading
+
+    import grpc as grpc_module
+
+    stop = threading.Event()
+    with _custom_stub(tmp_path, max_workers=6, max_concurrent_runs=2, handshake_timeout=0.5) as stub:
+        q: queue.Queue = queue.Queue()
+
+        def gen():
+            while not stop.is_set():
+                try:
+                    m = q.get(timeout=0.1)
+                except Exception:
+                    continue
+                if m is None:
+                    return
+                yield m
+
+        try:
+            with pytest.raises(grpc_module.RpcError) as ei:
+                list(stub.RunOptimization(gen()))
+            assert ei.value.code() == grpc_module.StatusCode.DEADLINE_EXCEEDED
+            assert "start_request" in (ei.value.details() or "")
+        finally:
+            stop.set()
+
+
+# ------------------------------------------- tests: resume fingerprint completeness
+
+
+def test_resume_rejected_when_example_contents_change(stub):
+    """Keeping every example id but changing their fields must be rejected.
+
+    Fingerprinting ids alone let a resume continue a checkpoint against
+    different data while looking identical to the server.
+    """
+    import grpc as grpc_module
+
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    run_id = "resume-content-change"
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+
+    # Same ids as _TRAINSET, different field values.
+    mutated = [
+        pb.Example(id="1", fields={"input": "99+99", "answer": "198"}),
+        pb.Example(id="2", fields={"input": "7+7", "answer": "14"}),
+    ]
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id=run_id, seed_candidate=_SEED, trainset=mutated,
+        max_metric_calls=20, reflection_lm="fake")))
+
+    def gen():
+        while True:
+            m = req_q.get()
+            if m is None:
+                return
+            yield m
+
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        try:
+            list(stub.RunOptimization(gen()))
+            req_q.put(None)
+            pytest.fail("expected RpcError: example contents changed")
+        except grpc_module.RpcError as e:
+            req_q.put(None)
+            assert e.code() == grpc_module.StatusCode.INVALID_ARGUMENT
+
+
+def test_resume_rejected_when_reflection_lm_changes(stub):
+    """reflection_lm changes what the optimizer does, so it belongs in the
+    fingerprint -- it was omitted before."""
+    import grpc as grpc_module
+
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    run_id = "resume-lm-change"
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id=run_id, seed_candidate=_SEED, trainset=_TRAINSET,
+        max_metric_calls=20, reflection_lm="a-different-model")))
+
+    def gen():
+        while True:
+            m = req_q.get()
+            if m is None:
+                return
+            yield m
+
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        try:
+            list(stub.RunOptimization(gen()))
+            req_q.put(None)
+            pytest.fail("expected RpcError: reflection_lm changed")
+        except grpc_module.RpcError as e:
+            req_q.put(None)
+            assert e.code() == grpc_module.StatusCode.INVALID_ARGUMENT
+
+
+def test_resume_still_allowed_when_request_is_identical(stub):
+    """The stricter fingerprint must not break legitimate resume: field
+    ordering is normalized, so an identical request still matches."""
+    def fake_optimize(*, seed_candidate, **_):
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.5])
+
+    run_id = "resume-identical"
+    _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+    msg = _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
+    assert msg is not None
+    assert msg.HasField("optimization_complete")

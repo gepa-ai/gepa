@@ -8,7 +8,12 @@ import sys
 
 from gepa.rpc.adapter import DEFAULT_CALLBACK_TIMEOUT_SECONDS
 from gepa.rpc.server import DEFAULT_HOST, DEFAULT_MAX_WORKERS, serve
-from gepa.rpc.servicer import DEFAULT_MAX_CONCURRENT_RUNS, DEFAULT_REFLECTION_LM, DEFAULT_RUNS_DIR
+from gepa.rpc.servicer import (
+    DEFAULT_HANDSHAKE_TIMEOUT_SECONDS,
+    DEFAULT_MAX_CONCURRENT_RUNS,
+    DEFAULT_REFLECTION_LM,
+    DEFAULT_RUNS_DIR,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
         "--callback-timeout", type=float, default=DEFAULT_CALLBACK_TIMEOUT_SECONDS,
         help="Seconds to wait for a client to answer an evaluate or "
              "reflective-dataset request before failing the run.",
+    )
+    parser.add_argument(
+        "--handshake-timeout", type=float, default=DEFAULT_HANDSHAKE_TIMEOUT_SECONDS,
+        help="Seconds a client may hold an open stream before sending its "
+             "start_request. Bounds the run slot a silent connection can "
+             "occupy.",
     )
     parser.add_argument("--tls-cert", default=None, help="Path to a PEM certificate chain. Requires --tls-key.")
     parser.add_argument("--tls-key", default=None, help="Path to a PEM private key. Requires --tls-cert.")
@@ -80,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         max_workers=args.max_workers,
         max_concurrent_runs=args.max_concurrent_runs,
         callback_timeout=args.callback_timeout,
+        handshake_timeout=args.handshake_timeout,
         tls_cert_path=args.tls_cert,
         tls_key_path=args.tls_key,
         auth_token=args.auth_token,
