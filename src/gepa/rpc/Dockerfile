@@ -36,8 +36,14 @@ USER appuser
 
 EXPOSE 50051
 
-# Loopback-only by default (see server.py's DEFAULT_HOST). A container needs
-# 0.0.0.0 to be reachable via published ports at all, so set it explicitly
-# here rather than silently inheriting a default that can't work in Docker --
-# pair with --auth-token and/or --tls-cert when exposing the port.
+# A container must bind 0.0.0.0 for `docker run -p` to reach it at all, so
+# the loopback default in server.py cannot protect a container. Instead the
+# server refuses to start on a non-loopback address unless one of
+# --auth-token / --tls-cert / --allow-insecure-remote is supplied, which
+# makes the unauthenticated case a deliberate choice rather than what you get
+# by following the quickstart. Supply the credential at `docker run` time:
+#
+#   docker run -p 50051:50051 -e OPENAI_API_KEY=... #     gepa-rpc:latest --auth-token "$GEPA_RPC_TOKEN"
+#
+# or, on a genuinely trusted network, --allow-insecure-remote.
 ENTRYPOINT ["gepa-rpc", "--port", "50051", "--host", "0.0.0.0"]

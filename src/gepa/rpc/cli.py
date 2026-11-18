@@ -71,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
         "--default-reflection-lm", default=DEFAULT_REFLECTION_LM,
         help="reflection_lm used when a client doesn't specify one.",
     )
+    parser.add_argument(
+        "--allow-insecure-remote", action="store_true",
+        help="Acknowledge listening on a non-loopback address with no "
+             "--auth-token and no TLS. Required in that configuration, since "
+             "reaching this port means being able to spend this server's LLM "
+             "budget and run an agent subprocess on this host. Only for "
+             "genuinely trusted networks.",
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
@@ -100,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             args.allowed_reflection_lms.split(",") if args.allowed_reflection_lms else None
         ),
         default_reflection_lm=args.default_reflection_lm,
+        allow_insecure_remote=args.allow_insecure_remote,
     )
     return 0
 

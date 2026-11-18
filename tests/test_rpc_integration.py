@@ -2079,3 +2079,86 @@ def test_client_evaluator_failure_without_request_id_fails_the_run(stub):
     assert final is not None
     assert final.HasField("optimization_error")
     assert "no request id here" in final.optimization_error.message
+
+
+# ------------------------------------------- tests: remote deployment policy
+
+
+def test_build_server_refuses_unauthenticated_remote_bind():
+    """A non-loopback bind with no auth and no TLS must not start.
+
+    Reaching this port means being able to spend the operator's LLM budget
+    and, with the autoresearch/meta_harness engines, start an agent
+    subprocess on the host. The loopback default cannot protect a container
+    (it must bind 0.0.0.0 for `docker run -p` to work at all), so the policy
+    is enforced here rather than left to the default.
+    """
+    from gepa.rpc.server import build_server
+
+    with pytest.raises(ValueError, match="refusing to listen"):
+        build_server(port=_free_port(), host="0.0.0.0")
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+def test_loopback_bind_needs_no_credential(host):
+    """Loopback binds stay frictionless -- the policy only covers binds that
+    are reachable from off-box."""
+    from gepa.rpc.server import build_server
+
+    server = build_server(port=_free_port(), host=host)
+    server.stop(grace=0)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"auth_token": "s3cret"},
+        {"allow_insecure_remote": True},
+    ],
+    ids=["auth-token", "explicit-override"],
+)
+def test_remote_bind_allowed_with_a_credential_or_override(kwargs):
+    """Any one of auth / TLS / explicit acknowledgement unblocks a remote
+    bind, so the policy constrains the default without blocking real
+    deployments."""
+    from gepa.rpc.server import build_server
+
+    server = build_server(port=_free_port(), host="0.0.0.0", **kwargs)
+    server.stop(grace=0)
+
+
+def test_remote_bind_allowed_with_tls(tmp_path):
+    """TLS alone also satisfies the policy."""
+    import shutil
+    import subprocess
+
+    from gepa.rpc.server import build_server
+
+    if shutil.which("openssl") is None:
+        pytest.skip("openssl CLI unavailable to generate a test certificate")
+
+    cert, key = tmp_path / "s.crt", tmp_path / "s.key"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+         "-keyout", str(key), "-out", str(cert), "-days", "1", "-subj", "/CN=localhost"],
+        check=True, capture_output=True,
+    )
+    server = build_server(
+        port=_free_port(), host="0.0.0.0",
+        tls_cert_path=str(cert), tls_key_path=str(key),
+    )
+    server.stop(grace=0)
+
+
+def test_unrecognized_host_fails_safe():
+    """A host we can't positively identify as loopback is treated as
+    remote-reachable, so an odd value errs towards requiring auth rather than
+    silently exposing the server."""
+    from gepa.rpc.server import _is_loopback_host, build_server
+
+    assert _is_loopback_host("127.0.0.1") is True
+    assert _is_loopback_host("10.1.2.3") is False
+    assert _is_loopback_host("not-an-ip") is False
+
+    with pytest.raises(ValueError, match="refusing to listen"):
+        build_server(port=_free_port(), host="not-an-ip")

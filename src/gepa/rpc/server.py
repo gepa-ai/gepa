@@ -48,6 +48,78 @@ _KEEPALIVE_OPTIONS = [
 ]
 
 
+def _format_bind_address(host: str, port: int) -> str:
+    """Build a gRPC bind address, bracketing bare IPv6 literals.
+
+    gRPC wants "[::1]:50051"; a naive f"{host}:{port}" yields "::1:50051",
+    which fails to parse. The original code hardcoded "[::]" so this only
+    became reachable once --host was added.
+    """
+    import ipaddress
+
+    h = (host or "").strip()
+    if h.startswith("["):  # already bracketed
+        return f"{h}:{port}"
+    try:
+        if ipaddress.ip_address(h).version == 6:
+            return f"[{h}]:{port}"
+    except ValueError:
+        pass
+    return f"{h}:{port}"
+
+
+def _is_loopback_host(host: str) -> bool:
+    """True if binding `host` can only be reached from this machine.
+
+    Anything we can't positively identify as loopback is treated as
+    remote-reachable, so an unparseable or unusual value fails safe (towards
+    requiring auth) rather than silently exposing the server.
+    """
+    import ipaddress
+
+    h = (host or "").strip().strip("[]").lower()
+    if h in ("localhost", ""):
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def _check_deployment_policy(
+    host: str,
+    auth_token: str | None,
+    tls_cert_path: str | None,
+    allow_insecure_remote: bool,
+) -> None:
+    """Refuse to start a remote-reachable server with no authentication.
+
+    Reaching this port means being able to spend the operator's LLM budget
+    and, for the autoresearch/meta_harness engines, start a Claude Code agent
+    subprocess with a client-supplied objective. That must not be the silent
+    default for a container or a host that published the port -- the
+    Dockerfile has to bind 0.0.0.0 for `-p` to work at all, so "the default
+    is loopback" stops protecting anything the moment the image is used as
+    documented.
+
+    Policy: a non-loopback bind requires --auth-token, or TLS, or an explicit
+    --allow-insecure-remote acknowledgement. The escape hatch keeps genuinely
+    private networks unblocked while making the risk a deliberate choice.
+    """
+    if _is_loopback_host(host) or allow_insecure_remote:
+        return
+    if auth_token or tls_cert_path:
+        return
+    raise ValueError(
+        f"refusing to listen on {host!r} without authentication: anyone who can "
+        "reach this port can spend this server's LLM budget and, with the "
+        "autoresearch/meta_harness engines, run an agent subprocess on this "
+        "host. Pass --auth-token and/or --tls-cert/--tls-key, bind a loopback "
+        "address instead, or pass --allow-insecure-remote if the network is "
+        "genuinely trusted."
+    )
+
+
 class _AuthTokenInterceptor(grpc.ServerInterceptor):
     """Rejects any RPC whose `authorization` metadata doesn't match the
     configured shared secret.
@@ -102,9 +174,11 @@ def build_server(
     allowed_engines: Collection[str] | None = None,
     allowed_reflection_lms: Collection[str] | None = None,
     default_reflection_lm: str | None = None,
+    allow_insecure_remote: bool = False,
 ) -> grpc.Server:
     if bool(tls_cert_path) != bool(tls_key_path):
         raise ValueError("tls_cert_path and tls_key_path must be provided together")
+    _check_deployment_policy(host, auth_token, tls_cert_path, allow_insecure_remote)
     if max_workers < max_concurrent_runs + CONTROL_PLANE_RESERVE:
         raise ValueError(
             f"max_workers ({max_workers}) must be at least max_concurrent_runs "
@@ -133,7 +207,7 @@ def build_server(
         server,
     )
 
-    address = f"{host}:{port}"
+    address = _format_bind_address(host, port)
     if tls_cert_path and tls_key_path:
         with open(tls_key_path, "rb") as f:
             private_key = f.read()
@@ -162,6 +236,7 @@ def serve(
     allowed_engines: Collection[str] | None = None,
     allowed_reflection_lms: Collection[str] | None = None,
     default_reflection_lm: str | None = None,
+    allow_insecure_remote: bool = False,
 ) -> None:
     server = build_server(
         port=port,
@@ -177,6 +252,7 @@ def serve(
         allowed_engines=allowed_engines,
         allowed_reflection_lms=allowed_reflection_lms,
         default_reflection_lm=default_reflection_lm,
+        allow_insecure_remote=allow_insecure_remote,
     )
 
     def _shutdown(signum, frame):

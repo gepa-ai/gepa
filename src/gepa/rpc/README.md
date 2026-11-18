@@ -89,8 +89,22 @@ Unlike the integration tests above, these run an actual, unmocked GEPA optimizat
 
 ```bash
 docker build -f src/gepa/rpc/Dockerfile -t gepa-rpc:latest .   # from the repo root
-docker run -p 50051:50051 -e OPENAI_API_KEY=$OPENAI_API_KEY gepa-rpc:latest
+
+# A published port is reachable from outside the host, so the server requires
+# a credential before it will listen on one. Pick a token and pass it through:
+docker run -p 50051:50051 \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  gepa-rpc:latest --auth-token "$GEPA_RPC_TOKEN"
 ```
+
+Clients then send that token (`authToken` in the TypeScript SDK,
+`Client::with_auth_token` in Rust). Anyone who can reach this port can spend
+the server's LLM budget and, with the `autoresearch`/`meta_harness` engines,
+start an agent subprocess on the host, so the server refuses to start on a
+non-loopback address unless you supply `--auth-token`, TLS
+(`--tls-cert`/`--tls-key`), or an explicit `--allow-insecure-remote` for a
+genuinely trusted network. Combine `--auth-token` with TLS when the traffic
+crosses an untrusted network -- the token itself is plaintext without it.
 
 ## Repo layout
 
