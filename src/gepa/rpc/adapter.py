@@ -34,6 +34,18 @@ class RemoteAdapterCancelledError(RuntimeError):
     """Raised inside the optimizer thread when the client stream is gone."""
 
 
+class ClientEvaluatorError(RuntimeError):
+    """The client reported that its own evaluate / reflective-dataset callback
+    raised, via an EvaluatorFailure message.
+
+    Distinct from EvaluatorResponseError (the client answered, but the answer
+    was malformed): here the client never produced an answer at all and told
+    us why. Treated as a client-side fault for reporting purposes, so the
+    detail it carries is forwarded rather than sanitized -- the client
+    authored that text about its own code.
+    """
+
+
 class EvaluatorResponseError(ValueError):
     """Raised when the client's own response is malformed -- the wrong number
     of scores/outputs/trajectories for the batch it was handed.
@@ -114,6 +126,20 @@ class RemoteAdapter(GEPAAdapter[RemoteExample, RemoteTrajectory, str]):
             fut = self._pending.pop(request_id, None)
         if fut is not None and not fut.done():
             fut.set_result(payload)
+
+    def fail(self, request_id: str, exc: BaseException) -> None:
+        """Fail one pending request (or every pending one, if request_id is
+        empty or unknown). Used when the client reports its own callback
+        raised, so the run surfaces that instead of a bare stream close."""
+        with self._lock:
+            if request_id and request_id in self._pending:
+                futs = [self._pending.pop(request_id)]
+            else:
+                futs = list(self._pending.values())
+                self._pending.clear()
+        for fut in futs:
+            if not fut.done():
+                fut.set_exception(exc)
 
     def _new_pending(self) -> tuple[str, Future]:
         request_id = str(uuid.uuid4())
@@ -278,6 +304,18 @@ class OmniRemoteEvaluator:
             fut = self._pending.pop(request_id, None)
         if fut is not None and not fut.done():
             fut.set_result(payload)
+
+    def fail(self, request_id: str, exc: BaseException) -> None:
+        """See RemoteAdapter.fail."""
+        with self._lock:
+            if request_id and request_id in self._pending:
+                futs = [self._pending.pop(request_id)]
+            else:
+                futs = list(self._pending.values())
+                self._pending.clear()
+        for fut in futs:
+            if not fut.done():
+                fut.set_exception(exc)
 
     def _new_pending(self) -> tuple[str, Future]:
         request_id = str(uuid.uuid4())

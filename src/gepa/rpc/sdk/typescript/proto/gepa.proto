@@ -22,6 +22,7 @@ message OmniClientMessage {
   oneof payload {
     OmniStartRequest start_request = 1;
     OmniEvaluateBatchResponse evaluate_batch_response = 2;
+    EvaluatorFailure evaluator_failure = 3;
   }
 }
 message OmniServerMessage {
@@ -37,7 +38,23 @@ message ClientMessage {
     StartRequest start_request = 1;
     EvaluateBatchResponse evaluate_batch_response = 2;
     ReflectiveDatasetResponse reflective_dataset_response = 3;
+    EvaluatorFailure evaluator_failure = 4;
   }
+}
+// Sent when the client's own evaluate / make_reflective_dataset callback
+// raises, instead of silently dropping the stream. Without it the server only
+// observes "client stream closed" and has no idea the client's code failed or
+// why -- the operator's log is the one place that information is useful, and
+// it never arrived there.
+message EvaluatorFailure {
+  // Correlates with the request_id the server sent, when the failure is tied
+  // to a specific request. Empty if it isn't.
+  string request_id = 1;
+  // Exception type or error class from the client, e.g. "TypeError".
+  string error_type = 2;
+  // Client-supplied description. The server logs this and echoes it in the
+  // run's error, so clients should not put secrets here.
+  string message = 3;
 }
 message ServerMessage {
   oneof payload {

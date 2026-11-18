@@ -1988,3 +1988,94 @@ def test_resume_still_allowed_when_request_is_identical(stub):
     msg = _run_optimize_patched(stub, run_id=run_id, fake_optimize=fake_optimize)
     assert msg is not None
     assert msg.HasField("optimization_complete")
+
+
+# ------------------------------------------- tests: client-reported evaluator failure
+
+
+def test_client_evaluator_failure_reaches_the_server(stub, caplog):
+    """When the client's own callback fails it sends EvaluatorFailure, and the
+    server surfaces that instead of a bare "client stream closed".
+
+    Before this the server saw only a dropped stream and had no idea the
+    client's code had failed or why -- the operator's log, the one place that
+    information is actionable, never received it.
+    """
+    import logging
+
+    def fake_optimize(*, seed_candidate, trainset, adapter, **_):
+        adapter.evaluate(list(trainset), dict(seed_candidate), capture_traces=False)
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id="client-eval-fail", seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5)))
+
+    def gen():
+        while True:
+            m = req_q.get()
+            if m is None:
+                return
+            yield m
+
+    final = None
+    with caplog.at_level(logging.WARNING, logger="gepa.rpc.servicer"):
+        with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+            for msg in stub.RunOptimization(gen()):
+                if msg.HasField("evaluate_batch_request"):
+                    req = msg.evaluate_batch_request
+                    # Instead of answering, report that our callback blew up.
+                    req_q.put(pb.ClientMessage(evaluator_failure=pb.EvaluatorFailure(
+                        request_id=req.request_id,
+                        error_type="TypeError",
+                        message="scorer() got an unexpected keyword argument",
+                    )))
+                elif msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                    final = msg
+                    req_q.put(None)
+                    break
+
+    assert final is not None
+    assert final.HasField("optimization_error")
+    body = final.optimization_error.message
+    # Client-authored text about the client's own code: forwarded, not sanitized.
+    assert "TypeError" in body
+    assert "unexpected keyword argument" in body
+    assert final.optimization_error.error_kind == pb.OptimizationError.EVALUATOR_ERROR
+    # And the operator can see it server-side.
+    assert any("client evaluator failed" in r.getMessage() for r in caplog.records), \
+        "server did not log the client-reported evaluator failure"
+
+
+def test_client_evaluator_failure_without_request_id_fails_the_run(stub):
+    """An EvaluatorFailure with no request_id still ends the run rather than
+    hanging, since it can't be matched to one pending call."""
+    def fake_optimize(*, seed_candidate, trainset, adapter, **_):
+        adapter.evaluate(list(trainset), dict(seed_candidate), capture_traces=False)
+        return SimpleNamespace(candidates=[dict(seed_candidate)], best_idx=0, val_aggregate_scores=[0.0])
+
+    req_q: queue.Queue = queue.Queue()
+    req_q.put(pb.ClientMessage(start_request=pb.StartRequest(
+        run_id="client-eval-fail-norid", seed_candidate=_SEED, trainset=_TRAINSET, max_metric_calls=5)))
+
+    def gen():
+        while True:
+            m = req_q.get()
+            if m is None:
+                return
+            yield m
+
+    final = None
+    with patch("gepa.rpc.servicer.gepa.optimize", side_effect=fake_optimize):
+        for msg in stub.RunOptimization(gen()):
+            if msg.HasField("evaluate_batch_request"):
+                req_q.put(pb.ClientMessage(evaluator_failure=pb.EvaluatorFailure(
+                    error_type="RuntimeError", message="no request id here")))
+            elif msg.HasField("optimization_complete") or msg.HasField("optimization_error"):
+                final = msg
+                req_q.put(None)
+                break
+
+    assert final is not None
+    assert final.HasField("optimization_error")
+    assert "no request id here" in final.optimization_error.message

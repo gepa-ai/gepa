@@ -97,6 +97,18 @@ export interface OptimizeResult {
 export interface ClientOptions {
   target: string;
   credentials?: ChannelCredentials;
+  /**
+   * Shared secret for a server started with --auth-token. Sent as the
+   * `authorization` metadata value on every RPC this client makes.
+   *
+   * Note this is not a substitute for TLS: without `credentials` configured
+   * for TLS the token travels in plaintext, exactly as on the server side.
+   */
+  authToken?: string;
+  /** Extra metadata sent on every RPC, for deployments that front the server
+   * with a proxy expecting its own headers. Merged before `authToken`, which
+   * wins on `authorization`. */
+  metadata?: Record<string, string>;
 }
 
 // ------------------------------------------------------------------ Omni types

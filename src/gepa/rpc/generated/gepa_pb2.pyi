@@ -8,12 +8,14 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class OmniClientMessage(_message.Message):
-    __slots__ = ("start_request", "evaluate_batch_response")
+    __slots__ = ("start_request", "evaluate_batch_response", "evaluator_failure")
     START_REQUEST_FIELD_NUMBER: _ClassVar[int]
     EVALUATE_BATCH_RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    EVALUATOR_FAILURE_FIELD_NUMBER: _ClassVar[int]
     start_request: OmniStartRequest
     evaluate_batch_response: OmniEvaluateBatchResponse
-    def __init__(self, start_request: _Optional[_Union[OmniStartRequest, _Mapping]] = ..., evaluate_batch_response: _Optional[_Union[OmniEvaluateBatchResponse, _Mapping]] = ...) -> None: ...
+    evaluator_failure: EvaluatorFailure
+    def __init__(self, start_request: _Optional[_Union[OmniStartRequest, _Mapping]] = ..., evaluate_batch_response: _Optional[_Union[OmniEvaluateBatchResponse, _Mapping]] = ..., evaluator_failure: _Optional[_Union[EvaluatorFailure, _Mapping]] = ...) -> None: ...
 
 class OmniServerMessage(_message.Message):
     __slots__ = ("evaluate_batch_request", "progress_update", "optimization_complete", "optimization_error")
@@ -28,14 +30,26 @@ class OmniServerMessage(_message.Message):
     def __init__(self, evaluate_batch_request: _Optional[_Union[OmniEvaluateBatchRequest, _Mapping]] = ..., progress_update: _Optional[_Union[OmniProgressUpdate, _Mapping]] = ..., optimization_complete: _Optional[_Union[OmniOptimizationComplete, _Mapping]] = ..., optimization_error: _Optional[_Union[OptimizationError, _Mapping]] = ...) -> None: ...
 
 class ClientMessage(_message.Message):
-    __slots__ = ("start_request", "evaluate_batch_response", "reflective_dataset_response")
+    __slots__ = ("start_request", "evaluate_batch_response", "reflective_dataset_response", "evaluator_failure")
     START_REQUEST_FIELD_NUMBER: _ClassVar[int]
     EVALUATE_BATCH_RESPONSE_FIELD_NUMBER: _ClassVar[int]
     REFLECTIVE_DATASET_RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    EVALUATOR_FAILURE_FIELD_NUMBER: _ClassVar[int]
     start_request: StartRequest
     evaluate_batch_response: EvaluateBatchResponse
     reflective_dataset_response: ReflectiveDatasetResponse
-    def __init__(self, start_request: _Optional[_Union[StartRequest, _Mapping]] = ..., evaluate_batch_response: _Optional[_Union[EvaluateBatchResponse, _Mapping]] = ..., reflective_dataset_response: _Optional[_Union[ReflectiveDatasetResponse, _Mapping]] = ...) -> None: ...
+    evaluator_failure: EvaluatorFailure
+    def __init__(self, start_request: _Optional[_Union[StartRequest, _Mapping]] = ..., evaluate_batch_response: _Optional[_Union[EvaluateBatchResponse, _Mapping]] = ..., reflective_dataset_response: _Optional[_Union[ReflectiveDatasetResponse, _Mapping]] = ..., evaluator_failure: _Optional[_Union[EvaluatorFailure, _Mapping]] = ...) -> None: ...
+
+class EvaluatorFailure(_message.Message):
+    __slots__ = ("request_id", "error_type", "message")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    ERROR_TYPE_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    error_type: str
+    message: str
+    def __init__(self, request_id: _Optional[str] = ..., error_type: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
 
 class ServerMessage(_message.Message):
     __slots__ = ("evaluate_batch_request", "reflective_dataset_request", "progress_update", "optimization_complete", "optimization_error")

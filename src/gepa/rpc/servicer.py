@@ -28,6 +28,7 @@ import gepa
 from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 from gepa.rpc.adapter import (
     DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    ClientEvaluatorError,
     EvaluatorResponseError,
     OmniRemoteEvaluator,
     RemoteAdapter,
@@ -224,6 +225,12 @@ def _finish(run_status: dict[str, Any], status: str, message: str = "") -> bool:
     if message:
         run_status["message"] = message
     return True
+
+
+def _client_failure_text(failure: pb.EvaluatorFailure) -> str:
+    """Render an EvaluatorFailure for the run's error message."""
+    kind = f" [{failure.error_type}]" if failure.error_type else ""
+    return f"client evaluator failed{kind}: {failure.message}"
 
 
 def _examples_fingerprint(examples) -> tuple:
@@ -510,6 +517,16 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                         adapter.deliver_evaluate_response(msg.evaluate_batch_response)
                     elif msg.HasField("reflective_dataset_response"):
                         adapter.deliver_reflective_response(msg.reflective_dataset_response)
+                    elif msg.HasField("evaluator_failure"):
+                        f = msg.evaluator_failure
+                        # Log it: the operator's log is where a client-side
+                        # callback failure is actually actionable, and before
+                        # this it never arrived there at all.
+                        logger.warning(
+                            "run %s: client evaluator failed (request_id=%s type=%s): %s",
+                            run_id, f.request_id or "-", f.error_type or "-", f.message,
+                        )
+                        adapter.fail(f.request_id, ClientEvaluatorError(_client_failure_text(f)))
                     elif msg.HasField("start_request"):
                         logger.warning("ignoring extra start_request after run started")
             except Exception as e:
@@ -570,7 +587,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                         )
                     )
                 )
-            except (EvaluatorResponseError, RemoteAdapterTimeoutError) as exc:
+            except (EvaluatorResponseError, RemoteAdapterTimeoutError, ClientEvaluatorError) as exc:
                 # Raised by our own adapter code with messages we control, and
                 # caused by the client -- safe and useful to forward verbatim.
                 logger.exception("optimization run %s failed (client-side fault)", run_id)
@@ -736,6 +753,13 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                 for msg in request_iterator:
                     if msg.HasField("evaluate_batch_response"):
                         evaluator.deliver_response(msg.evaluate_batch_response)
+                    elif msg.HasField("evaluator_failure"):
+                        f = msg.evaluator_failure
+                        logger.warning(
+                            "omni run %s: client evaluator failed (request_id=%s type=%s): %s",
+                            run_id, f.request_id or "-", f.error_type or "-", f.message,
+                        )
+                        evaluator.fail(f.request_id, ClientEvaluatorError(_client_failure_text(f)))
                     elif msg.HasField("start_request"):
                         logger.warning("ignoring extra start_request after omni run started")
             except Exception as e:
@@ -826,7 +850,7 @@ class GEPAServicer(pb_grpc.GEPAServiceServicer):
                         error_kind=pb.OptimizationError.CANCELLED,
                     )
                 ))
-            except (EvaluatorResponseError, RemoteAdapterTimeoutError) as exc:
+            except (EvaluatorResponseError, RemoteAdapterTimeoutError, ClientEvaluatorError) as exc:
                 logger.exception("omni optimization run %s failed (client-side fault)", run_id)
                 message = f"{type(exc).__name__}: {exc}"
                 _finish(run_status, "failed", message)

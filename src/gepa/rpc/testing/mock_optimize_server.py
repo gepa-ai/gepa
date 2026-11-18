@@ -42,10 +42,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--runs-dir", required=True)
+    # Optional, so the SDKs' auth tests can drive a hardened server.
+    parser.add_argument("--auth-token", default=None)
     args = parser.parse_args()
 
     with patch("gepa.rpc.servicer.gepa.optimize", side_effect=_fake_optimize):
-        serve(port=args.port, runs_dir=args.runs_dir)
+        serve(port=args.port, runs_dir=args.runs_dir, auth_token=args.auth_token)
 
 
 if __name__ == "__main__":

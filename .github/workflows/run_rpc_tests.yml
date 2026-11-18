@@ -134,6 +134,11 @@ jobs:
         env:
           GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: npm run test:cancellation
+      - name: Run auth tests against an --auth-token server
+        working-directory: src/gepa/rpc/sdk/typescript
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:auth
 
   rpc_rust_test:
     name: Run RPC Rust SDK Tests
@@ -180,6 +185,11 @@ jobs:
         env:
           GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: cargo test --test optimize_mocked
+      - name: Run auth test against an --auth-token server
+        working-directory: src/gepa/rpc/sdk/rust
+        env:
+          GEPA_RPC_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test auth
 
   # llm_call_test:
   #   name: Run Tests with Real LM

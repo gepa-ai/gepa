@@ -43,10 +43,11 @@ const PROTO_PATH = path.resolve(__dirname, "..", "proto", "gepa.proto");
  * the one deliberate boundary we can't derive -- everything past it is typed
  * against wire.ts's hand-written shapes. */
 interface GEPAServiceClient {
-  RunOptimization(): TypedDuplexStream<unknown, WireServerMessage>;
-  RunOptimizationOmni(): TypedDuplexStream<unknown, WireOmniServerMessage>;
+  RunOptimization(metadata?: grpc.Metadata): TypedDuplexStream<unknown, WireServerMessage>;
+  RunOptimizationOmni(metadata?: grpc.Metadata): TypedDuplexStream<unknown, WireOmniServerMessage>;
   Cancel(
     request: { run_id: string },
+    metadata: grpc.Metadata,
     callback: (
       err: grpc.ServiceError | null,
       resp?: { accepted: boolean; message: string },
@@ -161,14 +162,49 @@ function wireAbort(
   };
 }
 
+/** Reports a callback failure to the server before the local promise
+ * rejects, so the operator's log records what actually went wrong instead of
+ * just "client stream closed". Best-effort: if the write fails the stream is
+ * already gone, which the caller handles anyway. */
+function reportEvaluatorFailure(
+  call: { write(m: unknown): boolean },
+  requestId: string,
+  err: unknown,
+): void {
+  const e = err as { name?: string; message?: string };
+  try {
+    call.write({
+      evaluator_failure: {
+        request_id: requestId,
+        error_type: e?.name ?? typeof err,
+        message: e?.message ?? String(err),
+      },
+    });
+  } catch {
+    // stream already closed
+  }
+}
+
 export class Client {
   private grpcClient: GEPAServiceClient;
   private pendingCalls = new Set<{ cancel: () => void; reject: (err: Error) => void }>();
+  private callMetadata: grpc.Metadata;
 
   constructor(opts: ClientOptions) {
     const credentials = opts.credentials ?? grpc.credentials.createInsecure();
     const Ctor = getServiceCtor();
     this.grpcClient = new Ctor(opts.target, credentials);
+
+    // Attached to every RPC. A server started with --auth-token rejects
+    // anything without a matching `authorization` value, so without this the
+    // SDK simply cannot talk to a hardened server.
+    this.callMetadata = new grpc.Metadata();
+    for (const [k, v] of Object.entries(opts.metadata ?? {})) {
+      this.callMetadata.set(k, v);
+    }
+    if (opts.authToken) {
+      this.callMetadata.set("authorization", opts.authToken);
+    }
   }
 
   /** Closes the channel and rejects every call still in flight. Previously a
@@ -189,7 +225,7 @@ export class Client {
    * cancelling a finished run is a no-op rather than a failure. */
   cancel(runId: string): Promise<{ accepted: boolean; message: string }> {
     return new Promise((resolve, reject) => {
-      this.grpcClient.Cancel({ run_id: runId }, (err, resp) => {
+      this.grpcClient.Cancel({ run_id: runId }, this.callMetadata, (err, resp) => {
         if (err) reject(err);
         else resolve(resp!);
       });
@@ -198,7 +234,7 @@ export class Client {
 
   optimize(opts: OptimizeOptions): Promise<OptimizeResult> {
     return new Promise<OptimizeResult>((resolve, reject) => {
-      const call = this.grpcClient.RunOptimization();
+      const call = this.grpcClient.RunOptimization(this.callMetadata);
       let settled = false;
 
       const settle = (fn: () => void) => {
@@ -224,11 +260,19 @@ export class Client {
 
       call.on("data", (msg) => {
         if (msg.evaluate_batch_request) {
-          this.handleEvaluate(call, msg.evaluate_batch_request, opts.evaluate).catch(doReject);
+          const rid = msg.evaluate_batch_request.request_id;
+          this.handleEvaluate(call, msg.evaluate_batch_request, opts.evaluate).catch((err) => {
+            reportEvaluatorFailure(call, rid, err);
+            doReject(err);
+          });
         } else if (msg.reflective_dataset_request) {
+          const rid = msg.reflective_dataset_request.request_id;
           this.handleReflective(
             call, msg.reflective_dataset_request, opts.makeReflectiveDataset,
-          ).catch(doReject);
+          ).catch((err) => {
+            reportEvaluatorFailure(call, rid, err);
+            doReject(err);
+          });
         } else if (msg.progress_update) {
           if (opts.onProgress) {
             try {
@@ -270,7 +314,7 @@ export class Client {
 
   optimizeOmni(opts: OptimizeOmniOptions): Promise<OptimizeOmniResult> {
     return new Promise<OptimizeOmniResult>((resolve, reject) => {
-      const call = this.grpcClient.RunOptimizationOmni();
+      const call = this.grpcClient.RunOptimizationOmni(this.callMetadata);
       let settled = false;
 
       const settle = (fn: () => void) => {
@@ -296,7 +340,11 @@ export class Client {
 
       call.on("data", (msg) => {
         if (msg.evaluate_batch_request) {
-          this.handleOmniEvaluate(call, msg.evaluate_batch_request, opts.evaluate).catch(doReject);
+          const rid = msg.evaluate_batch_request.request_id;
+          this.handleOmniEvaluate(call, msg.evaluate_batch_request, opts.evaluate).catch((err) => {
+            reportEvaluatorFailure(call, rid, err);
+            doReject(err);
+          });
         } else if (msg.progress_update) {
           if (opts.onProgress) {
             try {

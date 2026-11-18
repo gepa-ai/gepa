@@ -27,7 +27,8 @@
     "prepublishOnly": "npm run build",
     "test:e2e": "tsx tests/e2e.ts",
     "test:optimize-mocked": "tsx tests/optimize_mocked.ts",
-    "test:cancellation": "tsx tests/cancellation.ts"
+    "test:cancellation": "tsx tests/cancellation.ts",
+    "test:auth": "tsx tests/auth.ts"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.0",

@@ -106,3 +106,11 @@ export interface TypedDuplexStream<Req, Res> {
   on(event: "error", listener: (err: Error) => void): this;
   on(event: "end", listener: () => void): this;
 }
+
+/** Client -> server report that the caller's own evaluate /
+ * makeReflectiveDataset callback threw. */
+export interface WireEvaluatorFailure {
+  request_id: string;
+  error_type: string;
+  message: string;
+}

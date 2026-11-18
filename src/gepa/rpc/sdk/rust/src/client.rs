@@ -2,6 +2,7 @@ use std::future::Future;
 
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
@@ -11,7 +12,7 @@ use crate::generated::{
     omni_client_message::Payload as OmniClientPayload,
     omni_server_message::Payload as OmniServerPayload,
     optimization_error::ErrorKind, server_message::Payload as ServerPayload, ClientMessage,
-    EvaluateBatchResponse,
+    EvaluateBatchResponse, EvaluatorFailure,
     Example as ProtoExample, OmniBestEval as ProtoOmniBestEval, OmniClientMessage,
     OmniEvaluateBatchResponse, OmniOptimizationState as ProtoOmniOptState, OmniStartRequest,
     OptimizationError as ProtoOptimizationError, ReflectiveComponentData,
@@ -36,6 +37,27 @@ fn error_from_optimization_error(e: ProtoOptimizationError) -> GEPAError {
     }
 }
 
+/// Builds an EvaluatorFailure to report a local callback error upstream, so
+/// the server logs what actually went wrong instead of just seeing the stream
+/// close. `request_id` may be empty when the failure isn't tied to one.
+fn evaluator_failure(request_id: &str, err: &GEPAError) -> EvaluatorFailure {
+    EvaluatorFailure {
+        request_id: request_id.to_string(),
+        error_type: match err {
+            GEPAError::EvaluatorError(_) => "EvaluatorError",
+            GEPAError::Cancelled(_) => "Cancelled",
+            GEPAError::Transport(_) => "Transport",
+            GEPAError::Status(_) => "Status",
+            GEPAError::StreamClosed => "StreamClosed",
+            GEPAError::OptimizationFailed(_) => "OptimizationFailed",
+            GEPAError::InvalidAddress(_) => "InvalidAddress",
+            GEPAError::ChannelSend => "ChannelSend",
+        }
+        .to_string(),
+        message: err.to_string(),
+    }
+}
+
 pub struct Client {
     // One Channel, built once and reused by every call. tonic's Channel is
     // cheap to clone (an internal handle, not a new socket), and
@@ -45,6 +67,10 @@ pub struct Client {
     // Channel::from_shared(..).connect().await on *every* invocation,
     // reconnecting from scratch each time.
     channel: Channel,
+    // Attached to every RPC. A server started with --auth-token rejects
+    // anything without a matching `authorization` value, so without this the
+    // SDK cannot talk to a hardened server at all.
+    metadata: MetadataMap,
 }
 
 impl Client {
@@ -55,7 +81,7 @@ impl Client {
         let channel = Channel::from_shared(format!("http://{target}"))
             .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
             .connect_lazy();
-        Ok(Self { channel })
+        Ok(Self { channel, metadata: MetadataMap::new() })
     }
 
     /// Connects over TLS. `tls_config` carries any custom CA (e.g. for a
@@ -72,7 +98,34 @@ impl Client {
             .tls_config(tls_config)
             .map_err(|e| GEPAError::InvalidAddress(e.to_string()))?
             .connect_lazy();
-        Ok(Self { channel })
+        Ok(Self { channel, metadata: MetadataMap::new() })
+    }
+
+    /// Sends `token` as the `authorization` metadata value on every RPC, for
+    /// a server started with --auth-token. Not a substitute for TLS: without
+    /// [`Client::new_with_tls`] the token travels in plaintext.
+    pub fn with_auth_token(mut self, token: &str) -> Result<Self, GEPAError> {
+        let value: MetadataValue<_> = token
+            .parse()
+            .map_err(|_| GEPAError::InvalidAddress("auth token is not valid metadata".into()))?;
+        self.metadata.insert("authorization", value);
+        Ok(self)
+    }
+
+    /// Adds one arbitrary metadata entry to every RPC, for deployments behind
+    /// a proxy that expects its own headers.
+    pub fn with_metadata(mut self, key: &'static str, value: &str) -> Result<Self, GEPAError> {
+        let v: MetadataValue<_> = value
+            .parse()
+            .map_err(|_| GEPAError::InvalidAddress("metadata value is not valid".into()))?;
+        self.metadata.insert(key, v);
+        Ok(self)
+    }
+
+    fn request<T>(&self, body: T) -> Request<T> {
+        let mut req = Request::new(body);
+        *req.metadata_mut() = self.metadata.clone();
+        req
     }
 
     pub async fn optimize<E, M, EFut, MFut>(
@@ -110,7 +163,7 @@ impl Client {
         .map_err(|_| GEPAError::ChannelSend)?;
 
         let mut response = grpc_client
-            .run_optimization(Request::new(stream))
+            .run_optimization(self.request(stream))
             .await?
             .into_inner();
 
@@ -125,7 +178,21 @@ impl Client {
                         batch: req.batch.iter().map(proto_to_example).collect(),
                         capture_traces: req.capture_traces,
                     };
-                    let result = (opts.evaluate)(args).await?;
+                    // On a callback error, tell the server why before
+                    // bailing out -- otherwise it only sees the stream close.
+                    let result = match (opts.evaluate)(args).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let _ = tx
+                                .send(ClientMessage {
+                                    payload: Some(ClientPayload::EvaluatorFailure(
+                                        evaluator_failure(&req.request_id, &e),
+                                    )),
+                                })
+                                .await;
+                            return Err(e);
+                        }
+                    };
                     tx.send(ClientMessage {
                         payload: Some(ClientPayload::EvaluateBatchResponse(
                             EvaluateBatchResponse {
@@ -151,7 +218,19 @@ impl Client {
                         components_to_update: req.components_to_update.clone(),
                         trajectories: req.trajectories.iter().map(proto_to_traj).collect(),
                     };
-                    let result = (opts.make_reflective_dataset)(args).await?;
+                    let result = match (opts.make_reflective_dataset)(args).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let _ = tx
+                                .send(ClientMessage {
+                                    payload: Some(ClientPayload::EvaluatorFailure(
+                                        evaluator_failure(&req.request_id, &e),
+                                    )),
+                                })
+                                .await;
+                            return Err(e);
+                        }
+                    };
                     let reflective_data = result
                         .into_iter()
                         .map(|(comp, entries)| {
@@ -243,7 +322,7 @@ impl Client {
         .map_err(|_| GEPAError::ChannelSend)?;
 
         let mut response = grpc_client
-            .run_optimization_omni(Request::new(stream))
+            .run_optimization_omni(self.request(stream))
             .await?
             .into_inner();
 
@@ -258,7 +337,19 @@ impl Client {
                         batch: req.batch.iter().map(proto_to_example).collect(),
                         opt_states: req.opt_states.iter().map(proto_to_opt_state).collect(),
                     };
-                    let result = (opts.evaluate)(args).await?;
+                    let result = match (opts.evaluate)(args).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let _ = tx
+                                .send(OmniClientMessage {
+                                    payload: Some(OmniClientPayload::EvaluatorFailure(
+                                        evaluator_failure(&req.request_id, &e),
+                                    )),
+                                })
+                                .await;
+                            return Err(e);
+                        }
+                    };
                     tx.send(OmniClientMessage {
                         payload: Some(OmniClientPayload::EvaluateBatchResponse(
                             OmniEvaluateBatchResponse {
