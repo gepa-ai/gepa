@@ -8,7 +8,7 @@ and penalise lucky guesses, feeding rich confidence diagnostics into
 the reflection LLM.  Requires structured output with enum constraints
 and a model that supports ``logprobs=True``.
 
-See the full guide: https://gepa-ai.github.io/gepa/guides/confidence-adapter/
+See the full guide: https://gepa.dev/guides/confidence-adapter/
 """
 
 from __future__ import annotations

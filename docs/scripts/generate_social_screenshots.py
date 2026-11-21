@@ -31,7 +31,7 @@ def get_site_url(docs_dir: str = ".") -> str:
             if site_url:
                 return site_url + "/"
     # Fallback
-    return "https://gepa-ai.github.io/gepa/"
+    return "https://gepa.dev/"
 
 
 def get_pages_to_screenshot() -> list[tuple[str, str]]:

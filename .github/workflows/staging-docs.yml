@@ -65,7 +65,7 @@ jobs:
           cd docs
           # Use the current branch's Cloudflare Pages alias so og:url / og:image
           # resolve to URLs that actually exist on the deployed subdomain.
-          sed -i "s|site_url: https://gepa-ai.github.io/gepa/|site_url: https://${{ github.ref_name }}.gepa-docs-staging.pages.dev/|" mkdocs.yml
+          sed -i "s|site_url: https://gepa.dev/|site_url: https://${{ github.ref_name }}.gepa-docs-staging.pages.dev/|" mkdocs.yml
 
       - name: Install Playwright browsers
         run: |

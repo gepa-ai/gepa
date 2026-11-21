@@ -53,4 +53,4 @@ For programmatic observation beyond metric logging, pass `engine_config={"callba
 configured.
 
 See the official guide for the authoritative list of fields and behaviors:
-<https://gepa-ai.github.io/gepa/guides/experiment-tracking/>.
+<https://gepa.dev/guides/experiment-tracking/>.

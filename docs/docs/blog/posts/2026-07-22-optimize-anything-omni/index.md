@@ -38,7 +38,7 @@ citation_keywords: "text optimization, LLM-driven optimization, prompt optimizat
   <figcaption>On Frontier-CS, the meta-optimizer <span class="gradient-code">omni</span> beats every standalone optimizer.</figcaption>
 </figure>
 
-When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is describable as text and its quality can be measured, you can optimize it. You write down the artifact and a function that scores it, and GEPA's reflective-mutation loop optimizes it.
+When we [introduced `optimize_anything`](https://gepa.dev/blog/introducing-optimize-anything/), the premise was simple: if your artifact is describable as text and its quality can be measured, you can optimize it. You write down the artifact and a function that scores it, and GEPA's reflective-mutation loop optimizes it.
 
 But GEPA's reflective proposer is just *one* way to run the optimization loop. A growing set of systems share a similar shape with a candidate string, a black-box scoring function, and an LLM-driven search loop. Some delegate the entire loop to an autonomous coding agent (e.g., [AutoResearch](https://github.com/karpathy/autoresearch)). Some keep an external framework in charge of loop orchestration and let an agent mutate one candidate at a time (e.g., [Meta-Harness](https://arxiv.org/abs/2603.28052)). Each is strong on some problems and weak on others, and **we don't have a good way to tell which will win**. Until now, switching between them meant porting your task into a new framework.
 
@@ -168,7 +168,7 @@ The largest gain goes to GEPA: standalone GEPA is weaker than both agent-driven 
 
 ## Getting started
 
-**The best way to use `optimize_anything` is through the skill**, [`gepa-optimize-anything`](https://github.com/gepa-ai/gepa/tree/main/.claude/skills/gepa-optimize-anything): an instruction bundle that teaches a coding agent to drive the API for you, from picking the optimization mode to writing a feedback-rich evaluator, finding the right budget (it is always recommended to choose your own budget for realistic/production tasks), and avoiding the common pitfalls. In a clone of the repo, Claude Code (or any agent that reads `.claude/skills/`) discovers it automatically; just ask the agent to optimize something. Elsewhere, install it with `/plugin marketplace add gepa-ai/gepa` and `/plugin install gepa-optimize-anything@gepa` (see the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/)).
+**The best way to use `optimize_anything` is through the skill**, [`gepa-optimize-anything`](https://github.com/gepa-ai/gepa/tree/main/.claude/skills/gepa-optimize-anything): an instruction bundle that teaches a coding agent to drive the API for you, from picking the optimization mode to writing a feedback-rich evaluator, finding the right budget (it is always recommended to choose your own budget for realistic/production tasks), and avoiding the common pitfalls. In a clone of the repo, Claude Code (or any agent that reads `.claude/skills/`) discovers it automatically; just ask the agent to optimize something. Elsewhere, install it with `/plugin marketplace add gepa-ai/gepa` and `/plugin install gepa-optimize-anything@gepa` (see the [Agent Skill guide](https://gepa.dev/guides/agent-skill/)).
 
 Prefer to wire it up by hand? `optimize_anything` should be your entry point. Define your evaluator, pick the engine, and go:
 
@@ -189,7 +189,7 @@ result = optimize_anything(
 
 We are releasing both pieces of this work together: the engine-pluggable, pipeline-composable `optimize_anything`, and [Terrarium](https://github.com/gepa-ai/terrarium), the evaluation framework that pins optimizers to a shared task / eval-server / budget contract so they can be compared head-to-head. We'd love community contributions of new engines, tasks, and pipelines.
 
-- [Documentation](https://gepa-ai.github.io/gepa/)
+- [Documentation](https://gepa.dev/)
 - [GitHub](https://github.com/gepa-ai/gepa) · [Terrarium](https://github.com/gepa-ai/terrarium)
 - [Discord](https://discord.gg/WXFSeVGdbW)
 - [Twitter](https://x.com/gepa_ai)

@@ -1,6 +1,6 @@
 site_name: GEPA
 site_description: A framework for optimizing textual system components using LLM-based reflection and Pareto-efficient evolutionary search.
-site_url: https://gepa-ai.github.io/gepa/
+site_url: https://gepa.dev/
 
 repo_url: https://github.com/gepa-ai/gepa
 repo_name: gepa-ai/gepa

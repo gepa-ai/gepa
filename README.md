@@ -7,10 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://gepa-ai.github.io/gepa/"><strong>Website</strong></a> &ensp;|&ensp;
-  <a href="https://gepa-ai.github.io/gepa/guides/quickstart/"><strong>Quick Start</strong></a> &ensp;|&ensp;
+  <a href="https://gepa.dev/"><strong>Website</strong></a> &ensp;|&ensp;
+  <a href="https://gepa.dev/guides/quickstart/"><strong>Quick Start</strong></a> &ensp;|&ensp;
   <a href="https://arxiv.org/abs/2507.19457"><strong>Paper</strong></a> &ensp;|&ensp;
-  <a href="https://gepa-ai.github.io/gepa/blog/"><strong>Blog</strong></a> &ensp;|&ensp;
+  <a href="https://gepa.dev/blog/"><strong>Blog</strong></a> &ensp;|&ensp;
   <a href="https://discord.gg/WXFSeVGdbW"><strong>Discord</strong></a>
 </p>
 
@@ -40,10 +40,10 @@
 |---|---|
 | **90x cheaper** | Open-source models + GEPA beat Claude Opus 4.1 at [Databricks](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization) |
 | **35x faster than RL** | 100–500 evaluations vs. 5,000–25,000+ for GRPO ([paper](https://arxiv.org/abs/2507.19457)) |
-| **32% → 89%** | ARC-AGI agent accuracy via [architecture discovery](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/#5-agent-architecture-discovery) |
-| **40.2% cost savings** | Cloud scheduling policy [discovered by GEPA](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/#3-systems-research), beating expert heuristics |
-| **55% → 82%** | Coding agent resolve rate on Jinja via [auto-learned skills](https://gepa-ai.github.io/gepa/blog/automatically-learning-skills-for-coding-agents/) |
-| **50+ production uses** | Across Shopify, Databricks, Dropbox, OpenAI, Pydantic, MLflow, Comet ML, and [more](https://gepa-ai.github.io/gepa/guides/use-cases/) |
+| **32% → 89%** | ARC-AGI agent accuracy via [architecture discovery](https://gepa.dev/blog/introducing-optimize-anything/#5-agent-architecture-discovery) |
+| **40.2% cost savings** | Cloud scheduling policy [discovered by GEPA](https://gepa.dev/blog/introducing-optimize-anything/#3-systems-research), beating expert heuristics |
+| **55% → 82%** | Coding agent resolve rate on Jinja via [auto-learned skills](https://gepa.dev/blog/automatically-learning-skills-for-coding-agents/) |
+| **50+ production uses** | Across Shopify, Databricks, Dropbox, OpenAI, Pydantic, MLflow, Comet ML, and [more](https://gepa.dev/guides/use-cases/) |
 
 > *"Both DSPy and (especially) **GEPA are currently severely under hyped** in the AI context engineering world"* — **Tobi Lutke**, CEO, Shopify
 
@@ -117,7 +117,7 @@ optimized_program = optimizer.compile(student=MyProgram(), trainset=trainset, va
 
 ### optimize_anything: Beyond Prompts
 
-The [`optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/) API optimizes *any* text artifact — code, agent architectures, configurations, SVGs — not just prompts. You provide an evaluator; the system handles the search.
+The [`optimize_anything`](https://gepa.dev/blog/introducing-optimize-anything/) API optimizes *any* text artifact — code, agent architectures, configurations, SVGs — not just prompts. You provide an evaluator; the system handles the search.
 
 ```python
 import gepa.optimize_anything as oa
@@ -146,7 +146,7 @@ GEPA also ships as an **[Agent Skill](https://agentskills.io/)** so coding agent
 /plugin install gepa-optimize-anything@gepa
 ```
 
-See the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/) for details.
+See the [Agent Skill guide](https://gepa.dev/guides/agent-skill/) for details.
 
 ---
 
@@ -162,7 +162,7 @@ Traditional optimizers know *that* a candidate failed but not *why*. GEPA takes 
 
 GEPA also supports **system-aware merge** — combining strengths of two Pareto-optimal candidates excelling on different tasks. The key concept is **Actionable Side Information (ASI)**: diagnostic feedback returned by evaluators that serves as the text-optimization analogue of a gradient.
 
-For details, see the [paper](https://arxiv.org/abs/2507.19457) and the [documentation](https://gepa-ai.github.io/gepa/guides/).
+For details, see the [paper](https://arxiv.org/abs/2507.19457) and the [documentation](https://gepa.dev/guides/).
 
 ---
 
@@ -183,7 +183,7 @@ GEPA connects to your system via the [`GEPAAdapter`](src/gepa/core/adapter.py) i
 | [AnyMaths](src/gepa/adapters/anymaths_adapter/) | Mathematical problem-solving and reasoning tasks |
 | [LangChain](src/gepa/adapters/langchain_adapter/) | Optimize prompts for any LangChain pipeline — chat models, tool-using agents, LangGraph. `pip install "gepa[langchain]"` |
 
-See the [adapters guide](https://gepa-ai.github.io/gepa/guides/adapters/) for how to build your own, and [DSPy's adapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) as a reference.
+See the [adapters guide](https://gepa.dev/guides/adapters/) for how to build your own, and [DSPy's adapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) as a reference.
 
 ---
 
@@ -382,8 +382,8 @@ Finally:
 - **Experiment reproduction artifact:** [GEPA Artifact Repository](https://github.com/gepa-ai/gepa-artifact)
 - **Talk Slides**: [GEPA Talk Slides](https://docs.google.com/presentation/d/1vIauqn55WfdgJjwU0IDjvaqpv1QHhvhPaLAKdrCFAEg/edit?usp=sharing)
 - **Blog Posts:**
-  - [optimize_anything: A Universal API for Optimizing any Text Parameter](https://gepa-ai.github.io/gepa/blog/2026/02/18/introducing-optimize-anything/)
-  - [Automatically Learning Skills for Coding Agents](https://gepa-ai.github.io/gepa/blog/2026/02/18/automatically-learning-skills-for-coding-agents/)
+  - [optimize_anything: A Universal API for Optimizing any Text Parameter](https://gepa.dev/blog/2026/02/18/introducing-optimize-anything/)
+  - [Automatically Learning Skills for Coding Agents](https://gepa.dev/blog/2026/02/18/automatically-learning-skills-for-coding-agents/)
 - **Tutorials & Examples:**
   - [dspy.GEPA Tutorials, with executable notebooks](https://dspy.ai/tutorials/gepa_ai_program/)
     Step-by-step notebooks showing how to use GEPA for practical optimization tasks via DSPy, including math, structured data extraction for enterprise tasks and privacy conscious delegation task.
@@ -412,7 +412,7 @@ Finally:
   - [Google ADK / Gemini Enterprise Agent Platform](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent) - `adk optimize` powered by GEPA, also shipped inside Google Cloud's Gemini Enterprise Agent Platform Quality Flywheel. [ADK docs](https://adk.dev/optimize/) · [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
-    - [ConfidenceAdapter](src/gepa/adapters/confidence_adapter/) - Logprob-aware classification optimization using [`llm-structured-confidence`](https://github.com/rodolfonobrega/llm-structured-confidence). Detects lucky guesses by extracting token-level logprobs from structured JSON outputs with `enum` constraints, and feeds confidence diagnostics (logprob, probability, top alternatives) into the reflection LLM. Install with `pip install "gepa[confidence]"`. See the [guide](https://gepa-ai.github.io/gepa/guides/confidence-adapter/).
+    - [ConfidenceAdapter](src/gepa/adapters/confidence_adapter/) - Logprob-aware classification optimization using [`llm-structured-confidence`](https://github.com/rodolfonobrega/llm-structured-confidence). Detects lucky guesses by extracting token-level logprobs from structured JSON outputs with `enum` constraints, and feeds confidence diagnostics (logprob, probability, top alternatives) into the reflection LLM. Install with `pip install "gepa[confidence]"`. See the [guide](https://gepa.dev/guides/confidence-adapter/).
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
     - [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) - Vector store-agnostic RAG optimization supporting ChromaDB, Weaviate, Qdrant, Pinecone, and more. Optimizes query reformulation, context synthesis, answer generation, and document reranking prompts.
     - [MCP Adapter](src/gepa/adapters/mcp_adapter/) - Optimize [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool usage. Supports local stdio servers, remote SSE/HTTP servers, and optimizes tool descriptions and system prompts.
@@ -480,7 +480,7 @@ Finally:
 
 ## Contributions
 
-We welcome adapters, bug fixes, and new use cases. See [src/gepa/adapters/](src/gepa/adapters/) for adapter examples and the [contributing guide](https://gepa-ai.github.io/gepa/guides/contributing/).
+We welcome adapters, bug fixes, and new use cases. See [src/gepa/adapters/](src/gepa/adapters/) for adapter examples and the [contributing guide](https://gepa.dev/guides/contributing/).
 
 **Want to highlight your use case?** Reach out to [lakshyaaagrawal@berkeley.edu](mailto:lakshyaaagrawal@berkeley.edu) or [submit via GitHub](https://github.com/gepa-ai/gepa/issues/new?title=Project%20Submission&body=Organization:%0A%0AProject%20Description:%0A%0AResults:%0A%0ALink%20to%20paper/blog/code:).
 
@@ -488,7 +488,7 @@ We welcome adapters, bug fixes, and new use cases. See [src/gepa/adapters/](src/
 
 ## Contributors
 
-Everyone who has committed to this repository, written a post on the [GEPA blog](https://gepa-ai.github.io/gepa/blog/), or authored the [GEPA](https://arxiv.org/abs/2507.19457) or [optimize_anything](https://arxiv.org/abs/2605.19633) paper. This list is generated by [`docs/scripts/generate_contributors.py`](docs/scripts/generate_contributors.py). If you're missing, or you'd like your full name or GitHub account shown, please open an issue or a PR.
+Everyone who has committed to this repository, written a post on the [GEPA blog](https://gepa.dev/blog/), or authored the [GEPA](https://arxiv.org/abs/2507.19457) or [optimize_anything](https://arxiv.org/abs/2605.19633) paper. This list is generated by [`docs/scripts/generate_contributors.py`](docs/scripts/generate_contributors.py). If you're missing, or you'd like your full name or GitHub account shown, please open an issue or a PR.
 
 <!-- contributors:start -->
 - [Adriano Hernandez](https://github.com/4gatepylon)

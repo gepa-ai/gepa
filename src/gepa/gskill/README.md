@@ -8,7 +8,7 @@
 
 gskill learns repository-specific skills for coding agents. On a GitHub repository it automatically discovers the common patterns, structures, and debugging strategies that matter for that repo, then produces a skill file that makes agents better at fixing bugs in it.
 
-It combines [SWE-smith](https://swesmith.com) for task generation and [GEPA's `optimize_anything`](https://gepa-ai.github.io/gepa/) for skill optimization:
+It combines [SWE-smith](https://swesmith.com) for task generation and [GEPA's `optimize_anything`](https://gepa.dev/) for skill optimization:
 
 1. **Generate tasks.** SWE-smith mines real commits from the target repo, introduces bugs, and produces hundreds of verifiable task instances, each with a problem statement, a Docker environment, and tests.
 
