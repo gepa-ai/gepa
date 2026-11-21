@@ -242,6 +242,29 @@ Its cost, including rollouts, reflection, and curation, compares as follows:
 
 **Key result:** For a **1.31×** increase in optimization cost, GEPA-Curator gains +3.6 points over GEPA on WebArena and +18.5 points on the other agentic benchmarks. It is **4.42× cheaper than ACE** while scoring 9.2 points higher. Our actor (gpt-oss-120b) is cheap, so curation overhead is a relatively large share of the bill here; with a more expensive actor, the cost ratio to GEPA would shrink considerably.
 
+### Matching total cost, not rollouts {#cost-matched}
+
+The comparison above matches the number of rollouts, so GEPA-Curator ends up spending more than GEPA. To check that its gains are not simply the result of a larger budget, we also run a **cost-matched** comparison, where both methods get the same total spend across actor rollouts, reflection, and curation.
+
+We stop GEPA-Curator before its cumulative cost exceeds GEPA's, and report the validated checkpoint with the highest validation score at that point. All runs use Gemini 3.1 Pro as the optimizer model, and GEPA-Curator runs with the efficiency optimization enabled. On τ-bench, GEPA-Curator validates every 12 iterations, so that a validated checkpoint exists before the run hits GEPA's budget.
+
+| Benchmark | <span style="white-space: nowrap">GEPA score (%)</span> | <span style="white-space: nowrap">GEPA-Curator score (%)</span> | <span style="white-space: nowrap">GEPA cost (&#36;)</span> | <span style="white-space: nowrap">GEPA-Curator cost (&#36;)</span> |
+|---|---:|---:|---:|---:|
+| WebArena: GitLab | 82.1 | **87.3** | 144.01 | **141.23** |
+| WebArena: Shopping | 83.8 | **86.0** | 156.10 | **155.22** |
+| WebArena: Shopping Admin | **71.5** | 70.7 | 152.05 | **150.38** |
+| WebArena: Reddit | 77.6 | **85.8** | 141.89 | **141.01** |
+| ALFWorld | 82.4 | **94.3** | 55.66 | **54.96** |
+| AppWorld Test-N | 38.0 | **65.5** | 61.78 | **60.14** |
+| AppWorld Test-C | 27.8 | **51.8** | 61.78 | **60.14** |
+| τ-bench | 75.4 | **77.7** | 15.21 | **15.00** |
+
+*Held-out test success rates (%) and total optimization cost under a matched budget. AppWorld cost is shared across its two test splits.*
+
+At a slightly lower total cost on every benchmark, GEPA-Curator beats GEPA on seven of the eight settings. The one exception is Shopping Admin, where it trails by just 0.8 points. Averaged over all eight settings, GEPA-Curator gains **+10.1 points** over GEPA (77.4 vs. 67.3).
+
+**Key result:** The gains do not depend on spending more. Putting part of the budget into choosing more informative tasks and retrieving useful past successes is worth more than the extra cost of curation, even when GEPA gets to spend the same total.
+
 ## Beyond Prompts: Curating Harness Optimization {#meta-harness}
 
 Curation isn't tied to prompts. [Meta-Harness](https://openreview.net/forum?id=tmbOUyFx3R) optimizes an agent's harness *code* with a coding agent, much as GEPA optimizes prompts. We add a Curator that selects a parent harness and a focused subset of training tasks with a rationale, and supplies historical successes when fresh parent runs fail. We call this **Meta-Harness-Curator**.
