@@ -58,7 +58,7 @@ from typing import Any, cast
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Result
-from gepa.oa.eval_server import DEFAULT_MAX_CONCURRENCY, EvalServer
+from gepa.oa.eval_server import DEFAULT_MAX_CONCURRENCY, EvalServer, _normalize_eval_fn
 from gepa.oa.task import Task
 
 
@@ -409,6 +409,26 @@ def optimize_best_of(
     return winner
 
 
+def _vote_scores(
+    results: list[Result],
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
+    examples: list[Any] | None = None,
+) -> list[float]:
+    """Re-score candidates with the normal evaluator contract, outside budgets."""
+    eval_fn = _normalize_eval_fn(evaluate)
+    scores: list[float] = []
+    for result in results:
+        try:
+            if examples:
+                score = sum(eval_fn(result.best_candidate, example)[0] for example in examples) / len(examples)
+            else:
+                score, _ = eval_fn(result.best_candidate)
+        except Exception:
+            score = float("-inf")
+        scores.append(float(score))
+    return scores
+
+
 def optimize_vote(
     seed_candidate: str | None = None,
     *,
@@ -423,14 +443,18 @@ def optimize_vote(
     max_workers: int | None = None,
 ) -> Result:
     """Run all configs in parallel, then re-score each engine's best candidate
-    once via ``evaluator`` (outside any budget) and return the highest-scoring.
+    via ``evaluator`` (outside any budget) and return the highest-scoring.
 
     Takes the same task fields as :func:`gepa.optimize_anything.optimize_anything`,
     plus ``configs`` — one :class:`OptimizeAnythingConfig` per engine.
 
     Unlike :func:`optimize_best_of`, the re-score pass uses a single shared
     scoring function, so engines with different internal eval semantics get
-    compared fairly. The returned :class:`Result` is the original winning
+    compared fairly. Candidates are scored on ``valset`` when provided,
+    otherwise ``dataset``, using the mean score across examples. Without
+    either split, the evaluator is called without an example. Scalar scores
+    and ``(score, info)`` returns are normalized as during optimization.
+    The returned :class:`Result` is the original winning
     engine's result with metadata augmented:
 
     - ``vote_scores``: list of re-scores aligned with ``configs``.
@@ -448,13 +472,7 @@ def optimize_vote(
         name=name,
     )
     results = _parallel_from_task(task, evaluator, configs, max_workers=max_workers)
-    vote_scores: list[float] = []
-    for r in results:
-        try:
-            score, _ = evaluator(r.best_candidate)
-        except Exception:
-            score = float("-inf")
-        vote_scores.append(float(score))
+    vote_scores = _vote_scores(results, evaluator, task.val_set or task.train_set)
     winner_idx = max(range(len(results)), key=lambda i: vote_scores[i])
     winner = results[winner_idx]
     winner.metadata["vote_scores"] = vote_scores
@@ -755,20 +773,15 @@ def optimize_vote_with_server(
     engine's ``best_candidate`` once via ``evaluate`` (outside any
     budget) and return the highest-scoring. ``evaluate`` is called
     directly — it does not go through any of the inner servers, so the
-    re-score pass does not consume their budgets.
+    re-score pass does not consume their budgets. It remains candidate-only;
+    scalar scores and ``(score, info)`` returns are both accepted.
 
     Returned :class:`Result` is the winning engine's result with
     ``vote_scores`` / ``vote_candidates`` / ``vote_winner_idx`` /
     ``all_results`` in metadata.
     """
     results = optimize_parallel_with_server(servers, configs, max_workers=max_workers)
-    vote_scores: list[float] = []
-    for r in results:
-        try:
-            score, _ = evaluate(r.best_candidate)
-        except Exception:
-            score = float("-inf")
-        vote_scores.append(float(score))
+    vote_scores = _vote_scores(results, evaluate)
     winner_idx = max(range(len(results)), key=lambda i: vote_scores[i])
     winner = results[winner_idx]
     winner.metadata["vote_scores"] = vote_scores
