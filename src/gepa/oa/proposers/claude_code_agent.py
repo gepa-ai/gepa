@@ -29,10 +29,10 @@ That's the contract this module implements. Each call:
    from the iterations tree so the next proposer call sees a chronological
    log of every prior iteration's short plan + score outcome.
 
-Needs ``EngineConfig.write_agent_state=True`` on the GEPA side so the
-``run_dir`` actually contains the readable ``iterations/`` and ``pareto/``
-trees this proposer reads. The :class:`~gepa.oa.engines.gepa.GepaEngine`
-wiring auto-sets that default whenever this proposer is selected.
+The current parent's component text is available with the default engine
+configuration. Set ``EngineConfig.write_agent_state=True`` to export the
+wider ``iterations/`` and ``pareto/`` trees and enrich the proposal with
+available parent metadata.
 
 Learns this proposal's on-disk anchor (``iteration_id``) and its
 ``parent_iteration_id`` via the ``metadata`` kwarg on the
@@ -96,12 +96,7 @@ def _extract_fenced(text: str) -> str:
 
 
 def _safe_component_filename(name: str, idx: int) -> str:
-    """Derive a safe on-disk filename for a component name.
-
-    Mirrors :meth:`gepa.core.state.GEPAState._save_components` so the
-    parent-iteration component files this proposer reads from
-    ``iterations/<id>/components/`` use the exact same stems.
-    """
+    """Derive a safe on-disk filename stem for this proposal."""
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
     return safe if safe else f"component_{idx:02d}"
 
@@ -239,30 +234,6 @@ class ClaudeCodeAgentProposer:
         subdir.mkdir(parents=True, exist_ok=False)
         return subdir
 
-    def _copy_parent_iteration(self, parent_dir: Path, dest: Path) -> None:
-        """Copy the slim parts of the parent iteration folder into ``dest``.
-
-        Agent-locality convenience: copy ``meta.json``, ``val_scores.json``,
-        ``plan.md`` and ``components/`` so the claude process can read the
-        parent's program + reasoning next to its own working files without
-        hopping across the run_dir. Intentionally excludes ``outputs/`` and
-        ``trajectories/`` — those can be many MBs per iteration on adapters
-        whose rollouts are big, and the agent can still reach them via
-        ``iterations/<parent_id>/`` if it actually wants them.
-        """
-        dest.mkdir(parents=True, exist_ok=True)
-        for name in ("meta.json", "val_scores.json", "plan.md"):
-            src = parent_dir / name
-            if src.exists():
-                (dest / name).write_text(src.read_text())
-        comps_src = parent_dir / "components"
-        if comps_src.is_dir():
-            comps_dst = dest / "components"
-            comps_dst.mkdir(parents=True, exist_ok=True)
-            for f in comps_src.iterdir():
-                if f.is_file():
-                    (comps_dst / f.name).write_text(f.read_text())
-
     def _materialize(
         self,
         subdir: Path,
@@ -274,11 +245,9 @@ class ClaudeCodeAgentProposer:
         """Write reflection dataset + parent copy + index files into ``subdir``.
 
         Returns a map ``{component_name: safe_filename_stem}`` used to locate
-        output files on disk. The parent candidate text is *not* re-written
-        per-component — instead the whole parent iteration folder (slim
-        parts) is copied into ``<subdir>/parent/`` via
-        :meth:`_copy_parent_iteration`, so the agent has access to the
-        parent's ``plan.md`` and scores as well as its component texts.
+        output files on disk. Component texts come from the current parent
+        candidate. If an iteration directory exists, copy its available plan
+        and score metadata into the same parent snapshot.
         """
         name_to_stem: dict[str, str] = {}
         used: set[str] = set()
@@ -292,18 +261,16 @@ class ClaudeCodeAgentProposer:
             used.add(stem)
             name_to_stem[name] = stem
 
+        parent_dir = subdir / "parent"
+        comps_dir = parent_dir / "components"
+        comps_dir.mkdir(parents=True)
+        for name, text in candidate.items():
+            (comps_dir / f"{name_to_stem[name]}.txt").write_text(text, encoding="utf-8")
         if parent_iteration_dir is not None:
-            self._copy_parent_iteration(parent_iteration_dir, subdir / "parent")
-        else:
-            # First iteration or state unreadable: materialize parent texts
-            # directly so the agent still has something to read, with no
-            # ``plan.md`` / ``meta.json`` (absence is the signal).
-            fallback_parent = subdir / "parent"
-            fallback_parent.mkdir(parents=True, exist_ok=True)
-            comps_dir = fallback_parent / "components"
-            comps_dir.mkdir(parents=True, exist_ok=True)
-            for name, text in candidate.items():
-                (comps_dir / f"{name_to_stem[name]}.txt").write_text(text)
+            for name in ("meta.json", "val_scores.json", "plan.md"):
+                src = parent_iteration_dir / name
+                if src.exists():
+                    shutil.copyfile(src, parent_dir / name)
 
         reflection_dir = subdir / "reflection"
         reflection_dir.mkdir()
