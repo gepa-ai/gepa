@@ -258,6 +258,10 @@ class BudgetUpdatedEvent(TypedDict):
     metric_calls_used: int
     metric_calls_delta: int
     metric_calls_remaining: int | None
+    metric_calls_computed: int
+    metric_calls_computed_delta: int
+    metric_calls_cached: int
+    metric_calls_cached_delta: int
 
 
 class ErrorEvent(TypedDict):

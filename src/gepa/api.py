@@ -111,6 +111,7 @@ def optimize(
     # Added after the positional parameters so existing positional calls keep their meaning.
     write_agent_state: bool = False,
     reflective_dataset_enricher: ReflectiveDatasetEnricher[Trajectory, RolloutOutput] | None = None,
+    count_cached_evals_toward_budget: bool = False,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -504,6 +505,7 @@ def optimize(
         use_cloudpickle=use_cloudpickle,
         write_agent_state=write_agent_state,
         evaluation_cache=evaluation_cache,
+        count_cached_evals_toward_budget=count_cached_evals_toward_budget,
     )
 
     with experiment_tracker:

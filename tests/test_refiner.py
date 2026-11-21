@@ -111,6 +111,17 @@ def create_dataset_fitness_fn(call_counter: dict):
 DATASET = [{"golden": 40}, {"golden": 60}]
 
 
+def create_mock_reflection_lm(start: int = 50):
+    """Create a deterministic mock LM returning decreasing integer proposals."""
+    proposals = {"count": 0}
+
+    def reflection_lm(_prompt: str) -> str:
+        proposals["count"] += 1
+        return f"```\n{start - proposals['count']}\n```"
+
+    return reflection_lm
+
+
 class TestRefiner:
     """Tests for refiner functionality."""
 
@@ -160,7 +171,7 @@ class TestRefiner:
                 cache_evaluation_storage="memory",
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-5-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=RefinerConfig(
                 max_refinements=2,
@@ -196,7 +207,7 @@ class TestRefiner:
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
-                    reflection_lm="openrouter/openai/gpt-5-nano",
+                    reflection_lm=create_mock_reflection_lm(),
                 ),
                 refiner=RefinerConfig(
                     max_refinements=2,
@@ -237,7 +248,7 @@ class TestRefiner:
                 cache_evaluation=False,
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-5-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=RefinerConfig(
                 max_refinements=3,
@@ -260,7 +271,7 @@ class TestRefiner:
                 cache_evaluation_storage="memory",
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-5-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=RefinerConfig(
                 max_refinements=3,
@@ -293,7 +304,7 @@ class TestRefiner:
                 cache_evaluation=False,
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-5-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=RefinerConfig(
                 max_refinements=1,

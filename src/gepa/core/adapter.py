@@ -33,6 +33,7 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     trajectories: list[Trajectory] | None = None
     objective_scores: list[dict[str, float]] | None = None
     num_metric_calls: int | None = None
+    num_cached_evals: int = 0
 
 
 class BatchEvaluateFn(Protocol):
