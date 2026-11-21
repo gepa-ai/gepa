@@ -63,7 +63,12 @@ def register_task_factory(name: str, factory: Callable[[], Task]) -> None:
 
 def get_task(name: str) -> Task:
     if name in _TASK_FACTORIES:
-        task = _TASK_FACTORIES.pop(name)()
+        factory = _TASK_FACTORIES.pop(name)
+        try:
+            task = factory()
+        except BaseException:
+            _TASK_FACTORIES[name] = factory
+            raise
         _TASKS[name] = task
         return task
     if name not in _TASKS:
