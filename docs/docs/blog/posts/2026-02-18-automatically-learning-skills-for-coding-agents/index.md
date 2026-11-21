@@ -40,7 +40,7 @@ Using gskill, we learn repository-specific skills for [jinja](https://github.com
 
 gskill consists of two main components:
 
-1. **GEPA's [optimize_anything](https://gepa-ai.github.io/gepa/)** -- a powerful API to optimize any textual artifact, including _skills_.
+1. **GEPA's [optimize_anything](https://gepa.dev/)** -- a powerful API to optimize any textual artifact, including _skills_.
 2. **SWE-smith** -- a data generation pipeline that creates arbitrary verifiable tasks for any GitHub repository, providing meaningful training and validation data for the optimization process.
 
 <figure markdown="span">
@@ -52,7 +52,7 @@ Learning skills requires feedback, and feedback requires tasks. This is where **
 
 Once we have tasks, we can optimize with `optimize_anything`. We build gskill based on the belief that there are common skills about a repository that can be crucial for most tasks within the repository, and these skills should be learned, automatically. To achieve this goal, `optimize_anything`[^gepa-docs] provides the backbone of the learning loop.
 
-[^gepa-docs]: For readers who are not familiar with how `optimize_anything` and GEPA works, we highly recommend checking out the [official documentation](https://gepa-ai.github.io/gepa/).
+[^gepa-docs]: For readers who are not familiar with how `optimize_anything` and GEPA works, we highly recommend checking out the [official documentation](https://gepa.dev/).
 
 In a nutshell, the `optimize_anything` loop starts with a (possibly empty) set of skills, evaluates the agent with a chosen skill, and then updates the skill by employing another more powerful LLM to reflect on the evaluation results and feedback. This process is repeated until convergence.
 

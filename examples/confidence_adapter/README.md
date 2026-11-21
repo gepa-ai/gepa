@@ -7,7 +7,7 @@ Reproducible comparison of two GEPA adapters for LLM text classification:
 
 Both adapters get identical data, budget, and reflection model. The only difference is how each adapter scores predictions and what feedback it passes to the reflection loop.
 
-For a detailed write-up of the methodology, analysis, and charts, see the **[blog post](https://gepa-ai.github.io/gepa/blog/2026/03/17/confidence-adapter-benchmark/)**.
+For a detailed write-up of the methodology, analysis, and charts, see the **[blog post](https://gepa.dev/blog/2026/03/17/confidence-adapter-benchmark/)**.
 
 ## Datasets
 

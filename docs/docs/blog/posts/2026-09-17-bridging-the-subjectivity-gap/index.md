@@ -43,7 +43,7 @@ Reflective prompt optimization is a better fit for this setting, for two reasons
 
 It's like teaching a new employee or intern how work gets done at your company. If you can give them the right context, instructions, and a handful of tricky examples plus their solutions, they can be surprisingly effective at carrying out specific organizational tasks right out of the gate.
 
-For this work we used <a href="https://gepa-ai.github.io/gepa/" target="_blank" rel="noopener noreferrer">GEPA</a>, an open-source reflective optimizer whose flexibility, speed, and abstractions such as <a href="https://gepa-ai.github.io/gepa/api/optimize_anything/optimize_anything/" target="_blank" rel="noopener noreferrer"><em>optimize_anything</em></a> make it practical to adapt to new scenarios.
+For this work we used <a href="https://gepa.dev/" target="_blank" rel="noopener noreferrer">GEPA</a>, an open-source reflective optimizer whose flexibility, speed, and abstractions such as <a href="https://gepa.dev/api/optimize_anything/optimize_anything/" target="_blank" rel="noopener noreferrer"><em>optimize_anything</em></a> make it practical to adapt to new scenarios.
 
 ## A simple demonstration
 

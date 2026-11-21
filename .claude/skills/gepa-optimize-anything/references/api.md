@@ -123,7 +123,7 @@ engine_config={
 The nested dataclasses live in `gepa.gepa_launcher` (`EngineConfig`, `ReflectionConfig`,
 `TrackingConfig`, `MergeConfig`, `RefinerConfig`); their knobs are documented in the GEPA guides —
 e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **callbacks**,
-**cost-tracking**, **experiment-tracking** — see <https://gepa-ai.github.io/gepa/guides/>.
+**cost-tracking**, **experiment-tracking** — see <https://gepa.dev/guides/>.
 
 ### `autoresearch` — `engine_config` → `AutoResearchConfig`
 | key | default | meaning |

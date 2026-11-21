@@ -8,7 +8,7 @@
       "source": "./.claude/skills/gepa-optimize-anything",
       "description": "Optimize any scorable text artifact (prompts, code, configs, agent scaffolds) with GEPA's optimize_anything.",
       "version": "0.1.0",
-      "homepage": "https://gepa-ai.github.io/gepa/",
+      "homepage": "https://gepa.dev/",
       "license": "MIT",
       "category": "optimization",
       "keywords": ["gepa", "prompt-optimization", "optimize-anything"]

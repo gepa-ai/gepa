@@ -452,7 +452,7 @@ result = oa.optimize_anything(
 )
 ```
 
-- [Documentation](https://gepa-ai.github.io/gepa/)
+- [Documentation](https://gepa.dev/)
 - [GitHub](https://github.com/gepa-ai/gepa)
 - [Discord](https://discord.gg/WXFSeVGdbW)
 - [Twitter](https://x.com/gepa_ai)
