@@ -21,12 +21,13 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
 logger = logging.getLogger(__name__)
+_ParallelResult = TypeVar("_ParallelResult")
 
 if TYPE_CHECKING:
     from gepa.gepa_launcher import Candidate, OptimizationState, RefinerConfig, SideInfo
@@ -328,25 +329,23 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # from the candidate (_assemble_no_refiner_batch / refiner path).
         return score, None, side_info
 
-    def _call_evaluator(
+    def _call_evaluator_with_hit(
         self,
         candidate: "Candidate",
         example: Any,
-    ) -> tuple[float, Any, dict]:
-        """Call evaluator with optional caching."""
-        # No caching
+    ) -> tuple[float, Any, dict, bool]:
+        """Call evaluator with optional caching, returning ``(score, output, side_info, is_cache_hit)``."""
         if self.cache_mode == "off":
-            return self._resolve_pair(candidate, example)
+            score, output, side_info = self._resolve_pair(candidate, example)
+            return score, output, side_info, False
 
-        # Build cache key
         cache_key = self._cache_key(candidate, example)
 
-        # Check cache (thread-safe)
         with self._eval_cache_lock:
             if cache_key in self._eval_cache:
-                return self._eval_cache[cache_key]
+                score, output, side_info = self._eval_cache[cache_key]
+                return score, output, side_info, True
 
-        # Cache miss - call evaluator
         result = self._resolve_pair(candidate, example)
 
         # Store in cache (thread-safe); synthetic transient-failure results
@@ -358,7 +357,16 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 if self.cache_mode == "disk":
                     self._save_cache_entry(cache_key, result)
 
-        return result
+        return (*result, False)
+
+    def _call_evaluator(
+        self,
+        candidate: "Candidate",
+        example: Any,
+    ) -> tuple[float, Any, dict]:
+        """Call evaluator with optional caching."""
+        score, output, side_info, _ = self._call_evaluator_with_hit(candidate, example)
+        return score, output, side_info
 
     def evaluate(
         self,
@@ -384,10 +392,20 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 # external call for the whole batch, cache-aware.
                 return self._batch_evaluate_via_user_fn([(candidate, batch)], capture_traces=capture_traces)[0]
             if self.parallel and len(batch) > 1:
-                raw_results = self._evaluate_parallel(batch, candidate)
+                raw_with_hits = self._evaluate_parallel(batch, candidate)
             else:
-                raw_results = [self._call_evaluator(candidate, example) for example in batch]
-            return self._assemble_no_refiner_batch(candidate, batch, raw_results, capture_traces=capture_traces)
+                raw_with_hits = [self._call_evaluator_with_hit(candidate, example) for example in batch]
+            raw_results = [(score, out, si) for score, out, si, _ in raw_with_hits]
+            num_computed = sum(1 for *_, is_hit in raw_with_hits if not is_hit)
+            num_cached = len(raw_with_hits) - num_computed
+            return self._assemble_no_refiner_batch(
+                candidate,
+                batch,
+                raw_results,
+                capture_traces=capture_traces,
+                num_metric_calls=num_computed,
+                num_cached_evals=num_cached,
+            )
 
         # Refiner path: evaluate with refinement. eval_output is a list of
         # (score, output, side_info) where output = (score, best_candidate, side_info).
@@ -399,14 +417,20 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         outputs = [out for _, out, _ in eval_output]
         objective_scores = [self._extract_objective_scores(candidate, si) for si in side_infos]
 
-        # Count actual evaluator invocations from the attempt history recorded
-        # in each side_info (the refiner path may call the evaluator multiple
-        # times per example).
+        # Count actual evaluator invocations (cache misses) vs cache hits from
+        # the attempt history recorded in each side_info (the refiner path may
+        # call the evaluator multiple times per example).
         num_metric_calls = 0
+        num_cached_evals = 0
         for si in side_infos:
             rp_info = si.get("refiner_prompt_specific_info", {})
             attempts = rp_info.get("Attempts", [])
-            num_metric_calls += sum(1 for a in attempts if "side_info" in a)
+            for a in attempts:
+                if "side_info" in a:
+                    if a.get("cached"):
+                        num_cached_evals += 1
+                    else:
+                        num_metric_calls += 1
 
         return EvaluationBatch(
             outputs=outputs,
@@ -414,6 +438,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
             num_metric_calls=num_metric_calls,
+            num_cached_evals=num_cached_evals,
         )
 
     def batch_evaluate(
@@ -471,6 +496,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # the refiner's singleton resolutions. Only misses reach the user's
         # function — still as ONE call.
         results: list[tuple[float, dict[str, Any]] | None] = [None] * len(pairs)
+        is_cached: list[bool] = [False] * len(pairs)
         miss_indices = list(range(len(pairs)))
         if self.cache_mode != "off":
             miss_indices = []
@@ -480,6 +506,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     if cached is not None:
                         score, _output, side_info = cached
                         results[idx] = (score, side_info)
+                        is_cached[idx] = True
                     else:
                         miss_indices.append(idx)
 
@@ -518,12 +545,19 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                             self._save_cache_entry(cache_key, (score, None, side_info))
             for idx, src in alias_of.items():
                 results[idx] = results[src]
+                is_cached[idx] = True
 
         raw_by_item: dict[int, list[tuple[float, Any, SideInfo]]] = {}
-        for res, item_idx in zip(results, pair_to_item_idx, strict=True):
+        computed_by_item: dict[int, int] = {}
+        cached_by_item: dict[int, int] = {}
+        for res, hit, item_idx in zip(results, is_cached, pair_to_item_idx, strict=True):
             assert res is not None, "unresolved evaluation pair (cache/miss bookkeeping bug)"
             score, side_info = res
             raw_by_item.setdefault(item_idx, []).append((score, None, side_info))
+            if hit:
+                cached_by_item[item_idx] = cached_by_item.get(item_idx, 0) + 1
+            else:
+                computed_by_item[item_idx] = computed_by_item.get(item_idx, 0) + 1
 
         return [
             self._assemble_no_refiner_batch(
@@ -531,6 +565,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 items[item_idx][1],
                 raw_by_item.get(item_idx, []),
                 capture_traces=capture_traces,
+                num_metric_calls=computed_by_item.get(item_idx, 0),
+                num_cached_evals=cached_by_item.get(item_idx, 0),
             )
             for item_idx in range(len(items))
         ]
@@ -562,7 +598,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt = candidate.get("refiner_prompt", "")
 
         # 1. Evaluate original candidate
-        original_score, _original_output, original_side_info = self._call_evaluator(candidate, example)
+        original_score, _original_output, original_side_info, original_cached = self._call_evaluator_with_hit(
+            candidate, example
+        )
 
         # Update best evals with original evaluation. Skip synthetic
         # whole-batch failures (raise_on_exception=False): with only a
@@ -575,7 +613,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         # 2. Refine and evaluate
         best_refined_score, best_refined_candidate, _best_refined_side_info, all_attempts = self._refine_and_evaluate(
-            candidate, example, refiner_prompt, original_score, original_side_info
+            candidate,
+            example,
+            refiner_prompt,
+            original_score,
+            original_side_info,
+            original_cached=original_cached,
         )
 
         # 3. Score = best of original and refined (refiner is a score booster)
@@ -620,10 +663,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self,
         batch: list[DataInst],
         candidate: "Candidate",
-        eval_fn,  # callable(candidate, example) -> result
-    ) -> list[tuple[float, Any, "SideInfo"]]:
+        eval_fn: Callable[[Any, Any], _ParallelResult],
+    ) -> list[_ParallelResult]:
         """Run evaluation function in parallel across batch."""
-        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
+        results: list[tuple[int, _ParallelResult]] = []
 
         with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
             future_to_idx = {executor.submit(eval_fn, candidate, example): idx for idx, example in enumerate(batch)}
@@ -637,17 +680,17 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _run_parallel_pairs(
         self,
         pairs: list[tuple["Candidate", Any]],
-    ) -> list[tuple[float, Any, "SideInfo"]]:
+    ) -> list[tuple[float, Any, "SideInfo", bool]]:
         """Evaluate ``(candidate, example)`` pairs concurrently, preserving input order.
 
         Unlike :meth:`_run_parallel` (one candidate, many examples), this fans
         out over pairs whose candidate may differ, so a single thread pool is
         shared across all candidates in a ``batch_evaluate`` call.
         """
-        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
+        results: list[tuple[int, tuple[float, Any, SideInfo, bool]]] = []
         with ThreadPoolExecutor(max_workers=self.max_workers or len(pairs)) as executor:
             future_to_idx = {
-                executor.submit(self._call_evaluator, candidate, example): idx
+                executor.submit(self._call_evaluator_with_hit, candidate, example): idx
                 for idx, (candidate, example) in enumerate(pairs)
             }
             for future in as_completed(future_to_idx):
@@ -678,11 +721,25 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         raw_by_pair = self._run_parallel_pairs(pairs) if pairs else []
 
         raw_per_item: list[list[tuple[float, Any, SideInfo]]] = [[] for _ in items]
-        for pair_idx, raw in enumerate(raw_by_pair):
-            raw_per_item[pair_to_item_idx[pair_idx]].append(raw)
+        computed_per_item: list[int] = [0] * len(items)
+        cached_per_item: list[int] = [0] * len(items)
+        for pair_idx, (score, out, si, is_hit) in enumerate(raw_by_pair):
+            item_idx = pair_to_item_idx[pair_idx]
+            raw_per_item[item_idx].append((score, out, si))
+            if is_hit:
+                cached_per_item[item_idx] += 1
+            else:
+                computed_per_item[item_idx] += 1
 
         return [
-            self._assemble_no_refiner_batch(candidate, batch, raw_per_item[item_idx], capture_traces=capture_traces)
+            self._assemble_no_refiner_batch(
+                candidate,
+                batch,
+                raw_per_item[item_idx],
+                capture_traces=capture_traces,
+                num_metric_calls=computed_per_item[item_idx],
+                num_cached_evals=cached_per_item[item_idx],
+            )
             for item_idx, (candidate, batch) in enumerate(items)
         ]
 
@@ -704,6 +761,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         raw_results: list[tuple[float, Any, "SideInfo"]],
         *,
         capture_traces: bool = True,
+        num_metric_calls: int | None = None,
+        num_cached_evals: int = 0,
     ) -> EvaluationBatch:
         """Package raw ``(score, _, side_info)`` evaluator results into an EvaluationBatch.
 
@@ -733,12 +792,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             scores=scores,
             trajectories=side_infos if capture_traces else None,
             objective_scores=objective_scores,
-            num_metric_calls=len(batch),
+            num_metric_calls=len(batch) if num_metric_calls is None else num_metric_calls,
+            num_cached_evals=num_cached_evals,
         )
 
     def _evaluate_parallel(self, batch, candidate):
         """Evaluate batch in parallel (no refinement)."""
-        return self._run_parallel(batch, candidate, self._call_evaluator)
+        return self._run_parallel(batch, candidate, self._call_evaluator_with_hit)
 
     def _evaluate_with_refinement_parallel(self, batch, candidate):
         """Evaluate batch in parallel with refinement."""
@@ -751,6 +811,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt: str,
         original_score: float,
         original_side_info: "SideInfo",
+        *,
+        original_cached: bool = False,
     ) -> tuple[float, dict[str, str] | None, "SideInfo | None", list[dict]]:
         """
         Refine a candidate using the refiner LLM and evaluate the refined version.
@@ -779,6 +841,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 "candidate": params_dict,
                 "score": original_score,
                 "side_info": original_side_info,
+                "cached": original_cached,
             }
         ]
 
@@ -825,7 +888,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
                 # Reconstruct full candidate: refined params + original refiner_prompt
                 refined_candidate_dict = {**parsed_refined, "refiner_prompt": candidate.get("refiner_prompt", "")}
-                refined_score, _refined_output, refined_eval_side_info = self._call_evaluator(
+                refined_score, _refined_output, refined_eval_side_info, refined_cached = self._call_evaluator_with_hit(
                     refined_candidate_dict, example
                 )
 
@@ -839,6 +902,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                         "candidate": parsed_refined,
                         "score": refined_score,
                         "side_info": refined_eval_side_info,
+                        "cached": refined_cached,
                     }
                 )
 

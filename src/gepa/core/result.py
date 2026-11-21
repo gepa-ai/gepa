@@ -65,6 +65,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     # Run metadata (optional)
     total_metric_calls: int | None = None
+    total_computed_metric_calls: int | None = None
+    total_cached_metric_calls: int | None = None
     num_full_val_evals: int | None = None
     run_dir: str | None = None
     seed: int | None = None
@@ -190,6 +192,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "objective_pareto_front": self.objective_pareto_front,
             "discovery_eval_counts": self.discovery_eval_counts,
             "total_metric_calls": self.total_metric_calls,
+            "total_computed_metric_calls": self.total_computed_metric_calls,
+            "total_cached_metric_calls": self.total_cached_metric_calls,
             "num_full_val_evals": self.num_full_val_evals,
             "run_dir": self.run_dir,
             "seed": self.seed,
@@ -220,6 +224,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "val_aggregate_scores": list(d.get("val_aggregate_scores", [])),
             "discovery_eval_counts": list(d.get("discovery_eval_counts", [])),
             "total_metric_calls": d.get("total_metric_calls"),
+            "total_computed_metric_calls": d.get("total_computed_metric_calls"),
+            "total_cached_metric_calls": d.get("total_cached_metric_calls"),
             "num_full_val_evals": d.get("num_full_val_evals"),
             "run_dir": d.get("run_dir"),
             "seed": d.get("seed"),
@@ -318,6 +324,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             objective_pareto_front=objective_front if objective_front else None,
             discovery_eval_counts=list(state.num_metric_calls_by_discovery),
             total_metric_calls=getattr(state, "total_num_evals", None),
+            total_computed_metric_calls=getattr(state, "total_computed_evals", getattr(state, "total_num_evals", None)),
+            total_cached_metric_calls=getattr(state, "total_cached_evals", 0),
             num_full_val_evals=getattr(state, "num_full_ds_evals", None),
             run_dir=run_dir,
             seed=seed,

@@ -376,7 +376,11 @@ class ReflectiveMutationProposer:
             e.num_metric_calls if e.num_metric_calls is not None else len(items[idx][1])
             for idx, e in enumerate(parent_evals)
         )
-        state.increment_evals(total_parent_evals)
+        total_parent_cached = sum(getattr(e, "num_cached_evals", 0) for e in parent_evals)
+        if total_parent_cached > 0:
+            state.increment_evals(total_parent_evals, cached=total_parent_cached)
+        else:
+            state.increment_evals(total_parent_evals)
 
         # Update evaluation cache for parents
         if state.evaluation_cache is not None:
@@ -649,7 +653,11 @@ class ReflectiveMutationProposer:
             e.num_metric_calls if e.num_metric_calls is not None else len(child_items[idx][1])
             for idx, e in enumerate(child_evals)
         )
-        state.increment_evals(total_child_evals)
+        total_child_cached = sum(getattr(e, "num_cached_evals", 0) for e in child_evals)
+        if total_child_cached > 0:
+            state.increment_evals(total_child_evals, cached=total_child_cached)
+        else:
+            state.increment_evals(total_child_evals)
 
         # Update evaluation cache for children
         if state.evaluation_cache is not None:

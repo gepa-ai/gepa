@@ -538,6 +538,7 @@ class EngineConfig:
     write_agent_state: bool = field(default=False, kw_only=True)
     stop_at_score: float | None = field(default=None, kw_only=True)
     """Stop once the best valset aggregate score reaches this threshold."""
+    count_cached_evals_toward_budget: bool = field(default=False, kw_only=True)
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -1760,6 +1761,7 @@ def optimize_anything(
         use_cloudpickle=config.engine.use_cloudpickle,
         write_agent_state=config.engine.write_agent_state,
         evaluation_cache=evaluation_cache,
+        count_cached_evals_toward_budget=config.engine.count_cached_evals_toward_budget,
     )
 
     # --- 16. Run optimization ---

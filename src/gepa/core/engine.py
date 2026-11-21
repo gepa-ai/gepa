@@ -155,10 +155,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        count_cached_evals_toward_budget: bool = False,
     ):
         self.logger = logger
         self.run_dir = run_dir
         self.callbacks = callbacks
+        self.count_cached_evals_toward_budget = count_cached_evals_toward_budget
 
         # Graceful stopping mechanism
         self._stop_requested = False
@@ -301,6 +303,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     if eval_result.trajectories is not None
                     else None
                 )
+                computed = (
+                    eval_result.num_metric_calls
+                    if eval_result.num_metric_calls is not None
+                    else len(val_ids)
+                )
+                cached = getattr(eval_result, "num_cached_evals", 0)
                 traced_results.append(
                     (
                         ValsetEvaluation(
@@ -308,8 +316,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             scores_by_val_id=scores_by_val_idx,
                             objective_scores_by_val_id=objective_by_val_idx,
                             trajectories_by_val_id=trajectories_by_val_idx,
+                            num_computed_evals=computed,
+                            num_cached_evals=cached,
                         ),
-                        len(val_ids),
+                        computed,
                     )
                 )
             return traced_results
@@ -346,8 +356,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     objective_by[eid] = entry.objective_scores
 
             uncached = todo_per[i]
+            state_cached_count = len(cached_per[i])
+            adapter_computed_count = 0
+            adapter_cached_count = 0
             if uncached:
                 eb = fresh_by_idx[i]
+                adapter_computed_count = (
+                    eb.num_metric_calls if eb.num_metric_calls is not None else len(uncached)
+                )
+                adapter_cached_count = getattr(eb, "num_cached_evals", 0)
                 obj = list(eb.objective_scores) if eb.objective_scores else None
                 for j, eid in enumerate(uncached):
                     outputs_by[eid] = eb.outputs[j]
@@ -364,8 +381,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         outputs_by_val_id=outputs_by,
                         scores_by_val_id=scores_by,
                         objective_scores_by_val_id=objective_by,
+                        num_computed_evals=adapter_computed_count,
+                        num_cached_evals=state_cached_count + adapter_cached_count,
                     ),
-                    len(uncached),
+                    adapter_computed_count,
                 )
             )
         return results
@@ -390,6 +409,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
         num_actual_evals: int,
         iteration_id: str | None = None,
+        num_cached_evals: int | None = None,
     ) -> tuple[int, int]:
         """Add an already-evaluated candidate to the pool. Must run sequentially.
 
@@ -406,7 +426,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if iteration_id is None:
             iteration_id = state.current_iteration_id()
         num_metric_calls_by_discovery = state.total_num_evals
-        state.increment_evals(num_actual_evals)
+        cached_count = (
+            num_cached_evals if num_cached_evals is not None else getattr(valset_evaluation, "num_cached_evals", 0)
+        )
+        if cached_count > 0:
+            state.increment_evals(num_actual_evals, cached=cached_count)
+        else:
+            state.increment_evals(num_actual_evals)
         state.num_full_ds_evals += 1
 
         # Snapshot Pareto front before update
@@ -768,6 +794,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         if eval_result.trajectories is not None
                         else None
                     ),
+                    num_computed_evals=(
+                        eval_result.num_metric_calls
+                        if eval_result.num_metric_calls is not None
+                        else len(val_ids)
+                    ),
+                    num_cached_evals=getattr(eval_result, "num_cached_evals", 0),
                 )
 
             (eval_result,) = invoke_batch_evaluate(
@@ -786,6 +818,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 outputs_by_val_id=outputs_dict,
                 scores_by_val_id=scores_dict,
                 objective_scores_by_val_id=objective_scores_dict,
+                num_computed_evals=(
+                    eval_result.num_metric_calls
+                    if eval_result.num_metric_calls is not None
+                    else len(val_ids)
+                ),
+                num_cached_evals=getattr(eval_result, "num_cached_evals", 0),
             )
 
         # Notify callbacks of optimization start (before seed valset eval)
@@ -826,6 +864,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
             evaluation_cache=self._initial_evaluation_cache,
+            count_cached_evals_toward_budget=self.count_cached_evals_toward_budget,
+            seed_num_computed_evals=(
+                seed_valset_evaluation.num_computed_evals if seed_valset_evaluation is not None else None
+            ),
+            seed_num_cached_evals=(
+                seed_valset_evaluation.num_cached_evals if seed_valset_evaluation is not None else 0
+            ),
         )
         # Fresh runs: record the seed valset eval in the cache. On resume the seed scores already
         # live in state; writing the re-computed seed eval would desynchronize cache from
@@ -920,7 +965,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
 
         # Register budget hook to fire on_budget_updated callback in real-time
-        def budget_hook(new_total: int, delta: int) -> None:
+        def budget_hook(
+            new_total: int,
+            delta: int,
+            new_computed: int,
+            computed_delta: int,
+            new_cached: int,
+            cached_delta: int,
+        ) -> None:
             notify_callbacks(
                 self.callbacks,
                 "on_budget_updated",
@@ -929,10 +981,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     metric_calls_used=new_total,
                     metric_calls_delta=delta,
                     metric_calls_remaining=self._get_remaining_budget(state),
+                    metric_calls_computed=new_computed,
+                    metric_calls_computed_delta=computed_delta,
+                    metric_calls_cached=new_cached,
+                    metric_calls_cached_delta=cached_delta,
                 ),
             )
 
-        state.add_budget_hook(budget_hook)
+        state.add_budget_detail_hook(budget_hook)
 
         # Merge scheduling
         if self.merge_proposer is not None:

@@ -212,6 +212,8 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     # Populated only when the engine is run with ``write_agent_state=True`` —
     # full valset trajectories are expensive, so default eval paths skip them.
     trajectories_by_val_id: dict[DataId, Any] | None = None
+    num_computed_evals: int | None = None
+    num_cached_evals: int = 0
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -227,7 +229,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 7
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
-    _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
+    _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks", "_budget_detail_hooks"})
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
@@ -256,6 +258,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     num_full_ds_evals: int
 
     total_num_evals: int
+    total_computed_evals: int
+    total_cached_evals: int
+    count_cached_evals_toward_budget: bool
 
     num_metric_calls_by_discovery: list[int]
 
@@ -323,6 +328,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
         self.i = -1
+        self.total_num_evals = 0
+        self.total_computed_evals = 0
+        self.total_cached_evals = 0
+        self.count_cached_evals_toward_budget = False
 
         self.num_metric_calls_by_discovery = [0]
 
@@ -369,18 +378,40 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             self._budget_hooks: list[Callable[[int, int], None]] = []
         self._budget_hooks.append(hook)
 
-    def increment_evals(self, count: int) -> None:
-        """Increment total_num_evals and notify all registered hooks.
+    def add_budget_detail_hook(self, hook: Callable[[int, int, int, int, int, int], None]) -> None:
+        """Register a callback receiving (total_charged, charged_delta, total_computed, computed_delta, total_cached, cached_delta)."""
+        if not hasattr(self, "_budget_detail_hooks"):
+            self._budget_detail_hooks: list[Callable[[int, int, int, int, int, int], None]] = []
+        self._budget_detail_hooks.append(hook)
+
+    def increment_evals(self, count: int, *, cached: int = 0) -> None:
+        """Increment evaluation counters and notify all registered hooks.
 
         Args:
-            count: Number of evaluations to add.
+            count: Number of real (cache-miss) evaluations to add.
+            cached: Number of cache-hit evaluations to record.
         """
-        self.total_num_evals += count
+        self.total_computed_evals = getattr(self, "total_computed_evals", 0) + count
+        self.total_cached_evals = getattr(self, "total_cached_evals", 0) + cached
+        count_cached = getattr(self, "count_cached_evals_toward_budget", False)
+        charged_delta = count + (cached if count_cached else 0)
+        self.total_num_evals += charged_delta
         # Lazy init handles states loaded from disk (which won't have _budget_hooks)
         hooks = getattr(self, "_budget_hooks", None)
         if hooks:
             for hook in hooks:
-                hook(self.total_num_evals, count)
+                hook(self.total_num_evals, charged_delta)
+        detail_hooks = getattr(self, "_budget_detail_hooks", None)
+        if detail_hooks:
+            for hook in detail_hooks:
+                hook(
+                    self.total_num_evals,
+                    charged_delta,
+                    self.total_computed_evals,
+                    count,
+                    self.total_cached_evals,
+                    cached,
+                )
 
     def _atomic_write_json(self, run_dir: str, rel_path: str, data: Any) -> None:
         target_path = os.path.join(run_dir, rel_path)
@@ -726,6 +757,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             "schema_version": 3,
             "iteration": self.i,
             "total_metric_calls": self.total_num_evals,
+            "total_computed_metric_calls": getattr(self, "total_computed_evals", self.total_num_evals),
+            "total_cached_metric_calls": getattr(self, "total_cached_evals", 0),
             "num_full_val_evals": self.num_full_ds_evals,
             "frontier_type": self.frontier_type,
             "component_names": self.list_of_named_predictors,
@@ -771,6 +804,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         cache = data.get("evaluation_cache")
         if cache is not None:
             cache.drop_unsplit_entries()
+
+        if "total_computed_evals" not in data:
+            data["total_computed_evals"] = data.get("total_num_evals", 0)
+        if "total_cached_evals" not in data:
+            data["total_cached_evals"] = 0
+        if "count_cached_evals_toward_budget" not in data:
+            data["count_cached_evals_toward_budget"] = False
 
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(data)
@@ -1127,6 +1167,9 @@ def initialize_gepa_state(
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
+    count_cached_evals_toward_budget: bool = False,
+    seed_num_computed_evals: int | None = None,
+    seed_num_cached_evals: int = 0,
 ) -> GEPAState[RolloutOutput, DataId]:
     """Load the saved state from ``run_dir`` if one exists, otherwise build a fresh state.
 
@@ -1152,6 +1195,7 @@ def initialize_gepa_state(
         elif gepa_state.evaluation_cache is None:
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
+        gepa_state.count_cached_evals_toward_budget = count_cached_evals_toward_budget
     else:
         if seed_valset_evaluation is None:
             raise ValueError("seed_valset_evaluation is required when no saved state exists in run_dir")
@@ -1169,7 +1213,17 @@ def initialize_gepa_state(
             evaluation_cache=evaluation_cache,
         )
 
+        seed_computed = (
+            seed_num_computed_evals
+            if seed_num_computed_evals is not None
+            else len(seed_valset_evaluation.scores_by_val_id)
+        )
         gepa_state.num_full_ds_evals = 1
-        gepa_state.total_num_evals = len(seed_valset_evaluation.scores_by_val_id)
+        gepa_state.count_cached_evals_toward_budget = count_cached_evals_toward_budget
+        gepa_state.total_computed_evals = seed_computed
+        gepa_state.total_cached_evals = seed_num_cached_evals
+        gepa_state.total_num_evals = seed_computed + (
+            seed_num_cached_evals if count_cached_evals_toward_budget else 0
+        )
 
     return gepa_state

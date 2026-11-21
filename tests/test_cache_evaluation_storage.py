@@ -43,6 +43,17 @@ def create_fitness_fn(call_counter: dict):
     return fitness_fn
 
 
+def create_mock_reflection_lm(start: int = 50):
+    """Create a deterministic reflection LM that proposes distinct integer guesses without network calls."""
+    proposals = {"count": 0}
+
+    def reflection_lm(_prompt: str) -> str:
+        proposals["count"] += 1
+        return f"```\n{start - proposals['count']}\n```"
+
+    return reflection_lm
+
+
 class TestCacheEvaluationStorage:
     """Tests for cache_evaluation_storage parameter."""
 
@@ -58,7 +69,7 @@ class TestCacheEvaluationStorage:
                 cache_evaluation_storage="memory",
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-4.1-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=None,
         )
@@ -89,7 +100,7 @@ class TestCacheEvaluationStorage:
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
-                    reflection_lm="openrouter/openai/gpt-4.1-nano",
+                    reflection_lm=create_mock_reflection_lm(),
                 ),
                 refiner=None,
             )
@@ -124,7 +135,7 @@ class TestCacheEvaluationStorage:
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
-                    reflection_lm="openrouter/openai/gpt-4.1-nano",
+                    reflection_lm=create_mock_reflection_lm(),
                 ),
                 refiner=None,
             )
@@ -154,7 +165,7 @@ class TestCacheEvaluationStorage:
                 cache_evaluation=False,  # Caching disabled
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-4.1-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=None,
         )
@@ -183,7 +194,7 @@ class TestCacheEvaluationStorage:
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
-                    reflection_lm="openrouter/openai/gpt-4.1-nano",
+                    reflection_lm=create_mock_reflection_lm(),
                 ),
                 refiner=None,
             )
@@ -211,7 +222,7 @@ class TestCacheEvaluationStorage:
                 run_dir=None,  # No run_dir
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-4.1-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=None,
         )
@@ -239,7 +250,7 @@ class TestCacheEvaluationStorage:
                 run_dir=None,  # No run_dir
             ),
             reflection=ReflectionConfig(
-                reflection_lm="openrouter/openai/gpt-4.1-nano",
+                reflection_lm=create_mock_reflection_lm(),
             ),
             refiner=None,
         )
@@ -267,7 +278,7 @@ if __name__ == "__main__":
             cache_evaluation_storage="memory",
         ),
         reflection=ReflectionConfig(
-            reflection_lm="openrouter/openai/gpt-4.1-nano",
+            reflection_lm=create_mock_reflection_lm(),
         ),
         refiner=None,
     )
