@@ -125,14 +125,20 @@ class ChromaVectorStore(VectorStoreInterface):
         docs = results["documents"][0]
         metadatas = results.get("metadatas", [None] * len(docs))[0] or [{}] * len(docs)
         distances = results.get("distances", [0.0] * len(docs))[0]
+        ids = (results.get("ids") or [None])[0] or [None] * len(docs)
 
-        for doc, metadata, distance in zip(docs, metadatas, distances, strict=False):
+        for doc, metadata, distance, doc_id in zip(docs, metadatas, distances, ids, strict=False):
             # Convert distance to similarity score (higher is better)
             # ChromaDB uses cosine distance, so similarity = 1 - distance
             distance_val = self._extract_distance_value(distance)
             similarity_score = max(0.0, 1.0 - distance_val)
 
-            documents.append({"content": doc, "metadata": metadata or {}, "score": similarity_score})
+            # Expose the Chroma id as doc_id, like the other stores, so retrieval metrics can match it
+            metadata = dict(metadata or {})
+            if doc_id is not None and "doc_id" not in metadata:
+                metadata["doc_id"] = str(doc_id)
+
+            documents.append({"content": doc, "metadata": metadata, "score": similarity_score})
 
         return documents
 
