@@ -2,6 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 import json
+import math
 import os
 import traceback
 from collections.abc import Sequence
@@ -51,7 +52,13 @@ from gepa.logging.utils import log_detailed_metrics_after_discovering_new_progra
 from gepa.proposer.base import CandidateProposal
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
+from gepa.strategies.acceptance import (
+    DEFAULT_ABS_TOL,
+    DEFAULT_REL_TOL,
+    AcceptanceCriterion,
+    ImprovementOrEqualAcceptance,
+    StrictImprovementAcceptance,
+)
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
 from gepa.utils import StopperProtocol
@@ -1028,7 +1035,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 ),
                             )
 
-                            if new_sum >= max(parent_sums):
+                            best_parent_sum = max(parent_sums)
+                            if new_sum >= best_parent_sum or math.isclose(
+                                new_sum, best_parent_sum, rel_tol=DEFAULT_REL_TOL, abs_tol=DEFAULT_ABS_TOL
+                            ):
                                 # ACCEPTED: consume one merge attempt and record it
                                 new_idx, _ = self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
