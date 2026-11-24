@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from typing import ClassVar
+
 import pytest
 
 from gepa.core.state import GEPAState, ValsetEvaluation
@@ -89,6 +91,37 @@ class TestImprovementOrEqualAcceptance:
         criterion = ImprovementOrEqualAcceptance()
         proposal = _make_proposal([0.5, 0.3], [0.4, 0.2])
         assert criterion.should_accept(proposal, mock_state) is False
+
+
+class TestFloatRoundingTies:
+    """Regression tests for https://github.com/gepa-ai/gepa/issues/578."""
+
+    # Different scores with the same true sum: the float sums differ in the last bit.
+    A: ClassVar[list[float]] = [1.0, 1.0, 1 / 3]
+    B: ClassVar[list[float]] = [2 / 3, 2 / 3, 1.0]
+
+    def test_strict_rejects_rounding_tie(self, mock_state):
+        assert StrictImprovementAcceptance().should_accept(_make_proposal(self.B, self.A), mock_state) is False
+
+    def test_or_equal_accepts_rounding_tie(self, mock_state):
+        assert ImprovementOrEqualAcceptance().should_accept(_make_proposal(self.A, self.B), mock_state) is True
+
+    def test_zero_tolerance_restores_exact_comparison(self, mock_state):
+        """With rel_tol=abs_tol=0 the rounding-level difference counts as an improvement again."""
+        criterion = StrictImprovementAcceptance(rel_tol=0, abs_tol=0)
+        assert criterion.should_accept(_make_proposal(self.B, self.A), mock_state) is True
+
+    def test_or_equal_zero_tolerance_restores_exact_comparison(self, mock_state):
+        """With rel_tol=abs_tol=0 the rounding-level tie is rejected by the or-equal criterion again."""
+        criterion = ImprovementOrEqualAcceptance(rel_tol=0, abs_tol=0)
+        assert criterion.should_accept(_make_proposal(self.A, self.B), mock_state) is False
+
+    def test_permuted_scores_tie(self, mock_state):
+        """The issue's original example: the same five scores in another order are a tie (rounding shows on 3.11)."""
+        a = [1.0, 1.0, 2 / 3, 2 / 3, 2 / 3]
+        b = [2 / 3, 2 / 3, 2 / 3, 1.0, 1.0]
+        assert StrictImprovementAcceptance().should_accept(_make_proposal(a, b), mock_state) is False
+        assert ImprovementOrEqualAcceptance().should_accept(_make_proposal(b, a), mock_state) is True
 
 
 class TestProtocolConformance:

@@ -3,6 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import gepa
+from gepa.core.engine import GEPAEngine
+from gepa.proposer.base import CandidateProposal
 from gepa.proposer.merge import (
     MergeProposer,
     does_triplet_have_desirable_predictors,
@@ -10,6 +13,7 @@ from gepa.proposer.merge import (
     find_common_ancestor_pair,
     sample_and_attempt_merge_programs_by_common_predictors,
 )
+from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 
 
 def test_does_triplet_have_desirable_predictors_true_when_descendants_diverge():
@@ -503,3 +507,62 @@ def test_sample_and_attempt_merge_skips_merge_identical_to_a_non_parent_candidat
     recorded_id1, recorded_id2, desc = merges_performed[1][0]
     assert (recorded_id1, recorded_id2) == (1, 2)
     assert sorted(desc) == [1, 2]
+
+
+class _ConstantAdapter:
+    """Scores every example 0.5 so the merged candidate's valset evaluation is cheap and deterministic."""
+
+    def evaluate(self, batch, candidate, capture_traces=False):
+        return gepa.EvaluationBatch(outputs=["out"] * len(batch), scores=[0.5] * len(batch))
+
+    def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+        return {name: [] for name in components_to_update}
+
+    def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+        return dict.fromkeys(components_to_update, "x")
+
+
+def test_engine_accepts_merge_tied_with_best_parent_up_to_float_rounding(monkeypatch):
+    """Regression for #578: a merge whose subsample sum ties the best parent's up to rounding is accepted."""
+    parent_scores = [1.0, 1.0, 1 / 3]
+    merged_scores = [2 / 3, 2 / 3, 1.0]
+    # The merge proposer reports each parent's subsample sum as ``subsample_scores_before``.
+    assert sum(merged_scores) < sum(parent_scores)
+
+    def fake_merge_propose(self, state):
+        return CandidateProposal(
+            candidate={"p": "merged"},
+            parent_program_ids=[0, 0],
+            subsample_scores_before=[sum(parent_scores), sum(parent_scores) - 1.0],
+            subsample_scores_after=merged_scores,
+            tag="merge",
+        )
+
+    real_run = GEPAEngine.run
+
+    def run_with_merge_due(self):
+        self.merge_proposer.merges_due = 1
+        return real_run(self)
+
+    monkeypatch.setattr(MergeProposer, "propose", fake_merge_propose)
+    # ``run`` resets the flag when it starts, so keep a merge always scheduled.
+    monkeypatch.setattr(
+        MergeProposer,
+        "last_iter_found_new_program",
+        property(lambda self: True, lambda self, value: None),
+        raising=False,
+    )
+    monkeypatch.setattr(ReflectiveMutationProposer, "propose", lambda self, state: [])
+    monkeypatch.setattr(GEPAEngine, "run", run_with_merge_due)
+
+    result = gepa.optimize(
+        seed_candidate={"p": "seed"},
+        trainset=[{"x": 1}],
+        valset=[{"x": 1}],
+        adapter=_ConstantAdapter(),
+        stop_callbacks=lambda state: state.i >= 3,
+        use_merge=True,
+        display_progress_bar=False,
+    )
+
+    assert {"p": "merged"} in result.candidates
