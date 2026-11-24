@@ -10,6 +10,48 @@ import pytest
 from gepa.utils.code_execution import ExecutionMode, execute_code
 
 
+@pytest.mark.parametrize("mode", list(ExecutionMode))
+@pytest.mark.parametrize(
+    "capture_variables, expected",
+    [(None, {"answer": 42, "other": 7}), ([], {}), (["answer"], {"answer": 42})],
+)
+def test_capture_variables_distinguishes_empty_selection_from_default(mode, capture_variables, expected):
+    result = execute_code(
+        "answer = 42\nother = 7\nprint('completed')",
+        mode=mode,
+        capture_variables=capture_variables,
+    )
+
+    assert result.success, result.error
+    assert result.stdout.splitlines() == ["completed"]
+    assert result.variables == expected
+
+
+def test_subprocess_empty_capture_does_not_serialize_unrequested_objects():
+    result = execute_code(
+        "import threading\nlock = threading.Lock()\nprint('completed')",
+        mode=ExecutionMode.SUBPROCESS,
+        capture_variables=[],
+    )
+
+    assert result.success, result.error
+    assert result.stdout.splitlines() == ["completed"]
+    assert result.variables == {}
+
+
+@pytest.mark.parametrize("mode", list(ExecutionMode))
+def test_empty_capture_still_returns_entry_point_result(mode):
+    result = execute_code(
+        "def solve(): return 42\nother = 7",
+        mode=mode,
+        capture_variables=[],
+        entry_point="solve",
+    )
+
+    assert result.success, result.error
+    assert result.variables == {"__return__": 42}
+
+
 def test_subprocess_timeout_is_reported_as_failure():
     """A subprocess that runs past the timeout is reported as a failed timeout.
 
