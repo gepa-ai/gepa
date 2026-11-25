@@ -222,9 +222,10 @@ class CompositeStopper(StopperProtocol):
 
     def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if stopping condition is met
-        if self.mode == "any":
-            return any(stopper(gepa_state) for stopper in self.stoppers)
-        elif self.mode == "all":
-            return all(stopper(gepa_state) for stopper in self.stoppers)
-        else:
+        if self.mode not in ("any", "all"):
             raise ValueError(f"Unknown mode: {self.mode}")
+        # Call every stopper on every check. Short-circuiting would skip the
+        # stoppers behind the deciding one, and a stateful stopper such as
+        # NoImprovementStopper only counts the iterations it is called on.
+        results = [stopper(gepa_state) for stopper in self.stoppers]
+        return any(results) if self.mode == "any" else all(results)
