@@ -1,7 +1,65 @@
 import pytest
 
+import gepa
+from gepa.core.adapter import EvaluationBatch
 from gepa.core.result import GEPAResult
 from gepa.core.state import GEPAState, ValsetEvaluation
+
+
+def test_optimize_tracks_none_output_from_the_best_candidate():
+    class Adapter:
+        propose_new_texts = None
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            improved = candidate["prompt"] == "improved"
+            return EvaluationBatch(
+                outputs=[None if improved else "seed output"] * len(batch),
+                scores=[1.0 if improved else 0.2] * len(batch),
+                trajectories=[{}] * len(batch) if capture_traces else None,
+            )
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return {component: [{"Feedback": "Improve the prompt"}] for component in components_to_update}
+
+    result = gepa.optimize(
+        seed_candidate={"prompt": "seed"},
+        trainset=[1, 2],
+        valset=[1, 2],
+        adapter=Adapter(),
+        reflection_lm=lambda _: "improved",
+        max_metric_calls=8,
+    )
+
+    assert result.best_candidate == {"prompt": "improved"}
+    assert result.best_outputs_valset == {0: [(1, None)], 1: [(1, None)]}
+
+
+def test_tied_best_output_can_follow_an_evaluation_without_outputs():
+    state = GEPAState(
+        {"prompt": "seed"},
+        ValsetEvaluation(outputs_by_val_id={0: "seed output"}, scores_by_val_id={0: 0.5}),
+        track_best_outputs=True,
+    )
+    state.update_state_with_new_program(
+        [0],
+        {"prompt": "higher score without outputs"},
+        ValsetEvaluation(outputs_by_val_id={}, scores_by_val_id={0: 0.75, 1: 0.75}),
+        run_dir=None,
+        num_metric_calls_by_discovery_of_new_program=1,
+        iteration_id="first",
+    )
+    outputs_after_improvement = GEPAResult.from_state(state).best_outputs_valset
+    state.update_state_with_new_program(
+        [1],
+        {"prompt": "tied score with outputs"},
+        ValsetEvaluation(outputs_by_val_id={0: "tied zero", 1: "tied one"}, scores_by_val_id={0: 0.75, 1: 0.75}),
+        run_dir=None,
+        num_metric_calls_by_discovery_of_new_program=1,
+        iteration_id="second",
+    )
+
+    assert outputs_after_improvement == {}
+    assert GEPAResult.from_state(state).best_outputs_valset == {0: [(2, "tied zero")], 1: [(2, "tied one")]}
 
 
 def test_gepa_result_from_dict_upcasts_version0():

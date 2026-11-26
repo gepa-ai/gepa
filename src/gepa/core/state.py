@@ -932,7 +932,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
-        output: RolloutOutput | None,
+        outputs_by_val_id: dict[DataId, RolloutOutput],
         run_dir: str | None,
         iteration: int,
     ) -> None:
@@ -940,7 +940,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if score > prev_score:
             self.pareto_front_valset[val_id] = score
             self.program_at_pareto_front_valset[val_id] = {program_idx}
-            if self.best_outputs_valset is not None and output is not None:
+            if self.best_outputs_valset is not None:
+                if val_id not in outputs_by_val_id:
+                    self.best_outputs_valset.pop(val_id, None)
+                    return
+                output = outputs_by_val_id[val_id]
                 self.best_outputs_valset[val_id] = [(program_idx, output)]
                 if run_dir is not None:
                     task_dir = os.path.join(run_dir, "generated_best_outputs_valset", f"task_{val_id}")
@@ -950,8 +954,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         elif score == prev_score:
             pareto_front = self.program_at_pareto_front_valset.setdefault(val_id, set())
             pareto_front.add(program_idx)
-            if self.best_outputs_valset is not None and output is not None:
-                self.best_outputs_valset[val_id].append((program_idx, output))
+            if self.best_outputs_valset is not None and val_id in outputs_by_val_id:
+                self.best_outputs_valset.setdefault(val_id, []).append((program_idx, outputs_by_val_id[val_id]))
 
     def _update_pareto_front_for_cartesian(
         self,
@@ -1010,12 +1014,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.prog_candidate_objective_scores.append(objective_scores)
 
         for val_id, score in valset_scores.items():
-            output = valset_evaluation.outputs_by_val_id.get(val_id) if valset_evaluation.outputs_by_val_id else None
             self._update_pareto_front_for_val_id(
                 val_id,
                 score,
                 new_program_idx,
-                output,
+                valset_evaluation.outputs_by_val_id,
                 run_dir,
                 self.i + 1,
             )
