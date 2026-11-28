@@ -24,7 +24,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         total_evals: Eval-server call count when this result came from
             :func:`~gepa.optimize_anything.optimize_anything` (``budget.used``).
             Falls back to ``total_metric_calls`` for launcher-only / deserialized
-            snapshots.
+            snapshots, and to the last discovery checkpoint (a lower bound) when
+            that is missing too.
         val_aggregate_scores: Per-candidate average validation score (higher is better).
         candidates: All candidates explored during optimization.
         parents: Lineage — ``parents[i]`` is a list of parent indices for candidate ``i``.
@@ -118,15 +119,22 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
         Prefers ``eval_server_calls`` (``server.budget.used`` from the OA layer)
         when this result was produced by ``optimize_anything``. Falls back to
-        ``total_metric_calls`` (GEPA core) and then
-        ``sum(discovery_eval_counts)`` for launcher-only / deserialized
+        ``total_metric_calls`` (GEPA core) for launcher-only / deserialized
         snapshots that never went through the eval server.
+
+        When a snapshot carries neither, the last resort is
+        ``max(discovery_eval_counts)``. Each entry is the running metric-call
+        count at the moment that candidate was discovered, so the largest one
+        is a lower bound on the run total: evaluations made after the last
+        discovery are not recorded there. Returns ``0`` for an empty pool.
         """
         if self.eval_server_calls is not None:
             return self.eval_server_calls
         if self.total_metric_calls is not None:
             return self.total_metric_calls
-        return sum(self.discovery_eval_counts)
+        # Checkpoints are cumulative; adding them would count the evaluations
+        # behind each earlier candidate once per later candidate.
+        return max(self.discovery_eval_counts, default=0)
 
     @property
     def best_candidate(self) -> str | dict[str, str]:
