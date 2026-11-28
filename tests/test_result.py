@@ -66,6 +66,76 @@ def test_to_dict_omits_runtime_oa_fields():
     assert restored.total_evals == 4  # falls back to total_metric_calls
 
 
+@pytest.mark.parametrize(
+    ("discovery_eval_counts", "expected"),
+    [
+        ([0, 5, 10], 10),  # sequential discoveries; summing would report 15
+        ([0, 5, 5], 5),  # two candidates accepted from the same parallel step
+        ([3], 3),
+        ([], 0),
+    ],
+)
+def test_total_evals_without_explicit_total_uses_last_discovery_checkpoint(discovery_eval_counts, expected):
+    """discovery_eval_counts holds running totals, one checkpoint per candidate.
+    Without total_metric_calls the largest checkpoint is a lower bound on the
+    run total; adding the checkpoints counts earlier evaluations repeatedly."""
+    num_candidates = len(discovery_eval_counts)
+    snapshot = {
+        "validation_schema_version": GEPAResult._VALIDATION_SCHEMA_VERSION,
+        "candidates": [{"p": str(i)} for i in range(num_candidates)],
+        "parents": [[None]] + [[i - 1] for i in range(1, num_candidates)],
+        "val_aggregate_scores": [float(i) for i in range(num_candidates)],
+        "val_subscores": [{0: float(i)} for i in range(num_candidates)],
+        "per_val_instance_best_candidates": {0: [num_candidates - 1]} if num_candidates else {},
+        "discovery_eval_counts": discovery_eval_counts,
+    }
+
+    restored = GEPAResult.from_dict(snapshot)
+    assert restored.total_metric_calls is None
+    assert restored.total_evals == expected
+
+    # An explicit total still wins over the checkpoints.
+    assert GEPAResult.from_dict(dict(snapshot, total_metric_calls=12)).total_evals == 12
+
+
+def test_total_evals_fallback_never_exceeds_state_total():
+    """Round-trip a real state the way the engine fills it (checkpoint taken
+    before the candidate's own evaluations are added) and drop the explicit
+    total: the fallback must stay a lower bound on the true count."""
+    state = GEPAState(
+        {"prompt": "seed"},
+        ValsetEvaluation(
+            outputs_by_val_id={0: "seed output"},
+            scores_by_val_id={0: 0.0},
+            objective_scores_by_val_id=None,
+        ),
+    )
+    state.total_num_evals = 1  # initialize_gepa_state counts the seed evaluation
+    for step, evals_for_candidate in enumerate([5, 5, 2], start=1):
+        checkpoint = state.total_num_evals
+        state.increment_evals(evals_for_candidate)
+        state.update_state_with_new_program(
+            [step - 1],
+            {"prompt": f"candidate {step}"},
+            ValsetEvaluation(
+                outputs_by_val_id={0: f"output {step}"},
+                scores_by_val_id={0: float(step)},
+                objective_scores_by_val_id=None,
+            ),
+            run_dir=None,
+            num_metric_calls_by_discovery_of_new_program=checkpoint,
+            iteration_id=f"step-{step}",
+        )
+
+    serialized = GEPAResult.from_state(state).to_dict()
+    assert serialized["total_metric_calls"] == state.total_num_evals
+    serialized.pop("total_metric_calls")
+
+    restored = GEPAResult.from_dict(serialized)
+    assert restored.total_evals == max(state.num_metric_calls_by_discovery)
+    assert restored.total_evals <= state.total_num_evals
+
+
 @pytest.mark.parametrize("new_score", [0.5, 1.0])
 def test_from_state_keeps_best_outputs_snapshot_when_state_advances(new_score):
     state = GEPAState(
