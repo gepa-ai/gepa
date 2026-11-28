@@ -1165,9 +1165,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             "total_iterations": state.i,
             "total_candidates": len(state.program_candidates),
         }
-        for name in sorted(self.seed_candidate.keys()):
-            summary[f"seed/{name}"] = self.seed_candidate[name]
-            summary[f"best/{name}"] = best_candidate[name]
+        for name, text in sorted(self.seed_candidate.items()):
+            summary[f"seed/{name}"] = text
+        for name, text in sorted(best_candidate.items()):
+            summary[f"best/{name}"] = text
         self.experiment_tracker.log_summary(summary)
 
         return state

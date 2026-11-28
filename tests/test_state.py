@@ -12,6 +12,7 @@ import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
 from gepa.core.state import ValsetEvaluation
+from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 
 
@@ -1043,6 +1044,38 @@ def test_resume_different_seed_is_full_eval_and_added(run_dir):
     assert second_run.num_full_val_evals == n_full + 1
     assert resume_adapter.evaluate_calls >= 1
     assert resume_adapter.examples_evaluated == 10
+
+
+@pytest.mark.parametrize("component", ["system_prompt", "new_prompt"])
+def test_resume_summary_retains_winner_with_different_components(run_dir, monkeypatch, component):
+    class Adapter(_CountingAdapter):
+        def evaluate(self, batch, candidate, capture_traces=False):
+            text = next(iter(candidate.values()))
+            self.examples_evaluated += len(batch)
+            return EvaluationBatch(outputs=[text] * len(batch), scores=[float(text)] * len(batch))
+
+    summaries = []
+    monkeypatch.setattr(ExperimentTracker, "log_summary", lambda self, summary: summaries.append(summary))
+
+    original = {"system_prompt": "1.0"}
+    incoming = {component: "0.25"}
+    data = {"trainset": [0], "valset": [1], "run_dir": str(run_dir)}
+    gepa.optimize(seed_candidate=original, adapter=Adapter(), max_metric_calls=1, **data)
+
+    adapter = Adapter()
+    result = gepa.optimize(seed_candidate=incoming, adapter=adapter, max_metric_calls=0, **data)
+
+    assert adapter.examples_evaluated == 1
+    assert result.candidates == [original, incoming]
+    assert result.parents[-1] == [0]
+    assert result.best_candidate == original
+    assert result.best_score == 1.0
+    assert summaries[-1]["best_candidate_idx"] == 0
+    assert summaries[-1]["best_valset_score"] == 1.0
+    assert {key: value for key, value in summaries[-1].items() if "/" in key} == {
+        f"seed/{component}": "0.25",
+        "best/system_prompt": "1.0",
+    }
 
 
 def test_resume_different_seed_not_readded_on_third_call(run_dir):
