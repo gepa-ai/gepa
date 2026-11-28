@@ -261,9 +261,7 @@ We stop GEPA-Curator before its cumulative cost exceeds GEPA's, and report the v
 
 *Held-out test success rates (%) and total optimization cost under a matched budget. AppWorld cost is shared across its two test splits.*
 
-At a slightly lower total cost on every benchmark, GEPA-Curator beats GEPA on seven of the eight settings. The one exception is Shopping Admin, where it trails by just 0.8 points. Averaged over all eight settings, GEPA-Curator gains **+10.1 points** over GEPA (77.4 vs. 67.3).
-
-**Key result:** The gains do not depend on spending more. Putting part of the budget into choosing more informative tasks and retrieving useful past successes is worth more than the extra cost of curation, even when GEPA gets to spend the same total.
+At a slightly lower total cost on every benchmark, GEPA-Curator improves over GEPA on seven of the eight settings. Averaged over all eight settings, GEPA-Curator gains **+10.1 points** over GEPA (77.4 vs. 67.3).
 
 ## Beyond Prompts: Curating Harness Optimization {#meta-harness}
 
